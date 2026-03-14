@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+combined.log
+error.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Turbo
+.turbo/
+
+# TypeScript
+*.tsbuildinfo
+
+# React Native
+apps/savidhi_mobile/android/
+apps/savidhi_mobile/ios/
+apps/savidhi_mobile/vendor/
+apps/savidhi_mobile/Gemfile.lock
+
+# Docker volumes
+postgres_data/
+media_uploads/
+
+# Service account keys
+*.json.key
+*-key.json
+service-account-key.json

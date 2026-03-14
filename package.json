@@ -1,0 +1,48 @@
+{
+  "name": "Savidhi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Savidhi monorepo — web, admin, mobile, backend",
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "npm@10.0.0",
+  "workspaces": [
+    "apps/savidhi_web",
+    "apps/savidhi_admin"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail \"npx turbo run dev --filter=savidhi_web --filter=savidhi_admin\" \"npm run mobile:metro\"",
+    "dev:ios": "concurrently --kill-others-on-fail \"npx turbo run dev --filter=savidhi_web --filter=savidhi_admin\" \"npm run mobile:metro\" \"npm run mobile:ios\"",
+    "dev:android": "concurrently --kill-others-on-fail \"npx turbo run dev --filter=savidhi_web --filter=savidhi_admin\" \"npm run mobile:metro\" \"npm run mobile:android\"",
+    "dev:web-only": "npx turbo run dev --filter=savidhi_web --filter=savidhi_admin",
+    "mobile:metro": "cd apps/savidhi_mobile && npm start",
+    "mobile:android": "cd apps/savidhi_mobile && npm run android",
+    "mobile:ios": "cd apps/savidhi_mobile && npm run ios",
+    "dev:all": "turbo run dev",
+    "dev:web": "turbo run dev --filter=savidhi_web",
+    "dev:admin": "turbo run dev --filter=savidhi_admin",
+    "dev:mobile": "cd apps/savidhi_mobile && npm run dev",
+    "dev:mobile:android": "concurrently --kill-others-on-fail \"npm run dev:mobile\" \"npm run mobile:android\"",
+    "backend:setup": "cd apps/savidhi_backend && npm run setup",
+    "backend:dev": "cd apps/savidhi_backend && npm run start-dev",
+    "backend:stop": "cd apps/savidhi_backend && npm run stop-dev",
+    "backend:build": "cd apps/savidhi_backend && npm run build:all",
+    "backend:health": "cd apps/savidhi_backend && npm run health:all",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "mobile:start": "cd apps/savidhi_mobile && npm start"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "concurrently": "^7.6.0",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.20.5",
+    "turbo": "^2.5.2"
+  },
+  "dependencies": {
+    "react-icons": "^5.5.0"
+  }
+}

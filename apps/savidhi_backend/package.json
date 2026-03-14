@@ -1,0 +1,44 @@
+{
+  "name": "savidhi-microservices-orchestrator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Docker orchestration and development tools for Savidhi microservices",
+  "keywords": ["microservices", "docker", "orchestration", "savidhi"],
+  "author": "Savidhi Team",
+  "scripts": {
+    "setup": "./scripts/setup.sh",
+
+    "start-dev": "./scripts/start-dev.sh",
+    "start-dev:rebuild": "./scripts/start-dev.sh --rebuild",
+    "start-dev:quick": "./scripts/start-dev.sh --skip-verify",
+    "stop-dev": "./scripts/stop-dev.sh",
+    "stop-dev:clean": "./scripts/stop-dev.sh --clean",
+    "stop-dev:volumes": "./scripts/stop-dev.sh --clean --volumes",
+
+    "services:start": "docker-compose up -d",
+    "services:stop": "docker-compose down",
+    "services:restart": "docker-compose restart",
+    "services:logs": "docker-compose logs -f",
+    "services:build": "docker-compose build",
+    "services:clean": "docker-compose down -v --rmi all",
+    "services:status": "docker-compose ps",
+
+    "services:dev": "docker-compose -f docker-compose.yml up --build",
+    "services:prod": "docker-compose -f docker-compose.prod.yml up -d",
+
+    "db:shell": "docker-compose exec postgres psql -U savidhi_user -d savidhi",
+    "redis:shell": "docker-compose exec redis redis-cli",
+
+    "auth:dev": "cd services/auth-service && npm run dev",
+    "gateway:dev": "cd services/gateway-service && npm run dev",
+    "user:dev": "cd services/user-service && npm run dev",
+
+    "build:all": "cd services/auth-service && npm run build && cd ../gateway-service && npm run build && cd ../user-service && npm run build",
+
+    "health": "curl -s http://localhost:4000/health | jq .",
+    "health:all": "echo 'Gateway:' && curl -s http://localhost:4000/health && echo '\\nAuth:' && curl -s http://localhost:4001/health && echo '\\nUser:' && curl -s http://localhost:4002/health"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
