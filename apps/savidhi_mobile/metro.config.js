@@ -16,6 +16,8 @@ const config = {
     // Use local node_modules as primary source
     nodeModulesPaths: [
       path.resolve(savidhiMobileRoot, 'node_modules'),
+      // react-native nests @react-native/virtualized-lists here due to circular peer dep
+      path.resolve(savidhiMobileRoot, 'node_modules/react-native/node_modules'),
     ],
 
     // Force local-only lookup
