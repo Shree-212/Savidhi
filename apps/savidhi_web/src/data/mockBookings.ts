@@ -1,0 +1,183 @@
+import {
+  PujaBooking,
+  AppointmentBooking,
+  PujaStatusDetail,
+  AppointmentStatusDetail,
+  Chadhava,
+} from './models';
+
+export const MOCK_PUJA_BOOKINGS: PujaBooking[] = [
+  {
+    id: 'pb-1',
+    pujaName: 'Bhoota Shanti Puja -Kashi',
+    templeName: 'Kashi Viswanath Temple',
+    bookedOn: '20 Jan 2025, 2:30 PM',
+    pujaOn: '25 Jan 2025, 12:30 PM',
+    status: 'PRASAD_SHIPPED',
+    bookingId: 'XYSYTYTY122QX',
+  },
+  {
+    id: 'pb-2',
+    pujaName: 'Devi Puja - Chandi Pith',
+    templeName: 'Chandi Pith Temple',
+    bookedOn: '20 Jan 2025, 2:30 PM',
+    pujaOn: '25 Jan 2025, 12:30 PM',
+    status: 'YET_TO_START',
+    isWeekly: true,
+    bookingId: 'XYSYTYTY123QX',
+  },
+  {
+    id: 'pb-3',
+    pujaName: 'Bhoota Shanti Puja -Kashi',
+    templeName: 'Kashi Viswanath Temple',
+    bookedOn: '20 Jan 2025, 2:30 PM',
+    pujaOn: '25 Jan 2025, 12:30 PM',
+    status: 'CANCELLED',
+    isWeekly: true,
+    bookingId: 'XYSYTYTY124QX',
+  },
+  {
+    id: 'pb-4',
+    pujaName: 'Bhoota Shanti Puja -Kashi',
+    templeName: 'Kashi Viswanath Temple',
+    bookedOn: '20 Jan 2025, 2:30 PM',
+    pujaOn: '25 Jan 2025, 12:30 PM',
+    status: 'ONGOING',
+    bookingId: 'XYSYTYTY125QX',
+  },
+  {
+    id: 'pb-5',
+    pujaName: 'Bhoota Shanti Puja -Kashi',
+    templeName: 'Kashi Viswanath Temple',
+    bookedOn: '20 Jan 2025, 2:30 PM',
+    pujaOn: '25 Jan 2025, 12:30 PM',
+    status: 'VIDEO_PROCESSING',
+    bookingId: 'XYSYTYTY126QX',
+  },
+];
+
+export const MOCK_APPOINTMENT_BOOKINGS: AppointmentBooking[] = [
+  {
+    id: 'ab-1',
+    astrologerName: 'Ram Sada Siv',
+    astrologerImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
+    date: '23 Jan 2025, Wed',
+    timeSlot: '3:00 PM - 3:30 PM',
+    status: 'MEET_IN_PROGRESS',
+    bookingId: 'XYSYTYTY122QX',
+  },
+  {
+    id: 'ab-2',
+    astrologerName: 'Gopal Dash',
+    astrologerImage: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200',
+    date: '23 Jan 2025, Wed',
+    timeSlot: '3:00 PM - 3:30 PM',
+    status: 'YET_TO_START',
+    bookingId: 'XYSYTYTY127QX',
+  },
+  {
+    id: 'ab-3',
+    astrologerName: 'Ram Sada Siv',
+    astrologerImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
+    date: '23 Jan 2025, Wed',
+    timeSlot: '3:00 PM - 3:30 PM',
+    status: 'COMPLETE',
+    bookingId: 'XYSYTYTY128QX',
+  },
+  {
+    id: 'ab-4',
+    astrologerName: 'Ram Sada Siv',
+    astrologerImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
+    date: '23 Jan 2025, Wed',
+    timeSlot: '3:00 PM - 3:30 PM',
+    status: 'CANCELLED',
+    bookingId: 'XYSYTYTY129QX',
+  },
+];
+
+export const MOCK_PUJA_STATUS: PujaStatusDetail = {
+  bookingId: 'XYSYTYTY122QX',
+  pujaName: 'Bhoota Shanti Puja -Kashi',
+  templeName: 'Kashi Viswanath Temple',
+  pujaId: 'puja-4',
+  steps: [
+    { label: 'Puja Booked', subtitle: '23 Jan 2025, 3:30 PM', completed: true },
+    {
+      label: 'Puja Instruction',
+      subtitle: '1008 Time Abhisekham\nNama Sankirtan',
+      details: ["DO'S:\nOffer Flower To Deity", "DON'TS:\nDo Not Consume Alcohol & Non Veg"],
+      completed: true,
+    },
+    { label: 'Puja Started', subtitle: '25 Jan 2025, 3:30 PM', completed: true },
+    {
+      label: 'Puja Short Video',
+      subtitle: 'Full Sankalp Video Will Be Shared With In 24 Hours',
+      completed: true,
+      videoThumbnail: 'https://images.unsplash.com/photo-1604608672516-f1b9b1d71e86?w=400',
+    },
+    {
+      label: 'Shankalp Video',
+      completed: true,
+      videoThumbnail: 'https://images.unsplash.com/photo-1604608672516-f1b9b1d71e86?w=400',
+    },
+    { label: 'Prasad Shipped', subtitle: 'Expected Delivery By 27 Jan', completed: true },
+  ],
+};
+
+export const MOCK_APPOINTMENT_STATUS: AppointmentStatusDetail = {
+  bookingId: 'XYSYTYTY122QX',
+  astrologerName: 'Ram Sada Siv',
+  astrologerImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
+  pujaId: 'XYSYTYTY122QX',
+  steps: [
+    { label: 'Appointment Booked', subtitle: '23 Jan 2025, 3:30 PM', completed: true },
+    { label: 'Appointment Started', completed: true, actionLabel: 'Join Meet' },
+  ],
+};
+
+export const MOCK_CHADHAVAS: Chadhava[] = [
+  {
+    id: 'chadhava-1',
+    name: 'Kali Mangala Arti Dana',
+    templeName: 'Chandi Parth Temple',
+    templeLocation: 'Haridwar, UP',
+    imageUrl: 'https://images.unsplash.com/photo-1606298246186-38906a18a9de?w=600',
+    date: '26 Jan, 7:00 Am',
+    time: '7:00 AM',
+    countdown: '00d 12hr 30m 14s',
+    benefits: ['Bhuta Sudhi For Peace', 'Good Health', 'Solve Family Issues'],
+    ritualsIncluded: ['Tow Sahashra Nam', '108 Abhisekh By Milk', 'Vedic Yagna By 2 Priests'],
+    howToOffer: ['Select Type Of Puja', 'Fill Your Name & Gotra', 'Make The Payment & Submit Sankalp'],
+    videoThumbnail: 'https://images.unsplash.com/photo-1606298246186-38906a18a9de?w=400',
+    parcelContents: ['1 Deity Phot', 'Sankaly Thread', '1 Packet Of Sindoor, Bhel Prasad'],
+    offerings: [
+      { id: 'off-1', name: 'Ladddu', description: 'Offer For Good Health & Career.', price: 61, imageUrl: '' },
+      { id: 'off-2', name: '1008 Nam Jap', description: 'Offer For Good Health & Career.', price: 2001, imageUrl: '' },
+      { id: 'off-3', name: 'Hibuscus', description: 'Offer For Good Health & Career.', price: 101, imageUrl: '' },
+    ],
+    templeId: 'temple-1',
+    isWeekly: true,
+    startingPrice: 61,
+  },
+  {
+    id: 'chadhava-2',
+    name: 'Bhairav Dana Seva',
+    templeName: 'Ram Adevi Temple',
+    templeLocation: 'Devi Pitha, UP',
+    imageUrl: 'https://images.unsplash.com/photo-1604608672516-f1b9b1d71e86?w=600',
+    date: '27 Jan, 8:00 Am',
+    time: '8:00 AM',
+    countdown: '01d 06hr 15m 00s',
+    benefits: ['Remove Negative Energy', 'Protection', 'Peace Of Mind'],
+    ritualsIncluded: ['Bhairav Abhishek', 'Dana Offering', 'Special Aarti'],
+    howToOffer: ['Select Offerings', 'Fill Details', 'Complete Payment'],
+    videoThumbnail: 'https://images.unsplash.com/photo-1604608672516-f1b9b1d71e86?w=400',
+    parcelContents: ['Sacred Ash', 'Thread', 'Prasad'],
+    offerings: [
+      { id: 'off-4', name: 'Flowers', description: 'Fresh flowers for Bhairav Puja', price: 51, imageUrl: '' },
+      { id: 'off-5', name: 'Coconut', description: 'Whole coconut offering', price: 101, imageUrl: '' },
+    ],
+    templeId: 'temple-1',
+    startingPrice: 51,
+  },
+];
