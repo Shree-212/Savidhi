@@ -2,7 +2,6 @@ import type { Config } from "tailwindcss";
 import tailwindAnimate from "tailwindcss-animate";
 
 const config: Config = {
-  darkMode: ["class"],
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -10,6 +9,10 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -44,6 +47,30 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
+        // Status colors matching wireframes
+        status: {
+          "not-started": "#E53935",
+          inprogress: "#E8813A",
+          completed: "#4CAF50",
+          shipped: "#2196F3",
+          cancelled: "#E53935",
+          settled: "#4CAF50",
+          unsettled: "#E53935",
+          pending: "#FFB300",
+        },
+        // Accent colors for orange theme
+        orange: {
+          50: "#FFF8F0",
+          100: "#FEEDD8",
+          200: "#FDD8AC",
+          300: "#F4A261",
+          400: "#E8813A",
+          500: "#E8813A",
+          600: "#D06B25",
+          700: "#B5581A",
+          800: "#8C4314",
+          900: "#6B330F",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
