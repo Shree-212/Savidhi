@@ -33,7 +33,7 @@ export function Header() {
         <div className="flex items-center justify-between h-[72px]">
           {/* Logo */}
           <Link href="/" className="flex items-center shrink-0">
-            <Image src={svlogo} alt="सविधि" width={64} height={64} className="h-14 w-auto" priority />
+            <Image src={svlogo} alt="सविधि" width={96} height={96} className="h-20 w-auto" priority />
           </Link>
 
           {/* Desktop Nav */}

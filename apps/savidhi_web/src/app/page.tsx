@@ -108,36 +108,37 @@ export default function HomePage() {
       {/* Desktop: text overlaid on hero image. Mobile: stacked vertically */}
 
       {/* ── Mobile Hero (< md) ── */}
-      <section className="md:hidden bg-white overflow-hidden">
-        <div className="px-5 pt-8 pb-5">
-          <h1 className="font-serif text-2xl font-semibold text-text-primary tracking-[0.2em] uppercase leading-tight">
+      <section className="md:hidden bg-[#FBF5EB] overflow-hidden">
+        {/* Text block — stacked above illustration */}
+        <div className="px-5 pt-8 pb-5 text-center">
+          <h1 className="[font-family:var(--font-cabin)] text-[1.625rem] font-bold text-[#502C06] tracking-[0.12em] uppercase leading-snug">
             Puja & Consultation
           </h1>
-          <p className="font-serif text-xl font-semibold text-primary-500 uppercase tracking-[0.2em] mt-1 leading-tight">
+          <p className="[font-family:var(--font-cabin)] text-[1.625rem] font-bold text-primary-500 uppercase tracking-[0.12em] mt-5 leading-snug">
             Made Easy
           </p>
-          <p className="text-sm text-text-muted mt-2 tracking-wide">
+          <p className="[font-family:var(--font-cabin)] text-sm font-semibold text-[#6E6E6E] mt-2 tracking-wide">
             Trusted By 50000+ Devotee
           </p>
 
           <div className="flex flex-col gap-3 mt-5">
             <Link
               href="/puja"
-              className="bg-primary-500 hover:bg-primary-600 text-white font-semibold py-3 rounded-full text-sm transition text-center"
+              className="bg-primary-500 hover:bg-primary-600 text-[#FFF7F0] [font-family:var(--font-cabin)] font-semibold py-3 rounded-full text-base transition text-center"
             >
               Book Puja
             </Link>
-            <button className="flex items-center justify-center gap-2 border border-text-primary rounded-full py-3 text-sm font-medium text-text-primary hover:bg-gray-50 transition">
+            <button className="flex items-center justify-center gap-2 border border-[#502C06] rounded-full py-3 text-base [font-family:var(--font-cabin)] font-normal text-[#502C06] hover:bg-[#502C06]/5 transition">
               Download App
               <span className="flex items-center gap-1.5">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.52-1.28 1-1.5l10 10-10 10c-.48-.22-1-.67-1-1.5zm14.54-7.77L5.04 2.03l11.37 6.37 1.13.63zm1.97 1.1l-1.97-1.1-1.97 1.1 1.97 1.1 1.97-1.1zM5.04 21.97l12.5-10.7-1.13-.63-11.37 6.37z"/></svg>
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.52-1.28 1-1.5l10 10-10 10c-.48-.22-1-.67-1-1.5zm14.54-7.77L5.04 2.03l11.37 6.37 1.13.63zm1.97 1.1l-1.97-1.1-1.97 1.1 1.97 1.1 1.97-1.1zM5.04 21.97l12.5-10.7-1.13-.63-11.37 6.37z"/></svg>
               </span>
             </button>
           </div>
         </div>
 
-        {/* Hero illustration below text on mobile */}
+        {/* Temple illustration below */}
         <div className="w-full">
           <Image
             src={heroBg}
@@ -162,10 +163,10 @@ export default function HomePage() {
 
           {/* Text content overlaid on top of the image */}
           <div className="absolute inset-0 flex flex-col items-center justify-start pt-8 lg:pt-12 xl:pt-16 px-4">
-            <h1 className="font-serif text-3xl md:text-4xl lg:text-[3rem] xl:text-[3.5rem] font-medium text-text-primary tracking-[0.3em] uppercase leading-tight text-center">
+            <h1 className="[font-family:var(--font-cabin)] text-3xl md:text-4xl lg:text-[3rem] xl:text-[3.5rem] font-bold text-[#502C06] tracking-[0.12em] uppercase leading-tight text-center">
               Puja & Consultation
             </h1>
-            <p className="font-serif text-2xl md:text-3xl lg:text-[2.5rem] xl:text-[2.75rem] font-medium text-primary-500 uppercase tracking-[0.3em] mt-1 leading-tight text-center">
+            <p className="[font-family:var(--font-cabin)] text-2xl md:text-3xl lg:text-[2.5rem] xl:text-[2.75rem] font-bold text-primary-500 uppercase tracking-[0.12em] mt-10 lg:mt-14 leading-tight text-center">
               Made Easy
             </p>
             <p className="text-sm lg:text-base text-text-muted mt-2 lg:mt-3 text-center tracking-wide">

@@ -113,7 +113,7 @@ export default function PanchangPage() {
         <div>
           <h2 className="font-semibold text-text-primary mb-4">Upcoming Events</h2>
           {MOCK_CALENDAR_EVENTS.map((event) => (
-            <div key={event.id} className="border border-border-DEFAULT rounded-xl p-4 mb-3 bg-white">
+            <div key={event.date + event.title} className="border border-border-DEFAULT rounded-xl p-4 mb-3 bg-white">
               <div className="flex items-start gap-3">
                 <div className="w-12 h-12 bg-primary-50 rounded-xl flex items-center justify-center shrink-0">
                   <Calendar className="w-5 h-5 text-primary-500" />
@@ -121,7 +121,7 @@ export default function PanchangPage() {
                 <div>
                   <p className="font-semibold text-text-primary text-sm">{event.title}</p>
                   <p className="text-xs text-text-secondary mt-0.5">{event.date}</p>
-                  <p className="text-xs text-text-muted mt-1">{event.description}</p>
+                  <p className="text-xs text-text-muted mt-1">{event.tithi}</p>
                 </div>
               </div>
             </div>

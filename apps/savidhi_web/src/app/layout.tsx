@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Inter, Playfair_Display, Cabin } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair", weight: ["400", "500", "600", "700"] });
+const cabin = Cabin({ subsets: ["latin"], variable: "--font-cabin", weight: ["400", "500", "600", "700"] });
 
 export const metadata: Metadata = {
   title: "Savidhi — Book Pujas, Chadhava & Consult Astrologers Online",
@@ -20,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${playfair.variable} font-sans antialiased min-h-screen flex flex-col`}>
+      <body className={`${inter.variable} ${playfair.variable} ${cabin.variable} font-sans antialiased min-h-screen flex flex-col`}>
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />
