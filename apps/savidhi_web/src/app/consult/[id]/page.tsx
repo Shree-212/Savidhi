@@ -16,7 +16,7 @@ export default function AstrologerDetailPage({ params }: { params: Promise<{ id:
     <div className="min-h-screen bg-surface-warm">
       {/* Hero */}
       <div className="relative h-72 sm:h-96 w-full">
-        <Image src={astro.images[0]} alt={astro.name} fill className="object-cover" sizes="100vw" priority />
+        <Image src={astro.images?.[0] || '/images/placeholder.jpg'} alt={astro.name} fill className="object-cover" sizes="100vw" priority />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
         <Link href="/consult" className="absolute top-4 left-4 w-9 h-9 bg-black/40 rounded-full flex items-center justify-center">
           <ArrowLeft className="w-5 h-5 text-white" />

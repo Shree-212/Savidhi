@@ -1,6 +1,17 @@
 'use client';
 
-import { MOCK_DASHBOARD } from '@/data';
+import { useEffect, useState } from 'react';
+import { dashboardService } from '@/lib/services';
+
+interface DashboardStats {
+  total_pujas: number;
+  total_chadhavas: number;
+  total_appointments_booked: number;
+  total_devotees: number;
+  puja_bookings_count: Record<string, number>;
+  chadhava_bookings_count: number;
+  revenue_total: number;
+}
 
 function StatCard({ label, value, prefix }: { label: string; value: number; prefix?: string }) {
   const isRevenue = !!prefix;
@@ -15,34 +26,59 @@ function StatCard({ label, value, prefix }: { label: string; value: number; pref
 }
 
 export default function DashboardPage() {
-  const d = MOCK_DASHBOARD;
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await dashboardService.getStats();
+        if (res.data?.success) setStats(res.data.data);
+      } catch (err) {
+        console.error('Failed to load dashboard stats', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading...</div>;
+  }
+
+  if (!stats) {
+    return <div className="text-center text-destructive text-sm py-8">Failed to load dashboard data</div>;
+  }
+
+  const totalPujaBookings = Object.values(stats.puja_bookings_count).reduce((a, b) => a + b, 0);
 
   return (
     <div>
       {/* Stats row 1 - Counts */}
       <div className="grid grid-cols-3 gap-4 mb-4">
-        <StatCard label="Pujas Booked" value={d.pujasBooked} />
-        <StatCard label="Chadhavas Booked" value={d.chadhavasBooked} />
-        <StatCard label="Appointments Booked" value={d.appointmentsBooked} />
+        <StatCard label="Pujas Booked" value={totalPujaBookings} />
+        <StatCard label="Chadhavas Booked" value={stats.chadhava_bookings_count} />
+        <StatCard label="Appointments Booked" value={stats.total_appointments_booked} />
       </div>
 
-      {/* Stats row 2 - Revenue */}
+      {/* Stats row 2 - Revenue & Counts */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <StatCard label="Puja Revenue" value={d.pujaRevenue} prefix="₹" />
-        <StatCard label="Chadhavas Revenue" value={d.chadhavaRevenue} prefix="₹" />
-        <StatCard label="Appointments Revenue" value={d.appointmentsRevenue} prefix="₹" />
+        <StatCard label="Total Revenue" value={stats.revenue_total} prefix="₹" />
+        <StatCard label="Total Devotees" value={stats.total_devotees} />
+        <StatCard label="Total Pujas" value={stats.total_pujas} />
       </div>
 
-      {/* Top 5 Services */}
+      {/* Puja Bookings by Status */}
       <div className="border border-border rounded-xl p-5">
         <h3 className="text-xs font-bold uppercase tracking-wider text-foreground mb-4">
-          Top 5 Services by Booking Volume
+          Puja Bookings by Status
         </h3>
         <div className="space-y-2">
-          {d.topServices.map((s, i) => (
-            <div key={i} className="flex items-center justify-between text-xs">
-              <span className="text-foreground/80">{s.name}</span>
-              <span className="text-primary font-semibold">{s.count}</span>
+          {Object.entries(stats.puja_bookings_count).map(([status, count]) => (
+            <div key={status} className="flex items-center justify-between text-xs">
+              <span className="text-foreground/80">{status.replace(/_/g, ' ')}</span>
+              <span className="text-primary font-semibold">{count}</span>
             </div>
           ))}
         </div>

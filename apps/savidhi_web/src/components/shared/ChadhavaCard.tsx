@@ -13,7 +13,7 @@ export function ChadhavaCard({ chadhava }: ChadhavaCardProps) {
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image
-            src={chadhava.imageUrl}
+            src={chadhava.imageUrl || '/images/placeholder.jpg'}
             alt={chadhava.name}
             fill
             className="object-cover"

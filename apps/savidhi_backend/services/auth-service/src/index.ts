@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { rateLimit } from 'express-rate-limit';
 import { authRouter } from './routes/auth';
 import { errorHandler } from './middleware/errorHandler';
+import { connectRedis } from './lib/redis';
 
 const app = express();
 const PORT = process.env.PORT ?? 4001;
@@ -36,8 +37,19 @@ app.use('/api/v1/auth', authRouter);
 app.use(errorHandler);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`[auth-service] Running on port ${PORT}`);
-});
+async function start() {
+  try {
+    await connectRedis();
+    console.log('[auth-service] Redis connected');
+  } catch (err) {
+    console.warn('[auth-service] Redis not available, OTP features disabled');
+  }
+
+  app.listen(PORT, () => {
+    console.log(`[auth-service] Running on port ${PORT}`);
+  });
+}
+
+start();
 
 export default app;

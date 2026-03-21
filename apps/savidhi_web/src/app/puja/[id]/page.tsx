@@ -16,7 +16,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
     <div className="min-h-screen bg-surface-warm">
       {/* Hero */}
       <div className="relative h-72 sm:h-96 w-full">
-        <Image src={puja.imageUrl} alt={puja.name} fill className="object-cover" sizes="100vw" priority />
+        <Image src={puja.imageUrl || '/images/placeholder.jpg'} alt={puja.name} fill className="object-cover" sizes="100vw" priority />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
         <div className="absolute top-4 left-4 right-4 flex justify-between">
           <Link href="/puja" className="w-9 h-9 bg-black/40 rounded-full flex items-center justify-center hover:bg-black/60 transition">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -19,6 +19,8 @@ import { PujaCard } from '@/components/shared/PujaCard';
 import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
 import { TempleCard } from '@/components/shared/TempleCard';
 import { MOCK_PUJAS, MOCK_CHADHAVAS, MOCK_TEMPLES } from '@/data';
+import { templeService, pujaService, chadhavaService } from '@/lib/services';
+import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
 
 const HOW_TO_STEPS = [
@@ -101,6 +103,41 @@ export default function HomePage() {
   const pujaScroll = useHorizontalScroll();
   const chadhavaScroll = useHorizontalScroll();
   const templeScroll = useHorizontalScroll();
+
+  // Fetch real data from API, fallback to mock
+  const [pujas, setPujas] = useState<any[]>([]);
+  const [chadhavas, setChadhavas] = useState<any[]>([]);
+  const [temples, setTemples] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [pujasRes, chadhavasRes, templesRes] = await Promise.allSettled([
+          pujaService.list({ limit: 10 }),
+          chadhavaService.list({ limit: 10 }),
+          templeService.list({ limit: 10 }),
+        ]);
+
+        if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.success && pujasRes.value.data.data?.length > 0) {
+          setPujas(pujasRes.value.data.data.map(mapPuja));
+        }
+
+        if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.success && chadhavasRes.value.data.data?.length > 0) {
+          setChadhavas(chadhavasRes.value.data.data.map(mapChadhava));
+        }
+
+        if (templesRes.status === 'fulfilled' && templesRes.value.data?.success && templesRes.value.data.data?.length > 0) {
+          setTemples(templesRes.value.data.data.map(mapTemple));
+        }
+      } catch {
+        // Fall back to mock data if API unreachable
+        setPujas(MOCK_PUJAS);
+        setChadhavas(MOCK_CHADHAVAS);
+        setTemples(MOCK_TEMPLES);
+      }
+    }
+    loadData();
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -205,13 +242,13 @@ export default function HomePage() {
           ref={pujaScroll.ref}
           className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         >
-          {MOCK_PUJAS.map((puja) => (
+          {pujas.map((puja) => (
             <div key={puja.id} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <PujaCard puja={puja} />
             </div>
           ))}
           {/* Duplicate for more scrollable content */}
-          {MOCK_PUJAS.map((puja) => (
+          {pujas.map((puja) => (
             <div key={`dup-${puja.id}`} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <PujaCard puja={puja} />
             </div>
@@ -279,12 +316,12 @@ export default function HomePage() {
           ref={chadhavaScroll.ref}
           className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         >
-          {MOCK_CHADHAVAS.map((c) => (
+          {chadhavas.map((c) => (
             <div key={c.id} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <ChadhavaCard chadhava={c} />
             </div>
           ))}
-          {MOCK_CHADHAVAS.map((c) => (
+          {chadhavas.map((c) => (
             <div key={`dup-${c.id}`} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <ChadhavaCard chadhava={c} />
             </div>
@@ -332,12 +369,12 @@ export default function HomePage() {
           ref={templeScroll.ref}
           className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         >
-          {MOCK_TEMPLES.map((temple) => (
+          {temples.map((temple) => (
             <div key={temple.id} className="min-w-[260px] sm:min-w-[300px] snap-start">
               <TempleCard temple={temple} />
             </div>
           ))}
-          {MOCK_TEMPLES.map((temple) => (
+          {temples.map((temple) => (
             <div key={`dup-${temple.id}`} className="min-w-[260px] sm:min-w-[300px] snap-start">
               <TempleCard temple={temple} />
             </div>

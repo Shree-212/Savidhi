@@ -15,7 +15,7 @@ export default function TempleDetailPage({ params }: { params: Promise<{ id: str
     <div className="min-h-screen bg-surface-warm">
       {/* Hero */}
       <div className="relative h-72 sm:h-96 w-full">
-        <Image src={temple.images[0]} alt={temple.name} fill className="object-cover" sizes="100vw" priority />
+        <Image src={temple.images?.[0] || '/images/placeholder.jpg'} alt={temple.name} fill className="object-cover" sizes="100vw" priority />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
         <Link href="/temples" className="absolute top-4 left-4 w-9 h-9 bg-black/40 rounded-full flex items-center justify-center">
           <ArrowLeft className="w-5 h-5 text-white" />

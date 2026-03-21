@@ -1,15 +1,35 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SearchBar } from '@/components/shared/SearchBar';
 import { PujaCard } from '@/components/shared/PujaCard';
 import { MOCK_PUJAS } from '@/data';
+import { pujaService } from '@/lib/services';
+import { mapPuja } from '@/lib/mappers';
 
 export default function PujaListPage() {
   const [search, setSearch] = useState('');
-  const filtered = MOCK_PUJAS.filter((p) =>
+  const [pujas, setPujas] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await pujaService.list({ limit: 50 });
+        if (res.data?.success && res.data.data?.length > 0) {
+          setPujas(res.data.data.map(mapPuja));
+        } else {
+          setPujas(MOCK_PUJAS);
+        }
+      } catch {
+        setPujas(MOCK_PUJAS);
+      }
+    }
+    load();
+  }, []);
+
+  const filtered = pujas.filter((p: any) =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.templeName.toLowerCase().includes(search.toLowerCase())
+    (p.templeName || p.temple?.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -20,7 +40,7 @@ export default function PujaListPage() {
         <SearchBar value={search} onChange={setSearch} placeholder="Search pujas or temples..." />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {filtered.map((puja) => (
+        {filtered.map((puja: any) => (
           <PujaCard key={puja.id} puja={puja} />
         ))}
         {filtered.length === 0 && (
