@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_PUJA_BOOKINGS, PujaBooking } from '../../data';
+import { pujaBookingService } from '../../services';
 import { BookingCard } from '../../components/shared/BookingCard';
+import type { PujaBooking } from '../../data';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -23,7 +24,43 @@ const filterMap: Record<string, (b: PujaBooking) => boolean> = {
 
 export function PujaBookingsScreen({ navigation }: { navigation: any }) {
   const [filter, setFilter] = useState('all');
-  const bookings = MOCK_PUJA_BOOKINGS.filter(filterMap[filter] || filterMap.all);
+  const [allBookings, setAllBookings] = useState<PujaBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await pujaBookingService.list();
+        const items = res.data?.data ?? res.data ?? [];
+        setAllBookings(
+          (Array.isArray(items) ? items : []).map((d: any) => ({
+            id: d.id,
+            pujaName: d.puja_name ?? d.puja?.name ?? '',
+            templeName: d.temple_name ?? d.puja?.temple_name ?? '',
+            bookedOn: d.created_at ?? '',
+            pujaOn: d.scheduled_date ?? d.schedule_day ?? '',
+            status: d.status ?? 'YET_TO_START',
+            isWeekly: d.event_repeats === 'weekly',
+            bookingId: d.booking_id ?? d.id,
+          }))
+        );
+      } catch (err) {
+        console.error('PujaBookingsScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const bookings = allBookings.filter(filterMap[filter] || filterMap.all);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

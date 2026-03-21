@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_PUJA_STATUS, PujaStatusStep } from '../../data';
+import { pujaBookingService } from '../../services';
+import type { PujaStatusStep, PujaStatusDetail } from '../../data';
 
 function TimelineStep({ step, isLast }: { step: PujaStatusStep; isLast: boolean }) {
   return (
@@ -31,7 +32,46 @@ function TimelineStep({ step, isLast }: { step: PujaStatusStep; isLast: boolean 
 }
 
 export function PujaStatusScreen({ navigation, route }: { navigation: any; route: any }) {
-  const status = MOCK_PUJA_STATUS;
+  const [status, setStatus] = useState<PujaStatusDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const bookingId = route.params?.bookingId;
+    if (!bookingId) return;
+    (async () => {
+      try {
+        const res = await pujaBookingService.getById(bookingId);
+        const d = res.data?.data ?? res.data;
+        // Map API response to PujaStatusDetail shape
+        const stages = d.stages ?? d.steps ?? [];
+        setStatus({
+          bookingId: d.booking_id ?? d.id ?? bookingId,
+          pujaName: d.puja_name ?? d.puja?.name ?? '',
+          templeName: d.temple_name ?? d.puja?.temple_name ?? '',
+          pujaId: d.puja_id ?? d.puja?.id ?? '',
+          steps: stages.map((s: any) => ({
+            label: s.label ?? s.stage ?? '',
+            subtitle: s.subtitle ?? s.description ?? '',
+            details: s.details ?? [],
+            completed: s.completed ?? s.status === 'DONE',
+            videoThumbnail: s.video_thumbnail ?? s.video_url ?? undefined,
+          })),
+        });
+      } catch (err) {
+        console.error('PujaStatusScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.bookingId]);
+
+  if (loading || !status) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

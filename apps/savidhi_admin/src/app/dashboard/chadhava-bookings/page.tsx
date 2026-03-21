@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { MOCK_CHADHAVA_EVENTS, MOCK_CHADHAVA_BOOKINGS, MOCK_CHADHAVA_TIMELINE } from '@/data';
+import { useState, useEffect, useCallback } from 'react';
+import { chadhavaEventService, chadhavaBookingService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { TimelineView } from '@/components/shared/TimelineView';
 import { Modal } from '@/components/shared/Modal';
 import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
-import type { ChadhavaEvent, ChadhavaBooking } from '@/types';
+import type { ChadhavaEvent, ChadhavaBooking, TimelineEvent } from '@/types';
 
 export default function ChadhavaBookingsPage() {
   const [tab, setTab] = useState('List');
@@ -18,6 +18,74 @@ export default function ChadhavaBookingsPage() {
   const [selectedEvent, setSelectedEvent] = useState<ChadhavaEvent | null>(null);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
+
+  // Data state
+  const [chadhavaEvents, setChadhavaEvents] = useState<ChadhavaEvent[]>([]);
+  const [chadhavaBookings, setChadhavaBookings] = useState<ChadhavaBooking[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch chadhava events
+  const fetchEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await chadhavaEventService.list({ search: search || undefined });
+      setChadhavaEvents(res.data?.data ?? res.data ?? []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load chadhava events');
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  // Fetch bookings for expanded event
+  const fetchBookings = useCallback(async (eventId: string) => {
+    try {
+      const res = await chadhavaBookingService.list({ eventId });
+      setChadhavaBookings(res.data?.data ?? res.data ?? []);
+    } catch {
+      setChadhavaBookings([]);
+    }
+  }, []);
+
+  // Fetch timeline
+  const fetchTimeline = useCallback(async () => {
+    try {
+      const res = await chadhavaEventService.list({ view: 'timeline' });
+      setTimelineEvents(res.data?.data ?? res.data ?? []);
+    } catch {
+      setTimelineEvents([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  useEffect(() => {
+    if (tab === 'Timeline') {
+      fetchTimeline();
+    }
+  }, [tab, fetchTimeline]);
+
+  useEffect(() => {
+    if (expandedId) {
+      fetchBookings(expandedId);
+    } else {
+      setChadhavaBookings([]);
+    }
+  }, [expandedId, fetchBookings]);
+
+  const handleViewBooking = async (bookingId: string) => {
+    try {
+      const res = await chadhavaBookingService.getById(bookingId);
+      setSelectedBooking(res.data?.data ?? res.data);
+    } catch {
+      alert('Failed to load booking details');
+    }
+  };
 
   const eventColumns = [
     { key: 'id', label: 'ID' },
@@ -47,13 +115,30 @@ export default function ChadhavaBookingsPage() {
     { key: 'offerings', label: 'Offerings' },
     { key: 'cost', label: 'Cost', render: (r: ChadhavaBooking) => <span className="text-primary">₹{r.cost}</span> },
     { key: 'status', label: 'Status', render: (r: ChadhavaBooking) => <StatusBadge status={r.status} /> },
-    { key: 'action', label: 'Action', render: () => (
+    { key: 'action', label: 'Action', render: (r: ChadhavaBooking) => (
       <div className="flex items-center gap-1">
-        <button onClick={() => setSelectedBooking(MOCK_CHADHAVA_BOOKINGS[0])} className="text-primary text-[10px] hover:underline">View</button>
+        <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
         <DeleteButton />
       </div>
     )},
   ];
+
+  if (loading && chadhavaEvents.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-sm text-muted-foreground">Loading chadhava events...</div>
+      </div>
+    );
+  }
+
+  if (error && chadhavaEvents.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <div className="text-sm text-red-500">{error}</div>
+        <OutlineButton onClick={fetchEvents}>Retry</OutlineButton>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -69,15 +154,22 @@ export default function ChadhavaBookingsPage() {
 
       {tab === 'List' ? (
         <div>
-          <DataTable columns={eventColumns} data={MOCK_CHADHAVA_EVENTS} />
+          <DataTable columns={eventColumns} data={chadhavaEvents} />
           {expandedId && (
             <div className="mt-2 ml-4 border-l-2 border-primary/30 pl-4">
-              <DataTable columns={bookingColumns} data={MOCK_CHADHAVA_BOOKINGS} />
+              <DataTable columns={bookingColumns} data={chadhavaBookings} />
             </div>
           )}
         </div>
       ) : (
-        <TimelineView events={MOCK_CHADHAVA_TIMELINE} onEventClick={() => setSelectedEvent(MOCK_CHADHAVA_EVENTS[0])} />
+        <TimelineView
+          events={timelineEvents}
+          onEventClick={(evt) => {
+            const found = chadhavaEvents.find(e => e.id === evt?.id);
+            if (found) setSelectedEvent(found);
+            else if (chadhavaEvents.length > 0) setSelectedEvent(chadhavaEvents[0]);
+          }}
+        />
       )}
 
       {/* Individual Chadhava Booking Detail */}
@@ -176,7 +268,7 @@ export default function ChadhavaBookingsPage() {
               ))}
             </div>
 
-            <p className="text-[11px] text-muted-foreground">Pujari: Gopal Dash ✏️</p>
+            <p className="text-[11px] text-muted-foreground">Pujari: {selectedEvent.pujari} ✏️</p>
 
             <div className="flex gap-3">
               <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Cancel Booking</OutlineButton>

@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { MOCK_PUJA_EVENTS, MOCK_PUJA_BOOKINGS, MOCK_PUJA_TIMELINE } from '@/data';
+import { useState, useEffect, useCallback } from 'react';
+import { pujaEventService, pujaBookingService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { TimelineView } from '@/components/shared/TimelineView';
 import { Modal } from '@/components/shared/Modal';
 import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
-import type { PujaEvent, PujaBooking } from '@/types';
+import type { PujaEvent, PujaBooking, TimelineEvent } from '@/types';
 
 export default function PujaBookingsPage() {
   const [tab, setTab] = useState('List');
@@ -20,6 +20,77 @@ export default function PujaBookingsPage() {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
   const [showShipModal, setShowShipModal] = useState(false);
+
+  // Data state
+  const [pujaEvents, setPujaEvents] = useState<PujaEvent[]>([]);
+  const [pujaBookings, setPujaBookings] = useState<PujaBooking[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch puja events
+  const fetchEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await pujaEventService.list({ search: search || undefined });
+      setPujaEvents(res.data?.data ?? res.data ?? []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load puja events');
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  // Fetch bookings for expanded event
+  const fetchBookings = useCallback(async (eventId: string) => {
+    try {
+      const res = await pujaBookingService.list({ eventId });
+      setPujaBookings(res.data?.data ?? res.data ?? []);
+    } catch {
+      setPujaBookings([]);
+    }
+  }, []);
+
+  // Fetch timeline
+  const fetchTimeline = useCallback(async () => {
+    try {
+      const res = await pujaEventService.list({ view: 'timeline' });
+      const data = res.data?.data ?? res.data ?? [];
+      // Map events to timeline format if needed
+      setTimelineEvents(data);
+    } catch {
+      setTimelineEvents([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  useEffect(() => {
+    if (tab === 'Timeline') {
+      fetchTimeline();
+    }
+  }, [tab, fetchTimeline]);
+
+  useEffect(() => {
+    if (expandedId) {
+      fetchBookings(expandedId);
+    } else {
+      setPujaBookings([]);
+    }
+  }, [expandedId, fetchBookings]);
+
+  // Stage advance handler
+  const handleAdvanceStage = async (eventId: string, stage: string, data?: Record<string, any>) => {
+    try {
+      await pujaEventService.advanceStage(eventId, { stage, ...data });
+      fetchEvents();
+    } catch (err: any) {
+      alert(err.message || 'Failed to advance stage');
+    }
+  };
 
   const eventColumns = [
     { key: 'id', label: 'ID' },
@@ -52,19 +123,45 @@ export default function PujaBookingsPage() {
     { key: 'bookingTime', label: 'Booking Time' },
     { key: 'cost', label: 'Cost', render: (r: PujaBooking) => <span className="text-primary">₹{r.cost}</span> },
     { key: 'status', label: 'Status', render: (r: PujaBooking) => <StatusBadge status={r.status} /> },
-    { key: 'action', label: 'Action', render: (_r: PujaBooking, i: number) => (
+    { key: 'action', label: 'Action', render: (r: PujaBooking) => (
       <div className="flex items-center gap-1">
-        <button onClick={() => setSelectedBooking(MOCK_PUJA_BOOKINGS[i % MOCK_PUJA_BOOKINGS.length])} className="text-primary text-[10px] hover:underline">View</button>
+        <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
         <DeleteButton />
       </div>
     )},
   ];
+
+  const handleViewBooking = async (bookingId: string) => {
+    try {
+      const res = await pujaBookingService.getById(bookingId);
+      setSelectedBooking(res.data?.data ?? res.data);
+    } catch {
+      alert('Failed to load booking details');
+    }
+  };
 
   // Event detail modal (timeline view click)
   const eventDetailStatus = selectedEvent?.status || 'NOT_STARTED';
   const isNotStarted = eventDetailStatus === 'NOT_STARTED';
   const isInProgress = eventDetailStatus === 'INPROGRESS';
   const isCompleted = eventDetailStatus === 'COMPLETED';
+
+  if (loading && pujaEvents.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-sm text-muted-foreground">Loading puja events...</div>
+      </div>
+    );
+  }
+
+  if (error && pujaEvents.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <div className="text-sm text-red-500">{error}</div>
+        <OutlineButton onClick={fetchEvents}>Retry</OutlineButton>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -80,12 +177,12 @@ export default function PujaBookingsPage() {
 
       {tab === 'List' ? (
         <div>
-          <DataTable columns={eventColumns} data={MOCK_PUJA_EVENTS} />
+          <DataTable columns={eventColumns} data={pujaEvents} />
 
           {/* Expanded booking rows */}
           {expandedId && (
             <div className="mt-2 ml-4 border-l-2 border-primary/30 pl-4">
-              <DataTable columns={bookingColumns} data={MOCK_PUJA_BOOKINGS} />
+              <DataTable columns={bookingColumns} data={pujaBookings} />
               <div className="flex justify-end mt-2">
                 <span className="text-[10px] text-muted-foreground">&lt; Page 1/5 &gt;</span>
               </div>
@@ -94,8 +191,13 @@ export default function PujaBookingsPage() {
         </div>
       ) : (
         <TimelineView
-          events={MOCK_PUJA_TIMELINE}
-          onEventClick={() => setSelectedEvent(MOCK_PUJA_EVENTS[0])}
+          events={timelineEvents}
+          onEventClick={(evt) => {
+            // Find the corresponding puja event by ID
+            const found = pujaEvents.find(e => e.id === evt?.id);
+            if (found) setSelectedEvent(found);
+            else if (pujaEvents.length > 0) setSelectedEvent(pujaEvents[0]);
+          }}
         />
       )}
 
@@ -182,7 +284,7 @@ export default function PujaBookingsPage() {
             <div className="border border-border rounded-lg p-3">
               <div className="flex justify-between mb-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider">Devotee Details</span>
-                <span className="text-[10px] text-muted-foreground">102</span>
+                <span className="text-[10px] text-muted-foreground">{selectedEvent.devoteeCount}</span>
               </div>
               {[1,2,3,4].map((_, i) => (
                 <div key={i} className="grid grid-cols-2 gap-4 text-[11px] mb-1.5">
@@ -199,7 +301,7 @@ export default function PujaBookingsPage() {
               <p className="text-[10px] text-muted-foreground text-center mt-2">&lt; Page 1/5 &gt;</p>
             </div>
 
-            <p className="text-[11px] text-muted-foreground">Pujari: Gopal Dash <span className="text-primary cursor-pointer">✏️</span></p>
+            <p className="text-[11px] text-muted-foreground">Pujari: {selectedEvent.pujari} <span className="text-primary cursor-pointer">✏️</span></p>
 
             {(isInProgress || isCompleted) && (
               <p className="text-[11px] text-muted-foreground">

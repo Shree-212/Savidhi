@@ -32,11 +32,15 @@
     "auth:dev": "cd services/auth-service && npm run dev",
     "gateway:dev": "cd services/gateway-service && npm run dev",
     "user:dev": "cd services/user-service && npm run dev",
+    "catalog:dev": "cd services/catalog-service && npm run dev",
+    "booking:dev": "cd services/booking-service && npm run dev",
+    "media:dev": "cd services/media-service && npm run dev",
+    "notification:dev": "cd services/notification-service && npm run dev",
 
-    "build:all": "cd services/auth-service && npm run build && cd ../gateway-service && npm run build && cd ../user-service && npm run build",
+    "build:all": "cd services/auth-service && npm run build && cd ../gateway-service && npm run build && cd ../user-service && npm run build && cd ../catalog-service && npm run build && cd ../booking-service && npm run build && cd ../media-service && npm run build && cd ../notification-service && npm run build",
 
     "health": "curl -s http://localhost:4000/health | jq .",
-    "health:all": "echo 'Gateway:' && curl -s http://localhost:4000/health && echo '\\nAuth:' && curl -s http://localhost:4001/health && echo '\\nUser:' && curl -s http://localhost:4002/health"
+    "health:all": "echo 'Gateway:' && curl -s http://localhost:4000/health && echo '\\nAuth:' && curl -s http://localhost:4001/health && echo '\\nUser:' && curl -s http://localhost:4002/health && echo '\\nCatalog:' && curl -s http://localhost:4003/health && echo '\\nBooking:' && curl -s http://localhost:4004/health && echo '\\nMedia:' && curl -s http://localhost:4005/health && echo '\\nNotification:' && curl -s http://localhost:4006/health"
   },
   "engines": {
     "node": ">=18"

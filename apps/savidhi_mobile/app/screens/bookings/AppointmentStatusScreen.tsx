@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_APPOINTMENT_STATUS, AppointmentStatusStep } from '../../data';
+import { appointmentService } from '../../services';
+import type { AppointmentStatusStep, AppointmentStatusDetail } from '../../data';
 
 function TimelineStep({ step, isLast }: { step: AppointmentStatusStep; isLast: boolean }) {
   return (
@@ -26,7 +27,44 @@ function TimelineStep({ step, isLast }: { step: AppointmentStatusStep; isLast: b
 }
 
 export function AppointmentStatusScreen({ navigation, route }: { navigation: any; route: any }) {
-  const status = MOCK_APPOINTMENT_STATUS;
+  const [status, setStatus] = useState<AppointmentStatusDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const bookingId = route.params?.bookingId;
+    if (!bookingId) return;
+    (async () => {
+      try {
+        const res = await appointmentService.getById(bookingId);
+        const d = res.data?.data ?? res.data;
+        const stages = d.stages ?? d.steps ?? [];
+        setStatus({
+          bookingId: d.booking_id ?? d.id ?? bookingId,
+          astrologerName: d.astrologer_name ?? d.astrologer?.name ?? '',
+          astrologerImage: d.astrologer_image ?? d.astrologer?.profile_pic ?? '',
+          pujaId: d.puja_id ?? '',
+          steps: stages.map((s: any) => ({
+            label: s.label ?? s.stage ?? '',
+            subtitle: s.subtitle ?? s.description ?? '',
+            completed: s.completed ?? s.status === 'DONE',
+            actionLabel: s.action_label ?? undefined,
+          })),
+        });
+      } catch (err) {
+        console.error('AppointmentStatusScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.bookingId]);
+
+  if (loading || !status) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

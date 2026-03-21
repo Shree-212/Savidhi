@@ -1,8 +1,10 @@
-import React from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_USER } from '../../data';
+import { userService, authService } from '../../services';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { UserProfile } from '../../data';
 
 interface MenuItemProps {
   icon: string;
@@ -29,7 +31,71 @@ function MenuItem({ icon, label, onPress, badge, iconColor = Colors.textPrimary 
 }
 
 export function ProfileScreen({ navigation }: { navigation: any }) {
-  const user = MOCK_USER;
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [needsLogin, setNeedsLogin] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('savidhi_token');
+        if (!token) { setNeedsLogin(true); setLoading(false); return; }
+        const res = await userService.getProfile();
+        const d = res.data?.data ?? res.data;
+        setUser({
+          id: d.id,
+          name: d.name ?? '',
+          phone: d.phone ?? '',
+          imageUrl: d.image_url ?? d.profile_pic ?? '',
+          level: d.level ?? 1,
+          gems: d.gems ?? 0,
+          pujaBooked: d.puja_booked ?? d.pujas_booked ?? 0,
+          appointments: d.appointments ?? 0,
+          pujaForOthers: d.puja_for_others ?? 0,
+          devoteeSince: d.devotee_since ?? d.created_at ?? '',
+          achievements: [],
+        });
+      } catch (err: any) {
+        if (err?.response?.status === 401) { setNeedsLogin(true); }
+        else { console.error('ProfileScreen fetch error:', err); }
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await authService.logout();
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    } catch (err) {
+      console.error('ProfileScreen logout error:', err);
+      Alert.alert('Error', 'Failed to log out. Please try again.');
+    }
+  };
+
+  if (needsLogin) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xl }]}>
+        <Icon name="account-lock" size={64} color={Colors.textMuted} />
+        <Text style={[Typography.subtitle, { color: Colors.textPrimary, marginTop: Spacing.lg, textAlign: 'center' }]}>Login to view your profile</Text>
+        <TouchableOpacity
+          style={{ backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 40, marginTop: Spacing.xl }}
+          onPress={() => navigation?.navigate('Login')}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (loading || !user) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -69,8 +135,8 @@ export function ProfileScreen({ navigation }: { navigation: any }) {
       {/* Menu Sections */}
       <Text style={styles.sectionTitle}>Bookings</Text>
       <View style={styles.menuSection}>
-        <MenuItem icon="fire" label="Puja Bookings" badge="5" onPress={() => navigation.navigate('PujaBookings')} />
-        <MenuItem icon="account-clock-outline" label="Appointment Bookings" badge="4" onPress={() => navigation.navigate('AppointmentBookings')} />
+        <MenuItem icon="fire" label="Puja Bookings" badge={String(user.pujaBooked)} onPress={() => navigation.navigate('PujaBookings')} />
+        <MenuItem icon="account-clock-outline" label="Appointment Bookings" badge={String(user.appointments)} onPress={() => navigation.navigate('AppointmentBookings')} />
       </View>
 
       <Text style={styles.sectionTitle}>Account</Text>
@@ -95,7 +161,7 @@ export function ProfileScreen({ navigation }: { navigation: any }) {
       </View>
 
       {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn}>
+      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Icon name="logout" size={20} color={Colors.red} />
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>

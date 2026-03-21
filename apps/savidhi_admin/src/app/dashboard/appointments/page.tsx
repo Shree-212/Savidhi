@@ -1,20 +1,90 @@
 'use client';
 
-import { useState } from 'react';
-import { MOCK_APPOINTMENTS, MOCK_APPOINTMENT_TIMELINE } from '@/data';
+import { useState, useEffect, useCallback } from 'react';
+import { appointmentService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { TimelineView } from '@/components/shared/TimelineView';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
-import type { Appointment } from '@/types';
+import type { Appointment, TimelineEvent } from '@/types';
 
 export default function AppointmentsPage() {
   const [tab, setTab] = useState('List');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [showSetupMeet, setShowSetupMeet] = useState(false);
+
+  // Data state
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch appointments
+  const fetchAppointments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await appointmentService.list({ search: search || undefined });
+      setAppointments(res.data?.data ?? res.data ?? []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  // Fetch timeline
+  const fetchTimeline = useCallback(async () => {
+    try {
+      const res = await appointmentService.list({ view: 'timeline' });
+      setTimelineEvents(res.data?.data ?? res.data ?? []);
+    } catch {
+      setTimelineEvents([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAppointments();
+  }, [fetchAppointments]);
+
+  useEffect(() => {
+    if (tab === 'Timeline') {
+      fetchTimeline();
+    }
+  }, [tab, fetchTimeline]);
+
+  const handleViewAppointment = async (appointment: Appointment) => {
+    try {
+      const res = await appointmentService.getById(appointment.id);
+      setSelected(res.data?.data ?? res.data);
+    } catch {
+      // Fallback to the row data if detail fetch fails
+      setSelected(appointment);
+    }
+  };
+
+  const handleGenerateLink = async (appointmentId: string, meetLink: string) => {
+    try {
+      await appointmentService.generateMeetLink(appointmentId, { meet_link: meetLink });
+      setShowSetupMeet(false);
+      fetchAppointments();
+    } catch (err: any) {
+      alert(err.message || 'Failed to generate meet link');
+    }
+  };
+
+  const handleMarkComplete = async (appointmentId: string) => {
+    try {
+      await appointmentService.complete(appointmentId);
+      setSelected(null);
+      fetchAppointments();
+    } catch (err: any) {
+      alert(err.message || 'Failed to mark as complete');
+    }
+  };
 
   const columns = [
     { key: 'id', label: 'ID' },
@@ -24,11 +94,28 @@ export default function AppointmentsPage() {
     { key: 'status', label: 'Status', render: (r: Appointment) => <StatusBadge status={r.status} /> },
     { key: 'action', label: 'Action', render: (r: Appointment) => (
       <div className="flex items-center gap-1">
-        <ViewButton onClick={() => setSelected(r)} />
+        <ViewButton onClick={() => handleViewAppointment(r)} />
         <DeleteButton />
       </div>
     )},
   ];
+
+  if (loading && appointments.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-sm text-muted-foreground">Loading appointments...</div>
+      </div>
+    );
+  }
+
+  if (error && appointments.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <div className="text-sm text-red-500">{error}</div>
+        <OutlineButton onClick={fetchAppointments}>Retry</OutlineButton>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -43,9 +130,16 @@ export default function AppointmentsPage() {
       />
 
       {tab === 'List' ? (
-        <DataTable columns={columns} data={MOCK_APPOINTMENTS} />
+        <DataTable columns={columns} data={appointments} />
       ) : (
-        <TimelineView events={MOCK_APPOINTMENT_TIMELINE} onEventClick={() => setSelected(MOCK_APPOINTMENTS[0])} />
+        <TimelineView
+          events={timelineEvents}
+          onEventClick={(evt) => {
+            const found = appointments.find(a => a.id === evt?.id);
+            if (found) setSelected(found);
+            else if (appointments.length > 0) setSelected(appointments[0]);
+          }}
+        />
       )}
 
       {/* Booking Detail Modal */}
@@ -89,7 +183,7 @@ export default function AppointmentsPage() {
                 <PrimaryButton className="flex-1" onClick={() => { setShowSetupMeet(true); setSelected(null); }}>Setup Meet</PrimaryButton>
               )}
               {selected.status === 'INPROGRESS' && (
-                <PrimaryButton className="flex-1" onClick={() => setSelected(null)}>Mark Complete</PrimaryButton>
+                <PrimaryButton className="flex-1" onClick={() => handleMarkComplete(selected.id)}>Mark Complete</PrimaryButton>
               )}
             </div>
           </div>
@@ -99,9 +193,20 @@ export default function AppointmentsPage() {
       {/* Setup Meet Modal */}
       <Modal open={showSetupMeet} onClose={() => setShowSetupMeet(false)} title="Setup Meet" onBack={() => setShowSetupMeet(false)}>
         <div className="space-y-4">
-          <input placeholder="Paste Meeting Link" className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+          <input
+            id="meetLinkInput"
+            placeholder="Paste Meeting Link"
+            className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
           <p className="text-[10px] text-muted-foreground">Note: Devotee can only see the link prior 30 min of appointment start time</p>
-          <PrimaryButton className="w-full" onClick={() => setShowSetupMeet(false)}>Submit</PrimaryButton>
+          <PrimaryButton className="w-full" onClick={() => {
+            const input = document.getElementById('meetLinkInput') as HTMLInputElement;
+            if (selected && input?.value) {
+              handleGenerateLink(selected.id, input.value);
+            } else {
+              setShowSetupMeet(false);
+            }
+          }}>Submit</PrimaryButton>
         </div>
       </Modal>
     </div>

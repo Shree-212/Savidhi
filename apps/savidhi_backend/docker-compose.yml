@@ -32,6 +32,25 @@ services:
       timeout: 10s
       retries: 3
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - savidhi-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # ─── Microservices ────────────────────────────────────────────────────────
   auth-service:
     build:
@@ -103,6 +122,127 @@ services:
       timeout: 10s
       retries: 3
 
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+      target: development
+    ports:
+      - "4003:4003"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4003
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-savidhi}
+      DB_USER: ${POSTGRES_USER:-savidhi_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-savidhi_password}
+      DB_PORT: 5432
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+    depends_on:
+      - postgres
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/catalog-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: services/booking-service/Dockerfile
+      target: development
+    ports:
+      - "4004:4004"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4004
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-savidhi}
+      DB_USER: ${POSTGRES_USER:-savidhi_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-savidhi_password}
+      DB_PORT: 5432
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      NOTIFICATION_SERVICE_URL: http://notification-service:4006
+    depends_on:
+      - postgres
+      - catalog-service
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/booking-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  media-service:
+    build:
+      context: .
+      dockerfile: services/media-service/Dockerfile
+      target: development
+    ports:
+      - "4005:4005"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4005
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      S3_BUCKET: ${S3_BUCKET:-savidhi-media}
+      S3_REGION: ${S3_REGION:-ap-south-1}
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    depends_on:
+      - minio
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/media-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+      - media_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+      target: development
+    ports:
+      - "4006:4006"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4006
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/notification-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   gateway-service:
     build:
       context: .
@@ -115,6 +255,9 @@ services:
       PORT: 4000
       AUTH_SERVICE_URL: http://auth-service:4001
       USER_SERVICE_URL: http://user-service:4002
+      CATALOG_SERVICE_URL: http://catalog-service:4003
+      BOOKING_SERVICE_URL: http://booking-service:4004
+      MEDIA_SERVICE_URL: http://media-service:4005
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
       RATE_LIMIT_WINDOW_MS: 900000
       RATE_LIMIT_MAX_REQUESTS: 100
@@ -122,6 +265,10 @@ services:
     depends_on:
       - auth-service
       - user-service
+      - catalog-service
+      - booking-service
+      - media-service
+      - notification-service
     networks:
       - savidhi-network
     volumes:
@@ -136,6 +283,8 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:
+  media_uploads:
 
 networks:
   savidhi-network:

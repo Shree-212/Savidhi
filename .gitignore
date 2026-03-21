@@ -69,6 +69,9 @@ ehthumbs.db
 [Ss]potlight-[Vv]100
 *.stackdump
 
+# Claude Code session files
+.claude/
+
 # Savidhi-specific
 # Docker volumes
 postgres_data/

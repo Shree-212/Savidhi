@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, FlatList, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, FlatList, StatusBar, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '../../theme';
-import { MOCK_PUJAS, MOCK_PANCHANG, MOCK_CHADHAVAS } from '../../data';
+import { MOCK_PANCHANG } from '../../data';
+import { pujaService, chadhavaService } from '../../services';
 import { PanchangStrip } from '../../components/shared/PanchangStrip';
 import { UpcomingBookingCard } from '../../components/shared/UpcomingBookingCard';
 import { ChipToggle } from '../../components/shared/ChipToggle';
@@ -20,9 +21,94 @@ const SERVICE_CHIPS = [
   { key: 'chadhava', label: 'Chadhava', icon: 'gift-outline' },
 ];
 
+function mapPuja(p: any) {
+  return {
+    id: p.id,
+    name: p.name,
+    templeName: p.temple_name ?? '',
+    templeLocation: p.temple_address ?? '',
+    imageUrl: p.slider_images?.[0] ?? '',
+    date: p.schedule_day ?? '',
+    time: p.schedule_time ?? '',
+    countdown: '',
+    benefits: typeof p.benefits === 'string' ? p.benefits.split(',').map((s: string) => s.trim()) : p.benefits ?? [],
+    ritualsIncluded: [],
+    howToDo: [],
+    videoThumbnail: p.sample_video_url ?? '',
+    parcelContents: [],
+    pricePerDevotee: Number(p.price_for_1 ?? 0),
+    isWeekly: p.event_repeats ?? false,
+    templeId: p.temple_id ?? '',
+  };
+}
+
+function mapChadhava(c: any) {
+  const offerings = (c.offerings ?? []).map((o: any) => ({
+    id: o.id,
+    name: o.item_name ?? o.name ?? '',
+    description: o.benefit ?? '',
+    price: Number(o.price ?? 0),
+    imageUrl: o.images?.[0] ?? '',
+  }));
+  return {
+    id: c.id,
+    name: c.name,
+    templeName: c.temple_name ?? '',
+    templeLocation: c.temple_address ?? '',
+    imageUrl: c.slider_images?.[0] ?? '',
+    date: c.schedule_day ?? '',
+    time: c.schedule_time ?? '',
+    countdown: '',
+    benefits: typeof c.benefits === 'string' ? c.benefits.split(',').map((s: string) => s.trim()) : c.benefits ?? [],
+    ritualsIncluded: [],
+    howToOffer: [],
+    videoThumbnail: c.sample_video_url ?? '',
+    parcelContents: [],
+    offerings,
+    templeId: c.temple_id ?? '',
+    isWeekly: c.booking_mode === 'SUBSCRIPTION',
+    startingPrice: offerings.length > 0 ? Math.min(...offerings.map((o: any) => o.price)) : 0,
+  };
+}
+
 export function HomeScreen({ navigation }: HomeScreenProps) {
   const [serviceType, setServiceType] = useState('puja');
   const [search, setSearch] = useState('');
+  const [pujas, setPujas] = useState<any[]>([]);
+  const [chadhavas, setChadhavas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [pujasRes, chadhavasRes] = await Promise.allSettled([
+          pujaService.list({ limit: 10 }),
+          chadhavaService.list({ limit: 10 }),
+        ]);
+        if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.data) {
+          setPujas(pujasRes.value.data.data.map(mapPuja));
+        }
+        if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.data) {
+          setChadhavas(chadhavasRes.value.data.data.map(mapChadhava));
+        }
+      } catch (err) {
+        console.error('Failed to load home data', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const filteredPujas = pujas.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.templeName.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredChadhavas = chadhavas.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.templeName.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -79,8 +165,10 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
         {/* For You Section */}
         <SectionHeader title="For You" />
 
-        {serviceType === 'puja' ? (
-          MOCK_PUJAS.map((puja) => (
+        {loading ? (
+          <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
+        ) : serviceType === 'puja' ? (
+          filteredPujas.map((puja) => (
             <PujaCard
               key={puja.id}
               puja={puja}
@@ -89,7 +177,7 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
           ))
         ) : (
           <View style={styles.chadhavaGrid}>
-            {MOCK_CHADHAVAS.map((chadhava) => (
+            {filteredChadhavas.map((chadhava) => (
               <ChadhavaCard
                 key={chadhava.id}
                 chadhava={chadhava}

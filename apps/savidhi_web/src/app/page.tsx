@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -19,6 +19,7 @@ import { PujaCard } from '@/components/shared/PujaCard';
 import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
 import { TempleCard } from '@/components/shared/TempleCard';
 import { MOCK_PUJAS, MOCK_CHADHAVAS, MOCK_TEMPLES } from '@/data';
+import { templeService, pujaService, chadhavaService } from '@/lib/services';
 import heroBg from '@/assets/hero-bg.png';
 
 const HOW_TO_STEPS = [
@@ -101,6 +102,72 @@ export default function HomePage() {
   const pujaScroll = useHorizontalScroll();
   const chadhavaScroll = useHorizontalScroll();
   const templeScroll = useHorizontalScroll();
+
+  // Fetch real data from API, fallback to mock
+  const [pujas, setPujas] = useState(MOCK_PUJAS);
+  const [chadhavas, setChadhavas] = useState(MOCK_CHADHAVAS);
+  const [temples, setTemples] = useState(MOCK_TEMPLES);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [pujasRes, chadhavasRes, templesRes] = await Promise.allSettled([
+          pujaService.list({ limit: 10 }),
+          chadhavaService.list({ limit: 10 }),
+          templeService.list({ limit: 10 }),
+        ]);
+
+        if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.success && pujasRes.value.data.data?.length > 0) {
+          const apiPujas = pujasRes.value.data.data.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            temple: { name: p.temple_name || p.temple?.name || 'Temple', location: p.temple_address || '' },
+            date: p.schedule_day || 'Everyday',
+            time: p.schedule_time || '',
+            countdown: { days: 0, hours: 12, minutes: 30, seconds: 14 },
+            benefits: (p.benefits || '').split(', '),
+            ritualsIncluded: (p.rituals_included || '').split(', '),
+            prices: { for1: p.price_for_1, for2: p.price_for_2, for4: p.price_for_4, for6: p.price_for_6 },
+            images: p.slider_images || [],
+            sampleVideoUrl: p.sample_video_url || '',
+          }));
+          setPujas(apiPujas);
+        }
+
+        if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.success && chadhavasRes.value.data.data?.length > 0) {
+          const apiChadhavas = chadhavasRes.value.data.data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            temple: { name: c.temple_name || 'Temple', location: c.temple_address || '' },
+            date: c.schedule_day || 'Everyday',
+            time: c.schedule_time || '',
+            countdown: { days: 0, hours: 12, minutes: 30, seconds: 14 },
+            offerings: c.offerings || [],
+            images: c.slider_images || [],
+          }));
+          setChadhavas(apiChadhavas);
+        }
+
+        if (templesRes.status === 'fulfilled' && templesRes.value.data?.success && templesRes.value.data.data?.length > 0) {
+          const apiTemples = templesRes.value.data.data.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            location: t.address,
+            pincode: t.pincode,
+            images: t.slider_images || [],
+            pujaris: [],
+            about: t.about,
+            history: t.history_and_significance,
+            stats: { pujasPerformed: t.pujas_count || 0, devoteeServed: 0 },
+          }));
+          setTemples(apiTemples);
+        }
+      } catch {
+        // Silently fall back to mock data
+      }
+    }
+    loadData();
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -205,13 +272,13 @@ export default function HomePage() {
           ref={pujaScroll.ref}
           className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         >
-          {MOCK_PUJAS.map((puja) => (
+          {pujas.map((puja) => (
             <div key={puja.id} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <PujaCard puja={puja} />
             </div>
           ))}
           {/* Duplicate for more scrollable content */}
-          {MOCK_PUJAS.map((puja) => (
+          {pujas.map((puja) => (
             <div key={`dup-${puja.id}`} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <PujaCard puja={puja} />
             </div>
@@ -279,12 +346,12 @@ export default function HomePage() {
           ref={chadhavaScroll.ref}
           className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         >
-          {MOCK_CHADHAVAS.map((c) => (
+          {chadhavas.map((c) => (
             <div key={c.id} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <ChadhavaCard chadhava={c} />
             </div>
           ))}
-          {MOCK_CHADHAVAS.map((c) => (
+          {chadhavas.map((c) => (
             <div key={`dup-${c.id}`} className="min-w-[260px] sm:min-w-[280px] snap-start">
               <ChadhavaCard chadhava={c} />
             </div>
@@ -332,12 +399,12 @@ export default function HomePage() {
           ref={templeScroll.ref}
           className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         >
-          {MOCK_TEMPLES.map((temple) => (
+          {temples.map((temple) => (
             <div key={temple.id} className="min-w-[260px] sm:min-w-[300px] snap-start">
               <TempleCard temple={temple} />
             </div>
           ))}
-          {MOCK_TEMPLES.map((temple) => (
+          {temples.map((temple) => (
             <div key={`dup-${temple.id}`} className="min-w-[260px] sm:min-w-[300px] snap-start">
               <TempleCard temple={temple} />
             </div>

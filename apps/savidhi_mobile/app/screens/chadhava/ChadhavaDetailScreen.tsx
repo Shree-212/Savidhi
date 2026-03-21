@@ -1,16 +1,66 @@
-import React, { useState } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_CHADHAVAS } from '../../data';
+import { chadhavaService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import type { Chadhava, ChadhavaOffering } from '../../data';
 
 interface Props { navigation: any; route: any; }
 
 export function ChadhavaDetailScreen({ navigation, route }: Props) {
-  const chadhava = MOCK_CHADHAVAS.find((c) => c.id === route.params?.chadhavaId) || MOCK_CHADHAVAS[0];
+  const [chadhava, setChadhava] = useState<Chadhava | null>(null);
+  const [loading, setLoading] = useState(true);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const chadhavaId = route.params?.chadhavaId;
+    if (!chadhavaId) return;
+    (async () => {
+      try {
+        const res = await chadhavaService.getById(chadhavaId);
+        const d = res.data?.data ?? res.data;
+        setChadhava({
+          id: d.id,
+          name: d.name,
+          templeName: d.temple_name ?? '',
+          templeLocation: d.temple_address ?? '',
+          imageUrl: d.slider_images?.[0] ?? '',
+          date: d.schedule_day ?? '',
+          time: d.schedule_time ?? '',
+          countdown: '',
+          benefits: d.benefits ?? [],
+          ritualsIncluded: d.rituals_included ?? [],
+          howToOffer: [],
+          videoThumbnail: d.sample_video_url ?? '',
+          parcelContents: [],
+          offerings: (d.offerings ?? []).map((o: any) => ({
+            id: o.id,
+            name: o.item_name ?? '',
+            description: o.benefit ?? '',
+            price: o.price ?? 0,
+            imageUrl: o.images?.[0] ?? '',
+          })),
+          templeId: d.temple_id ?? '',
+          isWeekly: d.event_repeats === 'weekly',
+          startingPrice: d.price_for_1 ?? 0,
+        });
+      } catch (err) {
+        console.error('ChadhavaDetailScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.chadhavaId]);
+
+  if (loading || !chadhava) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   const total = chadhava.offerings.reduce((sum, off) => sum + (quantities[off.id] || 0) * off.price, 0);
 

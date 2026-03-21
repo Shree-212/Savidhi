@@ -9,10 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import { authService } from '../../services';
 
 interface LoginScreenProps {
   navigation: any;
@@ -22,15 +25,38 @@ export function LoginScreen({ navigation }: LoginScreenProps) {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleGenerateOtp = () => {
-    if (phone.length >= 10) {
+  const handleGenerateOtp = async () => {
+    if (phone.length < 10) return;
+    setLoading(true);
+    try {
+      await authService.sendOtp(phone);
       setOtpSent(true);
+    } catch (err) {
+      console.error('LoginScreen sendOtp error:', err);
+      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSubmit = () => {
-    navigation.replace('MainTabs');
+  const handleSubmit = async () => {
+    setLoading(true);
+    try {
+      const res = await authService.verifyOtp(phone, otp);
+      const data = res.data?.data ?? res.data;
+      if (data?.accessToken || res.data?.success) {
+        navigation.replace('MainTabs');
+      } else {
+        Alert.alert('Error', 'Invalid OTP. Please try again.');
+      }
+    } catch (err) {
+      console.error('LoginScreen verifyOtp error:', err);
+      Alert.alert('Error', 'OTP verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSkip = () => {
@@ -74,12 +100,16 @@ export function LoginScreen({ navigation }: LoginScreenProps) {
               onChangeText={setPhone}
               maxLength={10}
             />
-            <PrimaryButton
-              title="Generate OTP"
-              onPress={handleGenerateOtp}
-              style={styles.ctaButton}
-              disabled={phone.length < 10}
-            />
+            {loading ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={styles.ctaButton} />
+            ) : (
+              <PrimaryButton
+                title="Generate OTP"
+                onPress={handleGenerateOtp}
+                style={styles.ctaButton}
+                disabled={phone.length < 10}
+              />
+            )}
           </>
         ) : (
           <>
@@ -100,11 +130,15 @@ export function LoginScreen({ navigation }: LoginScreenProps) {
                 />
               ))}
             </View>
-            <PrimaryButton
-              title="Submit"
-              onPress={handleSubmit}
-              style={styles.ctaButton}
-            />
+            {loading ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={styles.ctaButton} />
+            ) : (
+              <PrimaryButton
+                title="Submit"
+                onPress={handleSubmit}
+                style={styles.ctaButton}
+              />
+            )}
           </>
         )}
       </ScrollView>
