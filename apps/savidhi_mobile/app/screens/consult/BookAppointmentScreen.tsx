@@ -1,17 +1,84 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { DURATION_OPTIONS, MOCK_ASTROLOGERS } from '../../data';
+import { astrologerService, appointmentService } from '../../services';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
-import type { AppointmentDuration } from '../../data';
+import type { Astrologer, AppointmentDuration, DurationOption } from '../../data';
 
 interface Props { navigation: any; route: any; }
 
 export function BookAppointmentScreen({ navigation, route }: Props) {
-  const astro = MOCK_ASTROLOGERS.find((a) => a.id === route.params?.astrologerId) || MOCK_ASTROLOGERS[0];
+  const [astro, setAstro] = useState<Astrologer | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState<AppointmentDuration>('15min');
-  const price = DURATION_OPTIONS.find((d) => d.key === selected)?.price || 150;
+  const [durationOptions, setDurationOptions] = useState<DurationOption[]>([]);
+
+  useEffect(() => {
+    const astrologerId = route.params?.astrologerId;
+    if (!astrologerId) return;
+    (async () => {
+      try {
+        const res = await astrologerService.getById(astrologerId);
+        const d = res.data?.data ?? res.data;
+        const mapped: Astrologer = {
+          id: d.id,
+          name: d.name,
+          specialty: d.designation ?? '',
+          experience: '',
+          pricePerMin: d.price_15min ?? 0,
+          imageUrl: d.profile_pic ?? '',
+          images: d.slider_images ?? [],
+          appointmentsBooked: 0,
+          languages: d.languages ?? [],
+          expertise: d.expertise ?? [],
+          about: d.about ?? '',
+          isBookmarked: false,
+        };
+        setAstro(mapped);
+        setDurationOptions([
+          { key: '15min', label: '15 Min', price: d.price_15min ?? 0 },
+          { key: '30min', label: '30 Min', price: d.price_30min ?? 0 },
+          { key: '1hour', label: '1 Hour', price: d.price_1hour ?? 0 },
+          { key: '2hour', label: '2 Hour', price: d.price_2hour ?? 0 },
+        ]);
+      } catch (err) {
+        console.error('BookAppointmentScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.astrologerId]);
+
+  if (loading || !astro) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  const price = durationOptions.find((d) => d.key === selected)?.price || 0;
+
+  const handleBook = async () => {
+    setSubmitting(true);
+    try {
+      await appointmentService.create({
+        astrologer_id: astro.id,
+        duration: selected,
+        scheduled_at: new Date().toISOString(),
+        devotee_name: '',
+      });
+      Alert.alert('Success', 'Appointment booked!');
+      navigation.goBack();
+    } catch (err) {
+      console.error('BookAppointmentScreen booking error:', err);
+      Alert.alert('Error', 'Failed to book appointment. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -26,7 +93,7 @@ export function BookAppointmentScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.sectionTitle}>Select Time Duration</Text>
         <View style={styles.grid}>
-          {DURATION_OPTIONS.map((dur) => (
+          {durationOptions.map((dur) => (
             <TouchableOpacity
               key={dur.key}
               style={[styles.durCard, selected === dur.key && styles.durCardActive]}
@@ -41,7 +108,7 @@ export function BookAppointmentScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.ctaContainer}>
-        <PrimaryButton title={`Book For ₹${price}`} onPress={() => navigation.goBack()} />
+        <PrimaryButton title={`Book For ₹${price}`} onPress={handleBook} disabled={submitting} />
       </View>
     </View>
   );

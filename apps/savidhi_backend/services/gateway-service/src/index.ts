@@ -29,6 +29,8 @@ app.use(rateLimit({
 }));
 
 // ─── JWT Verification Middleware ──────────────────────────────────────────────
+// Extracts token from Authorization header or admin cookie,
+// verifies via auth-service, and forwards user info as headers
 async function jwtMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
@@ -42,7 +44,12 @@ async function jwtMiddleware(req: Request, _res: Response, next: NextFunction) {
       ? authHeader.slice(7)
       : cookieToken;
 
-    if (!token) return next();
+    if (!token) {
+      // No token - proceed without user context (public routes)
+      return next();
+    }
+
+    // Verify token via auth-service
 
     const response = await axios.get(`${AUTH_SERVICE_URL}/api/v1/auth/verify`, {
       headers: { Authorization: `Bearer ${token}`, Cookie: `savidhi_admin_token=${token}` },
@@ -75,6 +82,21 @@ app.use(createProxyMiddleware({ pathFilter: '/api/v1/users',    target: USER_SER
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/catalog',  target: CATALOG_SERVICE_URL, changeOrigin: true }));
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/bookings', target: BOOKING_SERVICE_URL, changeOrigin: true }));
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/media',    target: MEDIA_SERVICE_URL,   changeOrigin: true }));
+
+app.use('/api/v1/catalog', createProxyMiddleware({
+  target: CATALOG_SERVICE_URL,
+  changeOrigin: true,
+}));
+
+app.use('/api/v1/bookings', createProxyMiddleware({
+  target: BOOKING_SERVICE_URL,
+  changeOrigin: true,
+}));
+
+app.use('/api/v1/media', createProxyMiddleware({
+  target: MEDIA_SERVICE_URL,
+  changeOrigin: true,
+}));
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {

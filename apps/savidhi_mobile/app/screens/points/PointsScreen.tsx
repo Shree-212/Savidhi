@@ -1,8 +1,10 @@
-import React from 'react';
-import { View, Text, ScrollView, Image, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, Image, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_USER } from '../../data';
+import { userService } from '../../services';
+import type { UserProfile, Achievement } from '../../data';
 
 const STATS = [
   { key: 'pujaBooked', label: 'Puja Booked', icon: 'fire' },
@@ -10,8 +12,84 @@ const STATS = [
   { key: 'pujaForOthers', label: 'Puja For Others', icon: 'account-group-outline' },
 ] as const;
 
-export function PointsScreen() {
-  const user = MOCK_USER;
+export function PointsScreen({ navigation }: { navigation?: any }) {
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [needsLogin, setNeedsLogin] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('savidhi_token');
+        if (!token) {
+          setNeedsLogin(true);
+          setLoading(false);
+          return;
+        }
+        const [profileRes, gemsRes, achievementsRes] = await Promise.all([
+          userService.getProfile(),
+          userService.getGems(),
+          userService.getAchievements(),
+        ]);
+        const d = profileRes.data?.data ?? profileRes.data;
+        const gemsData = gemsRes.data?.data ?? gemsRes.data;
+        const achievementsData = achievementsRes.data?.data ?? achievementsRes.data;
+
+        const achievements: Achievement[] = (Array.isArray(achievementsData) ? achievementsData : []).map((a: any) => ({
+          id: a.id,
+          name: a.name ?? '',
+          imageUrl: a.image_url ?? a.icon_url ?? '',
+          unlocked: a.unlocked ?? a.is_unlocked ?? false,
+        }));
+
+        setUser({
+          id: d.id,
+          name: d.name ?? '',
+          phone: d.phone ?? '',
+          imageUrl: d.image_url ?? d.profile_pic ?? '',
+          level: d.level ?? 1,
+          gems: typeof gemsData === 'number' ? gemsData : (gemsData?.total ?? d.gems ?? 0),
+          pujaBooked: d.puja_booked ?? d.pujas_booked ?? 0,
+          appointments: d.appointments ?? 0,
+          pujaForOthers: d.puja_for_others ?? 0,
+          devoteeSince: d.devotee_since ?? d.created_at ?? '',
+          achievements,
+        });
+      } catch (err: any) {
+        if (err?.response?.status === 401) {
+          setNeedsLogin(true);
+        } else {
+          console.error('PointsScreen fetch error:', err);
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (needsLogin) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xl }]}>
+        <Icon name="account-lock" size={64} color={Colors.textMuted} />
+        <Text style={[Typography.subtitle, { color: Colors.textPrimary, marginTop: Spacing.lg, textAlign: 'center' }]}>Login to view your points</Text>
+        <Text style={[Typography.body, { color: Colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center' }]}>Track your gems, achievements, and devotee journey</Text>
+        <TouchableOpacity
+          style={{ backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 40, marginTop: Spacing.xl }}
+          onPress={() => navigation?.navigate('Login')}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (loading || !user) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

@@ -1,15 +1,54 @@
-import React from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_ASTROLOGERS } from '../../data';
+import { astrologerService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import type { Astrologer } from '../../data';
 
 interface Props { navigation: any; route: any; }
 
 export function AstrologerDetailScreen({ navigation, route }: Props) {
-  const astro = MOCK_ASTROLOGERS.find((a) => a.id === route.params?.astrologerId) || MOCK_ASTROLOGERS[0];
+  const [astro, setAstro] = useState<Astrologer | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const astrologerId = route.params?.astrologerId;
+    if (!astrologerId) return;
+    (async () => {
+      try {
+        const res = await astrologerService.getById(astrologerId);
+        const d = res.data?.data ?? res.data;
+        setAstro({
+          id: d.id,
+          name: d.name,
+          specialty: d.designation ?? '',
+          experience: d.start_date ? `${new Date().getFullYear() - new Date(d.start_date).getFullYear()}+ years` : '',
+          pricePerMin: d.price_15min ?? 0,
+          imageUrl: d.profile_pic ?? '',
+          images: d.slider_images ?? [],
+          appointmentsBooked: 0,
+          languages: d.languages ?? [],
+          expertise: d.expertise ?? [],
+          about: d.about ?? '',
+          isBookmarked: false,
+        });
+      } catch (err) {
+        console.error('AstrologerDetailScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.astrologerId]);
+
+  if (loading || !astro) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

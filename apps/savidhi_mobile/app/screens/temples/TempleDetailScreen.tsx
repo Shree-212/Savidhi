@@ -1,14 +1,58 @@
-import React from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_TEMPLES } from '../../data';
+import { templeService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
+import type { Temple } from '../../data';
 
 interface Props { navigation: any; route: any; }
 
 export function TempleDetailScreen({ navigation, route }: Props) {
-  const temple = MOCK_TEMPLES.find((t) => t.id === route.params?.templeId) || MOCK_TEMPLES[0];
+  const [temple, setTemple] = useState<Temple | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const templeId = route.params?.templeId;
+    if (!templeId) return;
+    (async () => {
+      try {
+        const res = await templeService.getById(templeId);
+        const d = res.data?.data ?? res.data;
+        setTemple({
+          id: d.id,
+          name: d.name,
+          location: d.address ?? '',
+          pincode: d.pincode ?? '',
+          images: d.slider_images ?? [],
+          pujaris: (d.pujaris ?? []).map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            role: p.designation ?? '',
+            imageUrl: p.profile_pic ?? '',
+          })),
+          about: d.about ?? '',
+          history: d.history_and_significance ?? '',
+          videoThumbnail: '',
+          pujaCount: d.pujas_offered?.length ?? 0,
+          pujasOffered: d.pujas_offered ?? [],
+          chadhavasOffered: d.chadhavas_offered ?? [],
+        });
+      } catch (err) {
+        console.error('TempleDetailScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.templeId]);
+
+  if (loading || !temple) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

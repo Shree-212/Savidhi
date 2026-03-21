@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_APPOINTMENT_BOOKINGS, AppointmentBooking } from '../../data';
+import { appointmentService } from '../../services';
 import { AppointmentCard } from '../../components/shared/AppointmentCard';
+import type { AppointmentBooking } from '../../data';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -23,7 +24,42 @@ const filterMap: Record<string, (b: AppointmentBooking) => boolean> = {
 
 export function AppointmentBookingsScreen({ navigation }: { navigation: any }) {
   const [filter, setFilter] = useState('all');
-  const appointments = MOCK_APPOINTMENT_BOOKINGS.filter(filterMap[filter] || filterMap.all);
+  const [allAppointments, setAllAppointments] = useState<AppointmentBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await appointmentService.list();
+        const items = res.data?.data ?? res.data ?? [];
+        setAllAppointments(
+          (Array.isArray(items) ? items : []).map((d: any) => ({
+            id: d.id,
+            astrologerName: d.astrologer_name ?? d.astrologer?.name ?? '',
+            astrologerImage: d.astrologer_image ?? d.astrologer?.profile_pic ?? '',
+            date: d.scheduled_at ?? d.created_at ?? '',
+            timeSlot: d.duration ?? '',
+            status: d.status ?? 'YET_TO_START',
+            bookingId: d.booking_id ?? d.id,
+          }))
+        );
+      } catch (err) {
+        console.error('AppointmentBookingsScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const appointments = allAppointments.filter(filterMap[filter] || filterMap.all);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

@@ -1,15 +1,59 @@
-import React from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_PUJAS } from '../../data';
+import { pujaService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import type { Puja } from '../../data';
 
 interface Props { navigation: any; route: any; }
 
 export function PujaDetailScreen({ navigation, route }: Props) {
-  const puja = MOCK_PUJAS.find((p) => p.id === route.params?.pujaId) || MOCK_PUJAS[0];
+  const [puja, setPuja] = useState<Puja | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const pujaId = route.params?.pujaId;
+    if (!pujaId) return;
+    (async () => {
+      try {
+        const res = await pujaService.getById(pujaId);
+        const d = res.data?.data ?? res.data;
+        setPuja({
+          id: d.id,
+          name: d.name,
+          templeName: d.temple_name ?? '',
+          templeLocation: d.temple_address ?? '',
+          imageUrl: d.slider_images?.[0] ?? '',
+          date: d.schedule_day ?? '',
+          time: d.schedule_time ?? '',
+          countdown: '',
+          benefits: d.benefits ?? [],
+          ritualsIncluded: d.rituals_included ?? [],
+          howToDo: [],
+          videoThumbnail: d.sample_video_url ?? '',
+          parcelContents: [],
+          pricePerDevotee: d.price_for_1 ?? 0,
+          isWeekly: d.event_repeats === 'weekly',
+          isMonthly: d.event_repeats === 'monthly',
+          templeId: d.temple_id ?? '',
+        });
+      } catch (err) {
+        console.error('PujaDetailScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.pujaId]);
+
+  if (loading || !puja) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

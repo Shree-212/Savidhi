@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { MOCK_PUJAS } from '../../data';
+import { pujaService, pujaBookingService } from '../../services';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import type { Puja } from '../../data';
 
 interface Props { navigation: any; route: any; }
 
@@ -15,7 +16,9 @@ const DEVOTEE_OPTIONS = [
 ];
 
 export function PujaBookingScreen({ navigation, route }: Props) {
-  const puja = MOCK_PUJAS.find((p) => p.id === route.params?.pujaId) || MOCK_PUJAS[0];
+  const [puja, setPuja] = useState<Puja | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState(0);
   const [devoteeCount, setDevoteeCount] = useState(1);
   const [name, setName] = useState('');
@@ -24,9 +27,74 @@ export function PujaBookingScreen({ navigation, route }: Props) {
   const [pincode, setPincode] = useState('');
   const [address, setAddress] = useState('');
 
+  useEffect(() => {
+    const pujaId = route.params?.pujaId;
+    if (!pujaId) return;
+    (async () => {
+      try {
+        const res = await pujaService.getById(pujaId);
+        const d = res.data?.data ?? res.data;
+        setPuja({
+          id: d.id,
+          name: d.name,
+          templeName: d.temple_name ?? '',
+          templeLocation: d.temple_address ?? '',
+          imageUrl: d.slider_images?.[0] ?? '',
+          date: d.schedule_day ?? '',
+          time: d.schedule_time ?? '',
+          countdown: '',
+          benefits: d.benefits ?? [],
+          ritualsIncluded: d.rituals_included ?? [],
+          howToDo: [],
+          videoThumbnail: d.sample_video_url ?? '',
+          parcelContents: [],
+          pricePerDevotee: d.price_for_1 ?? 0,
+          isWeekly: d.event_repeats === 'weekly',
+          isMonthly: d.event_repeats === 'monthly',
+          templeId: d.temple_id ?? '',
+        });
+      } catch (err) {
+        console.error('PujaBookingScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [route.params?.pujaId]);
+
+  if (loading || !puja) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
   const totalPrice = devoteeCount * puja.pricePerDevotee;
 
   const stepLabels = ['SELECT\nPUJA', 'DEVOTEE\nDETAILS', 'MAKE\nPAYMENT', 'SANKALP\nFORM'];
+
+  const handleBooking = async () => {
+    if (step < 1) {
+      setStep(step + 1);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await pujaBookingService.create({
+        puja_event_id: puja.id,
+        devotee_count: devoteeCount,
+        prasad_delivery_address: `${houseNo}, ${address}, ${pincode}`,
+        devotees: [{ name, gotra }],
+      });
+      Alert.alert('Success', 'Puja booking created!');
+      navigation.goBack();
+    } catch (err) {
+      console.error('PujaBookingScreen booking error:', err);
+      Alert.alert('Error', 'Failed to create booking. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -109,10 +177,8 @@ export function PujaBookingScreen({ navigation, route }: Props) {
       <View style={styles.ctaContainer}>
         <PrimaryButton
           title={step === 0 ? `Participate For ₹${totalPrice}` : `Pay ₹${totalPrice}`}
-          onPress={() => {
-            if (step < 1) setStep(step + 1);
-            else navigation.goBack();
-          }}
+          onPress={handleBooking}
+          disabled={submitting}
         />
       </View>
     </View>
