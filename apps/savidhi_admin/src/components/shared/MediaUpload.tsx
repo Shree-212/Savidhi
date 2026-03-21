@@ -4,16 +4,27 @@ import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { Upload, X, Film, ImageIcon, Loader2 } from 'lucide-react';
 
-/** Convert any http://localhost:PORT/uploads/... URL to a relative /uploads/... path
- *  so the Next.js rewrite proxy serves it — avoids remotePatterns & CORS entirely. */
+/** Normalise any uploaded-media URL so it's served via the /api rewrite (already active).
+ *  - /api/v1/media/files/... → kept as-is (correct new format)
+ *  - http://localhost:PORT/uploads/xxx.jpg → /api/v1/media/files/xxx.jpg
+ *  - /uploads/xxx.jpg → /api/v1/media/files/xxx.jpg
+ *  - everything else (https://...) → kept as-is */
 function normaliseUrl(url: string): string {
   if (!url) return url;
+  // Already in the correct routed form
+  if (url.startsWith('/api/v1/media/files/')) return url;
   try {
     const parsed = new URL(url);
-    if (parsed.hostname === 'localhost' && parsed.pathname.startsWith('/uploads')) {
-      return parsed.pathname;
+    if (parsed.hostname === 'localhost' && parsed.pathname.startsWith('/uploads/')) {
+      const filename = parsed.pathname.replace('/uploads/', '');
+      return `/api/v1/media/files/${filename}`;
     }
-  } catch { /* already relative */ }
+  } catch { /* not an absolute URL */ }
+  // Handle relative /uploads/... paths
+  if (url.startsWith('/uploads/')) {
+    const filename = url.replace('/uploads/', '');
+    return `/api/v1/media/files/${filename}`;
+  }
   return url;
 }
 

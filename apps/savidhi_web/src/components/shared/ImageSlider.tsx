@@ -11,19 +11,28 @@ interface ImageSliderProps {
   fallback?: string;
 }
 
-/** Normalise an image URL so it always loads via the Next.js proxy.
- *  - Relative paths (/uploads/...) → kept as-is (proxied by next.config rewrite)
- *  - Full http://localhost:PORT/uploads/... → converted to /uploads/... (relative)
- *  - Everything else (https://...) → kept as-is
+/** Normalise any uploaded-media URL so it's served via the /api rewrite (always active).
+ *  - /api/v1/media/files/... → kept as-is (correct routed form)
+ *  - http://localhost:PORT/uploads/xxx.jpg → /api/v1/media/files/xxx.jpg
+ *  - /uploads/xxx.jpg → /api/v1/media/files/xxx.jpg
+ *  - everything else (https://...) → kept as-is
  */
 function normaliseUrl(url: string): string {
   if (!url) return '';
+  // Already in the correct routed form
+  if (url.startsWith('/api/v1/media/files/')) return url;
   try {
     const parsed = new URL(url);
-    if (parsed.hostname === 'localhost' && parsed.pathname.startsWith('/uploads')) {
-      return parsed.pathname; // strip host → served via Next.js /uploads rewrite
+    if (parsed.hostname === 'localhost' && parsed.pathname.startsWith('/uploads/')) {
+      const filename = parsed.pathname.replace('/uploads/', '');
+      return `/api/v1/media/files/${filename}`;
     }
-  } catch { /* not an absolute URL, keep as-is */ }
+  } catch { /* not an absolute URL */ }
+  // Handle relative /uploads/... paths
+  if (url.startsWith('/uploads/')) {
+    const filename = url.replace('/uploads/', '');
+    return `/api/v1/media/files/${filename}`;
+  }
   return url;
 }
 

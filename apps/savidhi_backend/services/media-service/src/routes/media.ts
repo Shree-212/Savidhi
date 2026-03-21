@@ -107,7 +107,9 @@ router.post('/upload/local', requireAuth, upload.single('file'), (req: Request, 
     return;
   }
 
-  const fileUrl = `/uploads/${file.filename}`;
+  // Return an /api/v1/media/files/:filename URL so it's served through
+  // the existing /api rewrite in Next.js — no extra proxy routes needed.
+  const fileUrl = `/api/v1/media/files/${file.filename}`;
 
   res.json({
     success: true,
@@ -116,6 +118,17 @@ router.post('/upload/local', requireAuth, upload.single('file'), (req: Request, 
     originalName: file.originalname,
     size: file.size,
   });
+});
+
+// ─── GET /files/:filename — serve locally-uploaded files ─────────────────────
+router.get('/files/:filename', (req: Request, res: Response) => {
+  const filename = path.basename(req.params.filename); // prevent path traversal
+  const filePath = path.join(UPLOAD_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ success: false, message: 'File not found' });
+    return;
+  }
+  res.sendFile(filePath);
 });
 
 // ─── DELETE /images/:key ──────────────────────────────────────────────────────
