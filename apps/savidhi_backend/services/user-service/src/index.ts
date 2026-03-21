@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { usersRouter } from './routes/users';
+import { adminUsersRouter } from './routes/adminUsers';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -28,7 +29,11 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'user-service', timestamp: new Date().toISOString() });
 });
 
+// Devotee self-service routes (/me, /me/gems, /me/achievements, /me/bookings)
 app.use('/api/v1/users', usersRouter);
+
+// Admin routes (/devotees, /devotees/:id, /admin-users, etc.)
+app.use('/api/v1/users', adminUsersRouter);
 
 // ─── Error handling ───────────────────────────────────────────────────────────
 app.use(errorHandler);

@@ -1,11 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  MOCK_PUJA_SANKALP_REPORT, MOCK_CHADHAVA_SANKALP_REPORT, MOCK_CHADHAVA_OFFERINGS_REPORT,
-  MOCK_APPOINTMENTS_REPORT, MOCK_LEDGER_REPORT, MOCK_ALL_BOOKINGS_REPORT,
-  MOCK_SUMMARY_REPORT, MOCK_TEMPLE_WISE_REPORT, MOCK_DEITY_WISE_REPORT, MOCK_DEVOTEE_WISE_REPORT,
-} from '@/data';
+import { useState, useEffect, useCallback } from 'react';
+import { reportService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -22,11 +18,65 @@ const REPORT_TYPES = [
   'Summary Report', 'Temple Wise Bookings Report', 'Deity Wise Bookings Report', 'Devotee Wise Bookings Report',
 ];
 
+// Map display names to service methods
+const REPORT_FETCHERS: Record<string, (params?: any) => Promise<any>> = {
+  'Puja Sankalp Report': reportService.pujaSankalp,
+  'Chadhava Sankalp Report': reportService.chadhavaSankalp,
+  'Chadhava Offerings Report': reportService.chadhavaOfferings,
+  'Appointments Report': reportService.appointments,
+  'Ledger': reportService.ledger,
+  'All Bookings Report': reportService.allBookings,
+  'Summary Report': reportService.summary,
+  'Temple Wise Bookings Report': reportService.templeWise,
+  'Deity Wise Bookings Report': reportService.deityWise,
+  'Devotee Wise Bookings Report': reportService.devoteeWise,
+};
+
 export default function ReportsPage() {
   const [reportType, setReportType] = useState(REPORT_TYPES[0]);
   const [search, setSearch] = useState('');
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchReport = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const fetcher = REPORT_FETCHERS[reportType];
+      if (!fetcher) return;
+      const res = await fetcher({ search: search || undefined });
+      setReportData(res.data?.data ?? res.data ?? []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load report');
+      setReportData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportType, search]);
+
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport]);
 
   const renderReport = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-sm text-muted-foreground">Loading report...</div>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 gap-3">
+          <div className="text-sm text-red-500">{error}</div>
+          <button onClick={fetchReport} className="text-sm text-primary hover:underline">Retry</button>
+        </div>
+      );
+    }
+
     switch (reportType) {
       case 'Puja Sankalp Report':
         return <DataTable columns={[
@@ -39,7 +89,7 @@ export default function ReportsPage() {
           { key: 'status', label: 'Status', render: (r: PujaSankalpReport) => <StatusBadge status={r.status} /> },
           { key: 'pujari', label: 'Pujari' },
           { key: 'action', label: '', render: () => <DownloadButton /> },
-        ]} data={MOCK_PUJA_SANKALP_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Chadhava Sankalp Report':
         return <DataTable columns={[
@@ -52,7 +102,7 @@ export default function ReportsPage() {
           { key: 'status', label: 'Status', render: (r: ChadhavaSankalpReport) => <StatusBadge status={r.status} /> },
           { key: 'pujari', label: 'Pujari' },
           { key: 'action', label: '', render: () => <DownloadButton /> },
-        ]} data={MOCK_CHADHAVA_SANKALP_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Chadhava Offerings Report':
         return <DataTable columns={[
@@ -63,7 +113,7 @@ export default function ReportsPage() {
           { key: 'offeringsAndQuantity', label: 'Offerings & Quantity', render: (r: ChadhavaOfferingsReport) => (
             <pre className="text-[10px] text-muted-foreground whitespace-pre-line">{r.offeringsAndQuantity}</pre>
           )},
-        ]} data={MOCK_CHADHAVA_OFFERINGS_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Appointments Report':
         return <DataTable columns={[
@@ -75,7 +125,7 @@ export default function ReportsPage() {
           )},
           { key: 'received', label: 'Received', render: (r: AppointmentsReport) => <span className="text-primary">₹{r.received}</span> },
           { key: 'action', label: '', render: () => <DownloadButton /> },
-        ]} data={MOCK_APPOINTMENTS_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Ledger':
         return <DataTable columns={[
@@ -89,7 +139,7 @@ export default function ReportsPage() {
           { key: 'paid', label: 'Paid', render: (r: LedgerReport) => <span className="text-status-completed">₹{r.paid}</span> },
           { key: 'pending', label: 'Pending', render: (r: LedgerReport) => <span className="text-status-not-started">₹{r.pending}</span> },
           { key: 'status', label: 'Status', render: (r: LedgerReport) => <StatusBadge status={r.status} /> },
-        ]} data={MOCK_LEDGER_REPORT} />;
+        ]} data={reportData} />;
 
       case 'All Bookings Report':
         return <DataTable columns={[
@@ -100,7 +150,7 @@ export default function ReportsPage() {
           { key: 'dateTime', label: 'Date & Time' },
           { key: 'cost', label: 'Cost', render: (r: AllBookingsReport) => <span className="text-primary">₹{r.cost}</span> },
           { key: 'status', label: 'Status', render: (r: AllBookingsReport) => <StatusBadge status={r.status} /> },
-        ]} data={MOCK_ALL_BOOKINGS_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Summary Report':
         return <DataTable columns={[
@@ -109,7 +159,7 @@ export default function ReportsPage() {
           { key: 'totalCost', label: 'Total Cost', render: (r: SummaryReport) => <span className="text-status-not-started">₹{r.totalCost}</span> },
           { key: 'totalFee', label: 'Total Fee', render: (r: SummaryReport) => <span className="text-primary">₹{r.totalFee}</span> },
           { key: 'netProfit', label: 'Net Profit', render: (r: SummaryReport) => <span className="text-status-completed">₹{r.netProfit}</span> },
-        ]} data={MOCK_SUMMARY_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Temple Wise Bookings Report':
         return <DataTable columns={[
@@ -118,7 +168,7 @@ export default function ReportsPage() {
           { key: 'pujaCost', label: 'Puja Cost', render: (r: TempleWiseReport) => <span className="text-primary">₹{r.pujaCost}</span> },
           { key: 'chadhavasBookings', label: 'Chadhavas Bookings' },
           { key: 'chadhavaCost', label: 'Chadhava Cost', render: (r: TempleWiseReport) => <span className="text-primary">₹{r.chadhavaCost}</span> },
-        ]} data={MOCK_TEMPLE_WISE_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Deity Wise Bookings Report':
         return <DataTable columns={[
@@ -127,7 +177,7 @@ export default function ReportsPage() {
           { key: 'pujaCost', label: 'Puja Cost', render: (r: DeityWiseReport) => <span className="text-primary">₹{r.pujaCost}</span> },
           { key: 'chadhavasBookings', label: 'Chadhavas Bookings' },
           { key: 'chadhavaCost', label: 'Chadhava Cost', render: (r: DeityWiseReport) => <span className="text-primary">₹{r.chadhavaCost}</span> },
-        ]} data={MOCK_DEITY_WISE_REPORT} />;
+        ]} data={reportData} />;
 
       case 'Devotee Wise Bookings Report':
         return <DataTable columns={[
@@ -139,7 +189,7 @@ export default function ReportsPage() {
           { key: 'appointments', label: 'Appointments' },
           { key: 'totalBookings', label: 'Total Bookings' },
           { key: 'totalCost', label: 'Total Cost', render: (r: DevoteeWiseReport) => <span className="text-primary">₹{r.totalCost}</span> },
-        ]} data={MOCK_DEVOTEE_WISE_REPORT} />;
+        ]} data={reportData} />;
 
       default:
         return null;

@@ -13,7 +13,7 @@ export function PujaCard({ puja }: PujaCardProps) {
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image
-            src={puja.imageUrl}
+            src={puja.imageUrl || '/images/placeholder.jpg'}
             alt={puja.name}
             fill
             className="object-cover"

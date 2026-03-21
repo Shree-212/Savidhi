@@ -13,7 +13,7 @@ export function TempleCard({ temple }: TempleCardProps) {
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image
-            src={temple.images[0] || ''}
+            src={temple.images?.[0] || '/images/placeholder.jpg'}
             alt={temple.name}
             fill
             className="object-cover"
