@@ -7,6 +7,7 @@ import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
 
 interface Puja {
   id: string;
@@ -248,14 +249,18 @@ export default function PujasPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Sample Puja Video</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">▶</div>
-              </div>
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Slider Images</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">📷 +</div>
-              </div>
+              <MediaUploadSingle
+                label="Sample Puja Video"
+                type="video"
+                accept="video/*"
+                value={editing.sample_video_url ?? ''}
+                onChange={(url) => setEditing(prev => prev ? { ...prev, sample_video_url: url } : prev)}
+              />
+              <MediaUploadMulti
+                label="Slider Images"
+                value={editing.slider_images ?? []}
+                onChange={(urls) => setEditing(prev => prev ? { ...prev, slider_images: urls } : prev)}
+              />
             </div>
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Benefits of Puja</h4>

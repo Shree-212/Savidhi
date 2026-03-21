@@ -7,6 +7,7 @@ import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
 
 interface Offering {
   item_name: string;
@@ -256,7 +257,17 @@ export default function ChadhavasPage() {
                   className="h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground"
                 />
                 <div className="flex items-center gap-1">
-                  <div className="w-8 h-8 bg-accent border border-border rounded flex items-center justify-center text-[10px] text-muted-foreground">📷</div>
+                  <MediaUploadSingle
+                    label="Offering Image"
+                    type="image"
+                    accept="image/*"
+                    value={offering.image_url ?? ''}
+                    onChange={(url) => {
+                      const updated = [...offerings];
+                      updated[i] = { ...updated[i], image_url: url };
+                      setOfferings(updated);
+                    }}
+                  />
                   <DeleteButton onClick={() => removeOffering(i)} />
                 </div>
               </div>
@@ -264,14 +275,18 @@ export default function ChadhavasPage() {
             <button onClick={addOffering} className="text-xs text-primary hover:underline">+ Add Offering</button>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Sample Puja Video</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">▶</div>
-              </div>
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Slider Images</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">📷 +</div>
-              </div>
+              <MediaUploadSingle
+                label="Sample Puja Video"
+                type="video"
+                accept="video/*"
+                value={editing.sample_video_url ?? ''}
+                onChange={(url) => setEditing(prev => prev ? { ...prev, sample_video_url: url } : prev)}
+              />
+              <MediaUploadMulti
+                label="Slider Images"
+                value={editing.slider_images ?? []}
+                onChange={(urls) => setEditing(prev => prev ? { ...prev, slider_images: urls } : prev)}
+              />
             </div>
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Benefits of Chadhava</h4>

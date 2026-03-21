@@ -7,6 +7,7 @@ import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, ScheduleButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle } from '@/components/shared/MediaUpload';
 import type { PujariAdmin, PujariLedgerEntry } from '@/types';
 
 interface ApiPujari {
@@ -47,6 +48,7 @@ export default function PujarisPage() {
   const [formDesignation, setFormDesignation] = useState('');
   const [formStartDate, setFormStartDate] = useState('');
   const [formTempleId, setFormTempleId] = useState('');
+  const [formProfilePic, setFormProfilePic] = useState('');
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
@@ -147,6 +149,7 @@ export default function PujarisPage() {
     setFormDesignation(pujari.designation || '');
     setFormStartDate(pujari.startDate || '');
     setFormTempleId('');
+    setFormProfilePic(pujari.profilePic ?? '');
   };
 
   const openCreate = () => {
@@ -162,6 +165,7 @@ export default function PujarisPage() {
     setFormDesignation('');
     setFormStartDate('');
     setFormTempleId('');
+    setFormProfilePic('');
   };
 
   const handleSave = async () => {
@@ -172,6 +176,7 @@ export default function PujarisPage() {
         name: formName,
         designation: formDesignation,
         start_date: formStartDate,
+        profile_pic: formProfilePic,
       };
       if (formTempleId) payload.temple_id = formTempleId;
 
@@ -261,9 +266,13 @@ export default function PujarisPage() {
             </select>
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Profile Pic</h4>
-            <div className="w-24 h-24 bg-accent border border-border rounded-lg flex items-center justify-center text-muted-foreground">
-              <span className="text-primary">✏️</span> 📷
-            </div>
+            <MediaUploadSingle
+              label="Profile Picture"
+              type="image"
+              accept="image/*"
+              value={formProfilePic}
+              onChange={setFormProfilePic}
+            />
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Identity Proof</h4>
             <div className="grid grid-cols-2 gap-3">

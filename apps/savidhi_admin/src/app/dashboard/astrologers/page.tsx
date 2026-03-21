@@ -7,6 +7,7 @@ import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, ScheduleButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
 import type { AstrologerAdmin, AstrologerLedgerEntry } from '@/types';
 
 interface ApiAstrologer {
@@ -62,6 +63,8 @@ export default function AstrologersPage() {
   const [formPrice30, setFormPrice30] = useState('');
   const [formPrice1h, setFormPrice1h] = useState('');
   const [formPrice2h, setFormPrice2h] = useState('');
+  const [formProfilePic, setFormProfilePic] = useState('');
+  const [formSliderImages, setFormSliderImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
@@ -160,6 +163,8 @@ export default function AstrologersPage() {
     setFormPrice30(String(astrologer.prices?.for30min || ''));
     setFormPrice1h(String(astrologer.prices?.for1hour || ''));
     setFormPrice2h(String(astrologer.prices?.for2hour || ''));
+    setFormProfilePic(astrologer.profilePic ?? '');
+    setFormSliderImages(astrologer.sliderImages ?? []);
   };
 
   const openCreate = () => {
@@ -181,6 +186,8 @@ export default function AstrologersPage() {
     setFormPrice30('');
     setFormPrice1h('');
     setFormPrice2h('');
+    setFormProfilePic('');
+    setFormSliderImages([]);
   };
 
   const handleSave = async () => {
@@ -198,6 +205,8 @@ export default function AstrologersPage() {
         price_30min: Number(formPrice30) || 0,
         price_1hour: Number(formPrice1h) || 0,
         price_2hour: Number(formPrice2h) || 0,
+        profile_pic: formProfilePic,
+        slider_images: formSliderImages,
       };
 
       if (isNew) {
@@ -297,14 +306,18 @@ export default function AstrologersPage() {
             <textarea value={formAbout} onChange={(e) => setFormAbout(e.target.value)} placeholder="About the astrologer..." className="w-full h-16 px-3 py-2 bg-accent border border-border rounded-md text-xs text-foreground resize-none" />
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Profile Pic <span className="text-primary">✏️</span></p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">📷</div>
-              </div>
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Astro Slider Images</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">📷 +</div>
-              </div>
+              <MediaUploadSingle
+                label="Profile Pic"
+                type="image"
+                accept="image/*"
+                value={formProfilePic}
+                onChange={setFormProfilePic}
+              />
+              <MediaUploadMulti
+                label="Astro Slider Images"
+                value={formSliderImages}
+                onChange={setFormSliderImages}
+              />
             </div>
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Identity Proof</h4>

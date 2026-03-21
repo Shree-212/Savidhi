@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
 
 interface Temple {
   id: string;
@@ -134,14 +135,18 @@ export default function TemplesPage() {
             <textarea ref={historyRef} defaultValue={editing.history_and_significance} placeholder="Type Here" className="w-full h-20 px-3 py-2 bg-accent border border-border rounded-md text-xs text-foreground resize-none" />
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Sample Puja Video</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">▶</div>
-              </div>
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2">Slider Images</p>
-                <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">📷 +</div>
-              </div>
+              <MediaUploadSingle
+                label="Sample Video"
+                type="video"
+                accept="video/*"
+                value={editing.sample_video_url ?? ''}
+                onChange={(url) => setEditing(prev => prev ? { ...prev, sample_video_url: url } : prev)}
+              />
+              <MediaUploadMulti
+                label="Slider Images"
+                value={editing.slider_images ?? []}
+                onChange={(urls) => setEditing(prev => prev ? { ...prev, slider_images: urls } : prev)}
+              />
             </div>
 
             <div className="flex gap-3 mt-4">

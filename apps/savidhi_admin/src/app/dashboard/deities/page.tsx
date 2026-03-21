@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle } from '@/components/shared/MediaUpload';
 
 interface Deity {
   id: string;
@@ -99,13 +100,13 @@ export default function DeitiesPage() {
             <input ref={nameRef} defaultValue={editing.name} placeholder="Deity Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
 
             <p className="text-[10px] text-muted-foreground">Upload Image in Format 2525 x 3535</p>
-            <div className="bg-accent border border-border rounded-lg h-48 flex items-center justify-center text-muted-foreground">
-              <span className="text-primary cursor-pointer">✏️</span>
-              <div className="text-center">
-                <div className="text-4xl text-primary/50 mb-2">🙏</div>
-                <span className="text-xs">Deity Image</span>
-              </div>
-            </div>
+            <MediaUploadSingle
+              label="Deity Image"
+              type="image"
+              accept="image/*"
+              value={editing.image_url ?? ''}
+              onChange={(url) => setEditing(prev => prev ? { ...prev, image_url: url } : prev)}
+            />
 
             <div className="flex gap-3 mt-4">
               <OutlineButton className="flex-1" onClick={() => { setEditing(null); setIsNew(false); }}>Cancel</OutlineButton>
