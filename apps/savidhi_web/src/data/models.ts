@@ -5,6 +5,7 @@ export interface Puja {
   templeName: string;
   templeLocation: string;
   imageUrl: string;
+  sliderImages?: string[];
   date: string;
   time: string;
   countdown: string;
@@ -34,6 +35,7 @@ export interface Chadhava {
   templeName: string;
   templeLocation: string;
   imageUrl: string;
+  sliderImages?: string[];
   date: string;
   time: string;
   countdown: string;
