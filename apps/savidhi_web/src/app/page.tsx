@@ -20,6 +20,7 @@ import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
 import { TempleCard } from '@/components/shared/TempleCard';
 import { MOCK_PUJAS, MOCK_CHADHAVAS, MOCK_TEMPLES } from '@/data';
 import { templeService, pujaService, chadhavaService } from '@/lib/services';
+import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
 
 const HOW_TO_STEPS = [
@@ -104,9 +105,9 @@ export default function HomePage() {
   const templeScroll = useHorizontalScroll();
 
   // Fetch real data from API, fallback to mock
-  const [pujas, setPujas] = useState(MOCK_PUJAS);
-  const [chadhavas, setChadhavas] = useState(MOCK_CHADHAVAS);
-  const [temples, setTemples] = useState(MOCK_TEMPLES);
+  const [pujas, setPujas] = useState<any[]>([]);
+  const [chadhavas, setChadhavas] = useState<any[]>([]);
+  const [temples, setTemples] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -118,52 +119,21 @@ export default function HomePage() {
         ]);
 
         if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.success && pujasRes.value.data.data?.length > 0) {
-          const apiPujas = pujasRes.value.data.data.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            temple: { name: p.temple_name || p.temple?.name || 'Temple', location: p.temple_address || '' },
-            date: p.schedule_day || 'Everyday',
-            time: p.schedule_time || '',
-            countdown: { days: 0, hours: 12, minutes: 30, seconds: 14 },
-            benefits: (p.benefits || '').split(', '),
-            ritualsIncluded: (p.rituals_included || '').split(', '),
-            prices: { for1: p.price_for_1, for2: p.price_for_2, for4: p.price_for_4, for6: p.price_for_6 },
-            images: p.slider_images || [],
-            sampleVideoUrl: p.sample_video_url || '',
-          }));
-          setPujas(apiPujas);
+          setPujas(pujasRes.value.data.data.map(mapPuja));
         }
 
         if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.success && chadhavasRes.value.data.data?.length > 0) {
-          const apiChadhavas = chadhavasRes.value.data.data.map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            temple: { name: c.temple_name || 'Temple', location: c.temple_address || '' },
-            date: c.schedule_day || 'Everyday',
-            time: c.schedule_time || '',
-            countdown: { days: 0, hours: 12, minutes: 30, seconds: 14 },
-            offerings: c.offerings || [],
-            images: c.slider_images || [],
-          }));
-          setChadhavas(apiChadhavas);
+          setChadhavas(chadhavasRes.value.data.data.map(mapChadhava));
         }
 
         if (templesRes.status === 'fulfilled' && templesRes.value.data?.success && templesRes.value.data.data?.length > 0) {
-          const apiTemples = templesRes.value.data.data.map((t: any) => ({
-            id: t.id,
-            name: t.name,
-            location: t.address,
-            pincode: t.pincode,
-            images: t.slider_images || [],
-            pujaris: [],
-            about: t.about,
-            history: t.history_and_significance,
-            stats: { pujasPerformed: t.pujas_count || 0, devoteeServed: 0 },
-          }));
-          setTemples(apiTemples);
+          setTemples(templesRes.value.data.data.map(mapTemple));
         }
       } catch {
-        // Silently fall back to mock data
+        // Fall back to mock data if API unreachable
+        setPujas(MOCK_PUJAS);
+        setChadhavas(MOCK_CHADHAVAS);
+        setTemples(MOCK_TEMPLES);
       }
     }
     loadData();

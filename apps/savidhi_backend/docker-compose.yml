@@ -83,7 +83,7 @@ services:
       - ./lib:/app/lib:ro
       - /app/node_modules
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4001/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -117,7 +117,128 @@ services:
       - ./lib:/app/lib:ro
       - /app/node_modules
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+      target: development
+    ports:
+      - "4003:4003"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4003
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-savidhi}
+      DB_USER: ${POSTGRES_USER:-savidhi_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-savidhi_password}
+      DB_PORT: 5432
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+    depends_on:
+      - postgres
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/catalog-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: services/booking-service/Dockerfile
+      target: development
+    ports:
+      - "4004:4004"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4004
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-savidhi}
+      DB_USER: ${POSTGRES_USER:-savidhi_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-savidhi_password}
+      DB_PORT: 5432
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      NOTIFICATION_SERVICE_URL: http://notification-service:4006
+    depends_on:
+      - postgres
+      - catalog-service
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/booking-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4004/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  media-service:
+    build:
+      context: .
+      dockerfile: services/media-service/Dockerfile
+      target: development
+    ports:
+      - "4005:4005"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4005
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      S3_BUCKET: ${S3_BUCKET:-savidhi-media}
+      S3_REGION: ${S3_REGION:-ap-south-1}
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    depends_on:
+      - minio
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/media-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+      - media_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4005/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+      target: development
+    ports:
+      - "4006:4006"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4006
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
+    networks:
+      - savidhi-network
+    volumes:
+      - ./services/notification-service:/app
+      - ./lib:/app/lib:ro
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4006/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -276,7 +397,7 @@ services:
       - ./lib:/app/lib:ro
       - /app/node_modules
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

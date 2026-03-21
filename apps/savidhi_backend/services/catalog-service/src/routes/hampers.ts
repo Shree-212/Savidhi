@@ -11,12 +11,12 @@ hampersRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     const offset = (page - 1) * limit;
     const search = req.query.search as string;
 
-    let query = 'SELECT * FROM hampers WHERE is_active = true';
+    let query = 'SELECT * FROM hampers';
     const params: any[] = [];
 
     if (search) {
       params.push(`%${search}%`);
-      query += ` AND name ILIKE $${params.length}`;
+      query += ` WHERE name ILIKE $${params.length}`;
     }
 
     const countResult = await pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
@@ -32,7 +32,7 @@ hampersRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
 
 hampersRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('SELECT * FROM hampers WHERE id = $1 AND is_active = true', [req.params.id]);
+    const result = await pool.query('SELECT * FROM hampers WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Hamper not found' }); return; }
     res.json({ success: true, data: result.rows[0], message: 'Hamper details' });
   } catch (err) { next(err); }
@@ -40,11 +40,10 @@ hampersRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
 
 hampersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, description, price, image_url, items, slider_images } = req.body;
+    const { name, content_description, stock_qty } = req.body;
     const result = await pool.query(
-      `INSERT INTO hampers (name, description, price, image_url, items, slider_images)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [name, description, price, image_url, items || [], slider_images || []]
+      `INSERT INTO hampers (name, content_description, stock_qty) VALUES ($1,$2,$3) RETURNING *`,
+      [name, content_description || '', stock_qty || 0]
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Hamper created' });
   } catch (err) { next(err); }
@@ -53,7 +52,7 @@ hampersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Request,
 hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const fields = ['name', 'description', 'price', 'image_url', 'items', 'slider_images'];
+    const fields = ['name', 'content_description', 'stock_qty'];
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -72,7 +71,7 @@ hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE hampers SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+      `UPDATE hampers SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     );
 
@@ -83,7 +82,7 @@ hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
 
 hampersRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('UPDATE hampers SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [req.params.id]);
+    const result = await pool.query('DELETE FROM hampers WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Hamper not found' }); return; }
     res.json({ success: true, message: 'Hamper deleted' });
   } catch (err) { next(err); }

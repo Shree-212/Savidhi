@@ -28,7 +28,16 @@ export default function AppointmentsPage() {
       setLoading(true);
       setError(null);
       const res = await appointmentService.list({ search: search || undefined });
-      setAppointments(res.data?.data ?? res.data ?? []);
+      const raw = res.data?.data ?? res.data ?? [];
+      const mapped = raw.map((a: any) => ({
+        ...a,
+        astrologerName: a.astrologer_name ?? a.astrologerName ?? '',
+        dateTime: a.scheduled_at ? new Date(a.scheduled_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : a.dateTime ?? '',
+        cost: Number(a.cost ?? 0),
+        meetLink: a.meet_link ?? a.meetLink ?? '',
+        devotee: a.devotee_name ?? a.devotee ?? '',
+      }));
+      setAppointments(mapped);
     } catch (err: any) {
       setError(err.message || 'Failed to load appointments');
     } finally {

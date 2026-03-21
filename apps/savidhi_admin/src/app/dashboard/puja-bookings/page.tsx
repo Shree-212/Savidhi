@@ -34,7 +34,19 @@ export default function PujaBookingsPage() {
       setLoading(true);
       setError(null);
       const res = await pujaEventService.list({ search: search || undefined });
-      setPujaEvents(res.data?.data ?? res.data ?? []);
+      const raw = res.data?.data ?? res.data ?? [];
+      // Map API snake_case fields to component's expected shape
+      const mapped = raw.map((e: any) => ({
+        ...e,
+        pujaName: e.puja_name ?? e.pujaName ?? '',
+        temple: e.temple_name ?? e.temple ?? '',
+        bookings: `${e.total_bookings ?? 0}/${e.max_bookings ?? 200}`,
+        devoteeCount: e.total_devotees ?? e.devoteeCount ?? 0,
+        startTime: e.start_time ? new Date(e.start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : e.startTime ?? '',
+        pujari: e.pujari_name ?? e.pujari ?? 'Not Assigned',
+        stage: e.stage ?? 'YET_TO_START',
+      }));
+      setPujaEvents(mapped);
     } catch (err: any) {
       setError(err.message || 'Failed to load puja events');
     } finally {

@@ -1,0 +1,55 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import { errorHandler } from './middleware/errorHandler';
+import { pujaEventsRouter } from './routes/pujaEvents';
+import { pujaBookingsRouter } from './routes/pujaBookings';
+import { chadhavaEventsRouter } from './routes/chadhavaEvents';
+import { chadhavaBookingsRouter } from './routes/chadhavaBookings';
+import { appointmentsRouter } from './routes/appointments';
+import { paymentsRouter } from './routes/payments';
+import { dashboardRouter } from './routes/dashboard';
+import { reportsRouter } from './routes/reports';
+
+const app = express();
+const PORT = process.env.PORT ?? 4004;
+
+// ─── Middleware ────────────────────────────────────────────────────────────────
+app.use(helmet());
+app.use(cors({
+  origin: (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(','),
+  credentials: true,
+}));
+app.use(express.json());
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'booking-service', timestamp: new Date().toISOString() });
+});
+
+app.use('/api/v1/bookings/puja-events', pujaEventsRouter);
+app.use('/api/v1/bookings/puja-bookings', pujaBookingsRouter);
+app.use('/api/v1/bookings/chadhava-events', chadhavaEventsRouter);
+app.use('/api/v1/bookings/chadhava-bookings', chadhavaBookingsRouter);
+app.use('/api/v1/bookings/appointments', appointmentsRouter);
+app.use('/api/v1/bookings/payments', paymentsRouter);
+app.use('/api/v1/bookings/dashboard', dashboardRouter);
+app.use('/api/v1/bookings/reports', reportsRouter);
+
+// ─── Error handling ───────────────────────────────────────────────────────────
+app.use(errorHandler);
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`[booking-service] Running on port ${PORT}`);
+});
+
+export default app;

@@ -23,7 +23,7 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
     <div className="min-h-screen bg-surface-warm">
       {/* Hero */}
       <div className="relative h-64 sm:h-80 w-full">
-        <Image src={chadhava.imageUrl} alt={chadhava.name} fill className="object-cover" sizes="100vw" priority />
+        <Image src={chadhava.imageUrl || '/images/placeholder.jpg'} alt={chadhava.name} fill className="object-cover" sizes="100vw" priority />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
         <Link href="/chadhava" className="absolute top-4 left-4 w-9 h-9 bg-black/40 rounded-full flex items-center justify-center">
           <ArrowLeft className="w-5 h-5 text-white" />

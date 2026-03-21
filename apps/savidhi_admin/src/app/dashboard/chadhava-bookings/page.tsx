@@ -32,7 +32,18 @@ export default function ChadhavaBookingsPage() {
       setLoading(true);
       setError(null);
       const res = await chadhavaEventService.list({ search: search || undefined });
-      setChadhavaEvents(res.data?.data ?? res.data ?? []);
+      const raw = res.data?.data ?? res.data ?? [];
+      const mapped = raw.map((e: any) => ({
+        ...e,
+        chadhavaName: e.chadhava_name ?? e.chadhavaName ?? '',
+        temple: e.temple_name ?? e.temple ?? '',
+        bookings: `${e.total_bookings ?? 0}/${e.max_bookings ?? 100}`,
+        devoteeCount: e.total_devotees ?? e.devoteeCount ?? 0,
+        startTime: e.start_time ? new Date(e.start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : e.startTime ?? '',
+        pujari: e.pujari_name ?? e.pujari ?? 'Not Assigned',
+        stage: e.stage ?? 'YET_TO_START',
+      }));
+      setChadhavaEvents(mapped);
     } catch (err: any) {
       setError(err.message || 'Failed to load chadhava events');
     } finally {

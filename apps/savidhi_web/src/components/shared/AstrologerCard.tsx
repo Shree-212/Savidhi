@@ -13,7 +13,7 @@ export function AstrologerCard({ astrologer }: AstrologerCardProps) {
       <div className="card hover:shadow-md transition-shadow flex gap-4">
         <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0">
           <Image
-            src={astrologer.imageUrl}
+            src={astrologer.imageUrl || '/images/placeholder.jpg'}
             alt={astrologer.name}
             fill
             className="object-cover"

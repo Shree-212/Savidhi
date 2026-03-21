@@ -33,7 +33,6 @@ app.use(rateLimit({
 // verifies via auth-service, and forwards user info as headers
 async function jwtMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {
-    // Extract token from Authorization header or cookie
     const authHeader = req.headers.authorization;
     const cookieToken = req.headers.cookie
       ?.split(';')
@@ -51,6 +50,7 @@ async function jwtMiddleware(req: Request, _res: Response, next: NextFunction) {
     }
 
     // Verify token via auth-service
+
     const response = await axios.get(`${AUTH_SERVICE_URL}/api/v1/auth/verify`, {
       headers: { Authorization: `Bearer ${token}`, Cookie: `savidhi_admin_token=${token}` },
       timeout: 3000,
@@ -76,15 +76,12 @@ app.get('/health', (_req, res) => {
 });
 
 // ─── Proxy Routes ─────────────────────────────────────────────────────────────
-app.use('/api/v1/auth', createProxyMiddleware({
-  target: AUTH_SERVICE_URL,
-  changeOrigin: true,
-}));
-
-app.use('/api/v1/users', createProxyMiddleware({
-  target: USER_SERVICE_URL,
-  changeOrigin: true,
-}));
+// Use pathFilter so the full original path is forwarded to downstream services.
+app.use(createProxyMiddleware({ pathFilter: '/api/v1/auth',     target: AUTH_SERVICE_URL,    changeOrigin: true }));
+app.use(createProxyMiddleware({ pathFilter: '/api/v1/users',    target: USER_SERVICE_URL,    changeOrigin: true }));
+app.use(createProxyMiddleware({ pathFilter: '/api/v1/catalog',  target: CATALOG_SERVICE_URL, changeOrigin: true }));
+app.use(createProxyMiddleware({ pathFilter: '/api/v1/bookings', target: BOOKING_SERVICE_URL, changeOrigin: true }));
+app.use(createProxyMiddleware({ pathFilter: '/api/v1/media',    target: MEDIA_SERVICE_URL,   changeOrigin: true }));
 
 app.use('/api/v1/catalog', createProxyMiddleware({
   target: CATALOG_SERVICE_URL,

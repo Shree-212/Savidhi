@@ -5,34 +5,23 @@ import { SearchBar } from '@/components/shared/SearchBar';
 import { PujaCard } from '@/components/shared/PujaCard';
 import { MOCK_PUJAS } from '@/data';
 import { pujaService } from '@/lib/services';
+import { mapPuja } from '@/lib/mappers';
 
 export default function PujaListPage() {
   const [search, setSearch] = useState('');
-  const [pujas, setPujas] = useState(MOCK_PUJAS);
+  const [pujas, setPujas] = useState<any[]>([]);
 
   useEffect(() => {
     async function load() {
       try {
         const res = await pujaService.list({ limit: 50 });
         if (res.data?.success && res.data.data?.length > 0) {
-          const apiPujas = res.data.data.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            templeName: p.temple_name || '',
-            temple: { name: p.temple_name || 'Temple', location: p.temple_address || '' },
-            date: p.schedule_day || 'Everyday',
-            time: p.schedule_time || '',
-            countdown: { days: 0, hours: 12, minutes: 30, seconds: 14 },
-            benefits: (p.benefits || '').split(', '),
-            ritualsIncluded: (p.rituals_included || '').split(', '),
-            prices: { for1: p.price_for_1, for2: p.price_for_2, for4: p.price_for_4, for6: p.price_for_6 },
-            images: p.slider_images || [],
-            sampleVideoUrl: p.sample_video_url || '',
-          }));
-          setPujas(apiPujas);
+          setPujas(res.data.data.map(mapPuja));
+        } else {
+          setPujas(MOCK_PUJAS);
         }
       } catch {
-        // Silently fall back to mock data
+        setPujas(MOCK_PUJAS);
       }
     }
     load();
