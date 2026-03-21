@@ -3,24 +3,38 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import path from 'path';
+import fs from 'fs';
 import { mediaRouter } from './routes/media';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
 const PORT = process.env.PORT ?? 4005;
+const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/app/uploads';
+
+// Ensure upload directory exists
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
-  origin: (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(','),
-  credentials: true,
+  origin: '*', // Allow all origins for static file serving
+  credentials: false,
 }));
 app.use(express.json());
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
+}));
+
+// ─── Static file serving — uploaded media ─────────────────────────────────────
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  maxAge: '1d',
+  etag: true,
 }));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────

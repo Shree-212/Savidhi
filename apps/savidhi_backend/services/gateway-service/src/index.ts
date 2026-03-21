@@ -83,20 +83,8 @@ app.use(createProxyMiddleware({ pathFilter: '/api/v1/catalog',  target: CATALOG_
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/bookings', target: BOOKING_SERVICE_URL, changeOrigin: true }));
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/media',    target: MEDIA_SERVICE_URL,   changeOrigin: true }));
 
-app.use('/api/v1/catalog', createProxyMiddleware({
-  target: CATALOG_SERVICE_URL,
-  changeOrigin: true,
-}));
-
-app.use('/api/v1/bookings', createProxyMiddleware({
-  target: BOOKING_SERVICE_URL,
-  changeOrigin: true,
-}));
-
-app.use('/api/v1/media', createProxyMiddleware({
-  target: MEDIA_SERVICE_URL,
-  changeOrigin: true,
-}));
+// Serve uploaded static files via media-service
+app.use(createProxyMiddleware({ pathFilter: '/uploads',         target: MEDIA_SERVICE_URL,   changeOrigin: true }));
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {
