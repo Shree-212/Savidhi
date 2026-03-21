@@ -12,6 +12,7 @@ import { pujarisRouter } from './routes/pujaris';
 import { astrologersRouter } from './routes/astrologers';
 import { hampersRouter } from './routes/hampers';
 import { settingsRouter } from './routes/settings';
+import { panchangRouter } from './routes/panchang';
 
 const app = express();
 const PORT = process.env.PORT ?? 4003;
@@ -33,6 +34,7 @@ app.use('/api/v1/catalog/pujaris', pujarisRouter);
 app.use('/api/v1/catalog/astrologers', astrologersRouter);
 app.use('/api/v1/catalog/hampers', hampersRouter);
 app.use('/api/v1/catalog/settings', settingsRouter);
+app.use('/api/v1/catalog/panchang', panchangRouter);
 
 app.use(errorHandler);
 

@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, FlatList, StatusBar, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '../../theme';
-import { MOCK_PANCHANG } from '../../data';
-import { pujaService, chadhavaService } from '../../services';
+import { pujaService, chadhavaService, panchangService } from '../../services';
+import { PanchangData } from '../../data/models';
 import { PanchangStrip } from '../../components/shared/PanchangStrip';
 import { UpcomingBookingCard } from '../../components/shared/UpcomingBookingCard';
 import { ChipToggle } from '../../components/shared/ChipToggle';
@@ -71,25 +71,35 @@ function mapChadhava(c: any) {
   };
 }
 
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function HomeScreen({ navigation }: HomeScreenProps) {
   const [serviceType, setServiceType] = useState('puja');
   const [search, setSearch] = useState('');
   const [pujas, setPujas] = useState<any[]>([]);
   const [chadhavas, setChadhavas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [panchang, setPanchang] = useState<PanchangData | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const [pujasRes, chadhavasRes] = await Promise.allSettled([
+        const [pujasRes, chadhavasRes, panchangRes] = await Promise.allSettled([
           pujaService.list({ limit: 10 }),
           chadhavaService.list({ limit: 10 }),
+          panchangService.get({ date: todayStr() }),
         ]);
         if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.data) {
           setPujas(pujasRes.value.data.data.map(mapPuja));
         }
         if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.data) {
           setChadhavas(chadhavasRes.value.data.data.map(mapChadhava));
+        }
+        if (panchangRes.status === 'fulfilled' && panchangRes.value.data?.success) {
+          setPanchang(panchangRes.value.data.data as PanchangData);
         }
       } catch (err) {
         console.error('Failed to load home data', err);
@@ -118,11 +128,13 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Panchang Header */}
-        <PanchangStrip
-          panchang={MOCK_PANCHANG}
-          onPress={() => navigation.navigate('Panchang')}
-        />
+        {/* Panchang Strip */}
+        {panchang && (
+          <PanchangStrip
+            panchang={panchang}
+            onPress={() => navigation.navigate('Panchang')}
+          />
+        )}
 
         {/* Divider */}
         <View style={styles.divider} />

@@ -174,6 +174,7 @@ export interface PanchangData {
   date: string;
   day: string;
   tithi: string;
+  nakshatra?: string;
   location: string;
   moonPhase: string;
   festivals: string[];

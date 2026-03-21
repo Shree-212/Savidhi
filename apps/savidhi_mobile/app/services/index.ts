@@ -114,6 +114,12 @@ export const paymentService = {
     api.post('/bookings/payments/verify', data),
 };
 
+// ─── Panchang ─────────────────────────────────────────────────────────────────
+export const panchangService = {
+  get: (params: { date: string; location?: string; lat?: number; lng?: number }) =>
+    api.get('/catalog/panchang', { params }),
+};
+
 // ─── Media ───────────────────────────────────────────────────────────────────
 export const mediaService = {
   getPresignedUrl: (folder: string, fileName: string, contentType: string) =>
