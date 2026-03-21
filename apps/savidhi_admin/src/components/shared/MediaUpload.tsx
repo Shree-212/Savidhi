@@ -4,21 +4,37 @@ import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { Upload, X, Film, ImageIcon, Loader2 } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+/** Convert any http://localhost:PORT/uploads/... URL to a relative /uploads/... path
+ *  so the Next.js rewrite proxy serves it — avoids remotePatterns & CORS entirely. */
+function normaliseUrl(url: string): string {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'localhost' && parsed.pathname.startsWith('/uploads')) {
+      return parsed.pathname;
+    }
+  } catch { /* already relative */ }
+  return url;
+}
 
+// Upload goes through Next.js rewrite (/api → gateway) — no CORS, no absolute URLs needed
 async function uploadFile(file: File): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   const token = typeof window !== 'undefined' ? localStorage.getItem('savidhi_admin_token') : null;
-  const res = await fetch(`${API_BASE}/api/v1/media/upload/local`, {
+  const res = await fetch('/api/v1/media/upload/local', {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
   });
-  if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Upload failed (${res.status}): ${text}`);
+  }
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Upload failed');
-  return data.fileUrl.startsWith('http') ? data.fileUrl : `${API_BASE}${data.fileUrl}`;
+  // Keep relative path — served via Next.js /uploads rewrite
+  return data.fileUrl.startsWith('/uploads') ? data.fileUrl : data.fileUrl;
 }
 
 /* ─── Single file upload (image or video) ─────────────────────────────────── */
@@ -65,7 +81,7 @@ export function MediaUploadSingle({ value, onChange, accept, label, type = 'imag
               <span className="text-[9px] text-muted-foreground">Click to replace</span>
             </div>
           ) : (
-            <Image src={value} alt={label} fill className="object-cover rounded-lg" unoptimized sizes="200px" />
+            <Image src={normaliseUrl(value)} alt={label} fill className="object-cover rounded-lg" unoptimized sizes="200px" />
           )
         ) : (
           <div className="flex flex-col items-center gap-1 text-muted-foreground">
@@ -130,7 +146,7 @@ export function MediaUploadMulti({ value, onChange, label }: MediaUploadMultiPro
       <div className="flex flex-wrap gap-2">
         {(value ?? []).map((url, idx) => (
           <div key={idx} className="relative w-14 h-14 rounded-md overflow-hidden border border-border group">
-            <Image src={url} alt="" fill className="object-cover" unoptimized sizes="56px" />
+            <Image src={normaliseUrl(url)} alt="" fill className="object-cover" unoptimized sizes="56px" />
             <button
               className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
               onClick={() => onChange((value ?? []).filter((_, i) => i !== idx))}

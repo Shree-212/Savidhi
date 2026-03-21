@@ -11,9 +11,25 @@ interface ImageSliderProps {
   fallback?: string;
 }
 
+/** Normalise an image URL so it always loads via the Next.js proxy.
+ *  - Relative paths (/uploads/...) → kept as-is (proxied by next.config rewrite)
+ *  - Full http://localhost:PORT/uploads/... → converted to /uploads/... (relative)
+ *  - Everything else (https://...) → kept as-is
+ */
+function normaliseUrl(url: string): string {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'localhost' && parsed.pathname.startsWith('/uploads')) {
+      return parsed.pathname; // strip host → served via Next.js /uploads rewrite
+    }
+  } catch { /* not an absolute URL, keep as-is */ }
+  return url;
+}
+
 export function ImageSlider({ images, alt, className = '', fallback = '/images/placeholder.jpg' }: ImageSliderProps) {
   const [current, setCurrent] = useState(0);
-  const validImages = images.filter(Boolean);
+  const validImages = images.filter(Boolean).map(normaliseUrl);
   const srcs = validImages.length > 0 ? validImages : [fallback];
   const total = srcs.length;
 

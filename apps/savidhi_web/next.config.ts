@@ -39,12 +39,18 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Proxy API calls through Next.js to avoid CORS issues
+  // Proxy API calls + uploaded media files through Next.js to avoid CORS issues
   async rewrites() {
+    const gatewayUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/:path*`,
+        destination: `${gatewayUrl}/api/:path*`,
+      },
+      {
+        // Proxy locally-uploaded media — so /uploads/xxx.jpg works on web too
+        source: '/uploads/:path*',
+        destination: `${gatewayUrl}/uploads/:path*`,
       },
     ];
   },

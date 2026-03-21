@@ -50,13 +50,18 @@ const nextConfig: NextConfig = {
 
   productionBrowserSourceMaps: false,
 
-  // Proxy API calls
+  // Proxy API calls + uploaded media files
   async rewrites() {
     const gatewayUrl = process.env.INTERNAL_GATEWAY_URL || 'http://localhost:4000';
     return [
       {
         source: '/api/:path*',
         destination: `${gatewayUrl}/api/:path*`,
+      },
+      {
+        // Proxy locally-uploaded media through Next.js — no CORS, no remotePatterns needed
+        source: '/uploads/:path*',
+        destination: `${gatewayUrl}/uploads/:path*`,
       },
     ];
   },
