@@ -5,6 +5,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { astrologerService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import { resolveMediaUrl } from '../../utils';
 import type { Astrologer } from '../../data';
 
 interface Props { navigation: any; route: any; }
@@ -54,7 +55,7 @@ export function AstrologerDetailScreen({ navigation, route }: Props) {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.heroContainer}>
-          <Image source={{ uri: astro.images[0] }} style={styles.heroImage} />
+          <Image source={{ uri: resolveMediaUrl(astro.images[0]) }} style={styles.heroImage} />
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Icon name="arrow-left" size={22} color={Colors.textWhite} />
           </TouchableOpacity>

@@ -9,6 +9,7 @@ import { ImageSlider } from '@/components/shared/ImageSlider';
 import { templeService } from '@/lib/services';
 import { mapTemple } from '@/lib/mappers';
 import type { Temple } from '@/data/models';
+import { normaliseMediaUrl } from '@/lib/utils';
 
 export default function TempleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -71,7 +72,7 @@ export default function TempleDetailPage({ params }: { params: Promise<{ id: str
                 <div key={p.id} className="flex flex-col items-center">
                   <div className="w-10 h-10 rounded-full bg-border-light flex items-center justify-center mb-1 overflow-hidden relative">
                     {p.imageUrl ? (
-                      <Image src={p.imageUrl} alt={p.name} fill className="object-cover" unoptimized sizes="40px" />
+                      <Image src={normaliseMediaUrl(p.imageUrl)} alt={p.name} fill className="object-cover" unoptimized sizes="40px" />
                     ) : (
                       <User className="w-5 h-5 text-text-muted" />
                     )}

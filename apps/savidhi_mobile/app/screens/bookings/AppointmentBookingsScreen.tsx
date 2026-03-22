@@ -32,15 +32,21 @@ export function AppointmentBookingsScreen({ navigation }: { navigation: any }) {
       try {
         const res = await appointmentService.list();
         const items = res.data?.data ?? res.data ?? [];
+        const statusMap: Record<string, AppointmentBooking['status']> = {
+          LINK_YET_TO_BE_GENERATED: 'YET_TO_START',
+          INPROGRESS: 'MEET_IN_PROGRESS',
+          COMPLETED: 'COMPLETE',
+          CANCELLED: 'CANCELLED',
+        };
         setAllAppointments(
           (Array.isArray(items) ? items : []).map((d: any) => ({
             id: d.id,
-            astrologerName: d.astrologer_name ?? d.astrologer?.name ?? '',
-            astrologerImage: d.astrologer_image ?? d.astrologer?.profile_pic ?? '',
-            date: d.scheduled_at ?? d.created_at ?? '',
-            timeSlot: d.duration ?? '',
-            status: d.status ?? 'YET_TO_START',
-            bookingId: d.booking_id ?? d.id,
+            astrologerName: d.astrologer_name ?? '',
+            astrologerImage: d.astrologer_pic ?? '',
+            date: d.scheduled_at ? new Date(d.scheduled_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+            timeSlot: d.scheduled_at ? new Date(d.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '',
+            status: statusMap[d.status] ?? 'YET_TO_START',
+            bookingId: d.id,
           }))
         );
       } catch (err) {

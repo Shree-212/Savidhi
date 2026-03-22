@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIn
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { pujaBookingService } from '../../services';
+import { resolveMediaUrl } from '../../utils';
 import type { PujaStatusStep, PujaStatusDetail } from '../../data';
 
 function TimelineStep({ step, isLast }: { step: PujaStatusStep; isLast: boolean }) {
@@ -20,7 +21,7 @@ function TimelineStep({ step, isLast }: { step: PujaStatusStep; isLast: boolean 
         {step.details?.map((d, i) => <Text key={i} style={styles.stepDetail}>{d}</Text>)}
         {step.videoThumbnail ? (
           <TouchableOpacity style={styles.videoThumb}>
-            <Image source={{ uri: step.videoThumbnail }} style={styles.videoImage} />
+            <Image source={{ uri: resolveMediaUrl(step.videoThumbnail) }} style={styles.videoImage} />
             <View style={styles.playOverlay}>
               <Icon name="play-circle" size={36} color={Colors.textWhite} />
             </View>
@@ -42,20 +43,21 @@ export function PujaStatusScreen({ navigation, route }: { navigation: any; route
       try {
         const res = await pujaBookingService.getById(bookingId);
         const d = res.data?.data ?? res.data;
-        // Map API response to PujaStatusDetail shape
-        const stages = d.stages ?? d.steps ?? [];
+        const stageOrder = ['YET_TO_START','LIVE_ADDED','SHORT_VIDEO_ADDED','SANKALP_VIDEO_ADDED','TO_BE_SHIPPED','SHIPPED'];
+        const stageIdx = stageOrder.indexOf(d.event_stage ?? 'YET_TO_START');
         setStatus({
-          bookingId: d.booking_id ?? d.id ?? bookingId,
-          pujaName: d.puja_name ?? d.puja?.name ?? '',
-          templeName: d.temple_name ?? d.puja?.temple_name ?? '',
-          pujaId: d.puja_id ?? d.puja?.id ?? '',
-          steps: stages.map((s: any) => ({
-            label: s.label ?? s.stage ?? '',
-            subtitle: s.subtitle ?? s.description ?? '',
-            details: s.details ?? [],
-            completed: s.completed ?? s.status === 'DONE',
-            videoThumbnail: s.video_thumbnail ?? s.video_url ?? undefined,
-          })),
+          bookingId: d.id ?? bookingId,
+          pujaName: d.puja_name ?? '',
+          templeName: d.temple_name ?? '',
+          pujaId: d.puja_event_id ?? '',
+          steps: [
+            { label: 'Booking Confirmed', subtitle: d.created_at ? `Booked on ${new Date(d.created_at).toLocaleDateString('en-IN')}` : '', completed: true },
+            { label: 'Live Puja Stream', subtitle: d.event_live_link ? `Watch live: ${d.event_live_link}` : 'Live link will be shared before puja', completed: stageIdx >= stageOrder.indexOf('LIVE_ADDED'), videoThumbnail: undefined },
+            { label: 'Puja Video', subtitle: d.event_short_video_url ? 'Short puja video available' : 'Video will be shared after puja', completed: stageIdx >= stageOrder.indexOf('SHORT_VIDEO_ADDED'), videoThumbnail: d.event_short_video_url ?? undefined },
+            { label: 'Sankalp Video', subtitle: d.event_sankalp_video_url ? 'Your sankalp video is ready' : 'Personalized sankalp video', completed: stageIdx >= stageOrder.indexOf('SANKALP_VIDEO_ADDED'), videoThumbnail: d.event_sankalp_video_url ?? undefined },
+            { label: 'Prasad Dispatched', subtitle: d.shipment_id ? `Tracking: ${d.shipment_id}` : undefined, completed: stageIdx >= stageOrder.indexOf('TO_BE_SHIPPED') },
+            { label: 'Delivered', completed: stageIdx >= stageOrder.indexOf('SHIPPED') },
+          ],
         });
       } catch (err) {
         console.error('PujaStatusScreen fetch error:', err);

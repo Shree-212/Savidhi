@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'rea
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, BorderRadius, Spacing } from '../../theme';
 import { Temple } from '../../data';
+import { resolveMediaUrl } from '../../utils';
 
 interface TempleCardProps {
   temple: Temple;
@@ -13,7 +14,7 @@ export function TempleCard({ temple, onPress }: TempleCardProps) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
       <Image
-        source={{ uri: temple.images[0] }}
+        source={{ uri: resolveMediaUrl(temple.images[0]) }}
         style={styles.image}
       />
       <View style={styles.overlay} />

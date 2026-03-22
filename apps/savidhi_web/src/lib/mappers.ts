@@ -54,7 +54,7 @@ export function mapChadhava(raw: any): Chadhava {
     offerings,
     templeId: raw.temple_id ?? raw.templeId ?? '',
     isWeekly: raw.booking_mode === 'SUBSCRIPTION' || raw.isWeekly,
-    startingPrice: offerings.length > 0 ? Math.min(...offerings.map((o: any) => o.price)) : 0,
+    startingPrice: Number(raw.min_price ?? (offerings.length > 0 ? Math.min(...offerings.map((o: any) => o.price)) : 0)),
   };
 }
 

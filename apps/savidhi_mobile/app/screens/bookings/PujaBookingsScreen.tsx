@@ -32,16 +32,22 @@ export function PujaBookingsScreen({ navigation }: { navigation: any }) {
       try {
         const res = await pujaBookingService.list();
         const items = res.data?.data ?? res.data ?? [];
+        const statusMap: Record<string, PujaBooking['status']> = {
+          NOT_STARTED: 'YET_TO_START', CONFIRMED: 'YET_TO_START', PENDING: 'YET_TO_START',
+          INPROGRESS: 'ONGOING', LIVE_ADDED: 'ONGOING',
+          SHORT_VIDEO_ADDED: 'VIDEO_PROCESSING', SANKALP_VIDEO_ADDED: 'VIDEO_PROCESSING',
+          TO_BE_SHIPPED: 'PRASAD_SHIPPED', SHIPPED: 'PRASAD_SHIPPED',
+          COMPLETED: 'COMPLETE', CANCELLED: 'CANCELLED',
+        };
         setAllBookings(
           (Array.isArray(items) ? items : []).map((d: any) => ({
             id: d.id,
-            pujaName: d.puja_name ?? d.puja?.name ?? '',
-            templeName: d.temple_name ?? d.puja?.temple_name ?? '',
-            bookedOn: d.created_at ?? '',
-            pujaOn: d.scheduled_date ?? d.schedule_day ?? '',
-            status: d.status ?? 'YET_TO_START',
-            isWeekly: d.event_repeats === 'weekly',
-            bookingId: d.booking_id ?? d.id,
+            pujaName: d.puja_name ?? '',
+            templeName: d.temple_name ?? '',
+            bookedOn: d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+            pujaOn: d.event_start_time ? new Date(d.event_start_time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+            status: statusMap[d.status] ?? 'YET_TO_START',
+            bookingId: d.id,
           }))
         );
       } catch (err) {

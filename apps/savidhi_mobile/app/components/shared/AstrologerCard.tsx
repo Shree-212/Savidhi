@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, BorderRadius, Spacing } from '../../theme';
 import { Astrologer } from '../../data';
+import { resolveMediaUrl } from '../../utils';
 
 interface AstrologerCardProps {
   astrologer: Astrologer;
@@ -12,7 +13,7 @@ interface AstrologerCardProps {
 export function AstrologerCard({ astrologer, onPress }: AstrologerCardProps) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
-      <Image source={{ uri: astrologer.imageUrl }} style={styles.avatar} />
+      <Image source={{ uri: resolveMediaUrl(astrologer.imageUrl) }} style={styles.avatar} />
       <View style={styles.info}>
         <Text style={styles.name}>{astrologer.name}</Text>
         <Text style={styles.specialty}>{astrologer.specialty}</Text>

@@ -435,6 +435,10 @@ export interface TimelineEvent {
   durationHours: number;
   day: number;
   color: 'orange' | 'teal' | 'green' | 'red' | 'blue';
+  /** ISO date string for real date positioning */
+  date?: string;
+  status?: string;
+  stage?: string;
 }
 
 /* ── Dashboard Stats ─────────────────────────────────── */
