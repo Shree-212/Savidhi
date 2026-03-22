@@ -101,6 +101,10 @@ export const pujaEventService = {
     limit?: number;
     status?: string;
     date?: string;
+    from_date?: string;
+    to_date?: string;
+    search?: string;
+    view?: string;
   }) => apiClient.get('/bookings/puja-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/puja-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/puja-events', data),
@@ -116,7 +120,7 @@ export const pujaEventService = {
 };
 
 export const pujaBookingService = {
-  list: (params?: { page?: number; limit?: number; status?: string }) =>
+  list: (params?: { page?: number; limit?: number; status?: string; puja_event_id?: string }) =>
     apiClient.get('/bookings/puja-bookings', { params }),
   getById: (id: string) => apiClient.get(`/bookings/puja-bookings/${id}`),
   cancel: (id: string) =>
@@ -128,14 +132,16 @@ export const chadhavaEventService = {
     page?: number;
     limit?: number;
     status?: string;
-    date?: string;
+    from_date?: string;
+    to_date?: string;
   }) => apiClient.get('/bookings/chadhava-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/chadhava-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/chadhava-events', data),
   advanceStage: (
     id: string,
     data: {
-      stage: string;
+      stage?: string;
+      live_link?: string;
       short_video_url?: string;
       sankalp_video_url?: string;
     },
@@ -143,8 +149,12 @@ export const chadhavaEventService = {
 };
 
 export const chadhavaBookingService = {
-  list: (params?: { page?: number; limit?: number; status?: string }) =>
-    apiClient.get('/bookings/chadhava-bookings', { params }),
+  list: (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    chadhava_event_id?: string;
+  }) => apiClient.get('/bookings/chadhava-bookings', { params }),
   getById: (id: string) => apiClient.get(`/bookings/chadhava-bookings/${id}`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/chadhava-bookings/${id}/cancel`),

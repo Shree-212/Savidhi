@@ -10,6 +10,7 @@ import { ImageSlider } from '@/components/shared/ImageSlider';
 import { chadhavaService } from '@/lib/services';
 import { mapChadhava } from '@/lib/mappers';
 import type { Chadhava } from '@/data/models';
+import { normaliseMediaUrl } from '@/lib/utils';
 
 export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -95,7 +96,7 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                 <div key={off.id} className="flex items-center border border-border-DEFAULT rounded-xl px-4 py-3 bg-white">
                   {off.imageUrl && (
                     <div className="relative w-10 h-10 rounded-lg overflow-hidden mr-3 shrink-0">
-                      <Image src={off.imageUrl} alt={off.name} fill className="object-cover" unoptimized sizes="40px" />
+                      <Image src={normaliseMediaUrl(off.imageUrl)} alt={off.name} fill className="object-cover" unoptimized sizes="40px" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">

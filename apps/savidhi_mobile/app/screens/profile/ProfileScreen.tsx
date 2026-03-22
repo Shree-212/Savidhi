@@ -4,6 +4,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { userService, authService } from '../../services';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resolveMediaUrl } from '../../utils';
 import type { UserProfile } from '../../data';
 
 interface MenuItemProps {
@@ -104,7 +105,7 @@ export function ProfileScreen({ navigation }: { navigation: any }) {
 
       {/* User Card */}
       <View style={styles.userCard}>
-        <Image source={{ uri: user.imageUrl }} style={styles.avatar} />
+        <Image source={{ uri: resolveMediaUrl(user.imageUrl) }} style={styles.avatar} />
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{user.name}</Text>
           <Text style={styles.userPhone}>{user.phone}</Text>

@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { MapPin, Clock } from 'lucide-react';
 import type { Puja } from '@/data/models';
+import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
 
 interface PujaCardProps {
   puja: Puja;
@@ -13,11 +14,12 @@ export function PujaCard({ puja }: PujaCardProps) {
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image
-            src={puja.imageUrl || '/images/placeholder.jpg'}
+            src={normaliseMediaUrl(puja.imageUrl) || '/images/placeholder.jpg'}
             alt={puja.name}
             fill
             className="object-cover"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            unoptimized={isLocalMediaUrl(puja.imageUrl)}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           <div className="absolute bottom-3 left-3 right-3">

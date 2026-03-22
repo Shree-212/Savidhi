@@ -5,6 +5,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { chadhavaService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import { resolveMediaUrl } from '../../utils';
 import type { Chadhava, ChadhavaOffering } from '../../data';
 
 interface Props { navigation: any; route: any; }
@@ -43,8 +44,11 @@ export function ChadhavaDetailScreen({ navigation, route }: Props) {
             imageUrl: o.images?.[0] ?? '',
           })),
           templeId: d.temple_id ?? '',
-          isWeekly: d.event_repeats === 'weekly',
-          startingPrice: d.price_for_1 ?? 0,
+          isWeekly: d.booking_mode === 'SUBSCRIPTION',
+          startingPrice: (d.offerings ?? []).reduce((min: number, o: any) => {
+            const p = Number(o.price ?? 0);
+            return p > 0 && (min === 0 || p < min) ? p : min;
+          }, 0),
         });
       } catch (err) {
         console.error('ChadhavaDetailScreen fetch error:', err);
@@ -72,7 +76,7 @@ export function ChadhavaDetailScreen({ navigation, route }: Props) {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.heroContainer}>
-          <Image source={{ uri: chadhava.imageUrl }} style={styles.heroImage} />
+          <Image source={{ uri: resolveMediaUrl(chadhava.imageUrl) }} style={styles.heroImage} />
           <View style={styles.heroOverlay} />
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Icon name="arrow-left" size={22} color={Colors.textWhite} />

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Flame, Clock, Users, CalendarHeart, Diamond, Share2, Star, Loader2, LogIn } from 'lucide-react';
 import { isAuthenticated } from '@/lib/auth';
 import { userService } from '@/lib/services';
+import { normaliseMediaUrl } from '@/lib/utils';
 
 const STATS = [
   { key: 'pujaBooked' as const, label: 'Puja Booked', Icon: Flame },
@@ -101,7 +102,7 @@ export default function PointsPage() {
       {/* User Card */}
       <div className="flex items-center border border-border-DEFAULT rounded-xl p-4 bg-white mb-4">
         <div className="w-14 h-14 rounded-full bg-border-light overflow-hidden relative shrink-0">
-          <Image src={user.imageUrl || '/images/placeholder.jpg'} alt={user.name} fill className="object-cover" sizes="56px" />
+          <Image src={normaliseMediaUrl(user.imageUrl) || '/images/placeholder.jpg'} alt={user.name} fill className="object-cover" sizes="56px" unoptimized />
         </div>
         <div className="flex-1 ml-3">
           <p className="font-semibold text-text-primary">{user.name}</p>
@@ -149,7 +150,7 @@ export default function PointsPage() {
         {user.achievements.map((ach: any) => (
           <div key={ach.id} className={`border border-border-DEFAULT rounded-xl p-3 bg-white text-center relative ${!ach.unlocked ? 'opacity-50' : ''}`}>
             <div className="w-12 h-12 rounded-full bg-border-light mx-auto mb-1 overflow-hidden relative">
-              <Image src={ach.imageUrl || '/images/placeholder.jpg'} alt={ach.name} fill className="object-cover" sizes="48px" />
+              <Image src={normaliseMediaUrl(ach.imageUrl) || '/images/placeholder.jpg'} alt={ach.name} fill className="object-cover" sizes="48px" unoptimized />
             </div>
             <p className="text-[10px] text-text-primary font-medium">{ach.name}</p>
             {!ach.unlocked && (

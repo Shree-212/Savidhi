@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Star, Bookmark } from 'lucide-react';
 import type { Astrologer } from '@/data/models';
+import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
 
 interface AstrologerCardProps {
   astrologer: Astrologer;
@@ -13,11 +14,12 @@ export function AstrologerCard({ astrologer }: AstrologerCardProps) {
       <div className="card hover:shadow-md transition-shadow flex gap-4">
         <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0">
           <Image
-            src={astrologer.imageUrl || '/images/placeholder.jpg'}
+            src={normaliseMediaUrl(astrologer.imageUrl) || '/images/placeholder.jpg'}
             alt={astrologer.name}
             fill
             className="object-cover"
             sizes="80px"
+            unoptimized={isLocalMediaUrl(astrologer.imageUrl)}
           />
         </div>
         <div className="flex-1 min-w-0 space-y-1">

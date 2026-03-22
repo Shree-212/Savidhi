@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'rea
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, BorderRadius, Spacing } from '../../theme';
 import { Puja } from '../../data';
+import { resolveMediaUrl } from '../../utils';
 
 const CARD_WIDTH = Dimensions.get('window').width - 48;
 
@@ -22,7 +23,7 @@ export function PujaCard({ puja, onPress, compact }: PujaCardProps) {
       onPress={onPress}
       activeOpacity={0.9}
     >
-      <Image source={{ uri: puja.imageUrl }} style={styles.image} />
+      <Image source={{ uri: resolveMediaUrl(puja.imageUrl) }} style={styles.image} />
       <View style={styles.overlay} />
       {puja.isWeekly && (
         <View style={styles.weeklyBadge}>

@@ -13,22 +13,26 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
     const offset = (page - 1) * limit;
     const templeId = req.query.temple_id as string;
 
-    let query = 'SELECT c.*, t.name AS temple_name FROM chadhavas c LEFT JOIN temples t ON c.temple_id = t.id WHERE c.is_active = true';
-    const params: any[] = [];
+    const where = templeId ? 'AND c.temple_id = $1' : '';
+    const params: any[] = templeId ? [templeId] : [];
 
-    if (templeId) {
-      params.push(templeId);
-      query += ` AND c.temple_id = $${params.length}`;
-    }
-
-    const countQuery = query.replace('SELECT c.*, t.name AS temple_name', 'SELECT COUNT(*)');
-    const countResult = await pool.query(countQuery, params);
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM chadhavas c WHERE c.is_active = true ${where}`,
+      params,
+    );
     const total = parseInt(countResult.rows[0].count);
 
-    query += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limit, offset);
-
-    const result = await pool.query(query, params);
+    const dataParams = [...params, limit, offset];
+    const result = await pool.query(
+      `SELECT c.*, t.name AS temple_name, t.address AS temple_address,
+              (SELECT MIN(co.price) FROM chadhava_offerings co WHERE co.chadhava_id = c.id) AS min_price
+       FROM chadhavas c
+       LEFT JOIN temples t ON c.temple_id = t.id
+       WHERE c.is_active = true ${where}
+       ORDER BY c.created_at DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      dataParams,
+    );
     res.json({ success: true, data: result.rows, total, page, limit, message: 'Chadhavas fetched' });
   } catch (err) { next(err); }
 });
@@ -37,7 +41,7 @@ chadhavasRouter.get('/:id', async (req: Request, res: Response, next: NextFuncti
   try {
     const { id } = req.params;
     const chadhava = await pool.query(
-      `SELECT c.*, t.name AS temple_name
+      `SELECT c.*, t.name AS temple_name, t.address AS temple_address
        FROM chadhavas c LEFT JOIN temples t ON c.temple_id = t.id
        WHERE c.id = $1 AND c.is_active = true`,
       [id]
@@ -120,9 +124,9 @@ chadhavasRouter.post('/:id/offerings', requireAuth, requireAdmin('ADMIN', 'BOOKI
 
     const { name, price, description, image_url } = req.body;
     const result = await pool.query(
-      `INSERT INTO chadhava_offerings (chadhava_id, name, price, description, image_url)
+      `INSERT INTO chadhava_offerings (chadhava_id, item_name, price, benefit, images)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [chadhavaId, name, price, description, image_url]
+      [chadhavaId, name, price, description, image_url ? [image_url] : []]
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Offering added' });
   } catch (err) { next(err); }
@@ -135,11 +139,10 @@ chadhavasRouter.patch('/:chadhavaId/offerings/:offeringId', requireAuth, require
 
     const result = await pool.query(
       `UPDATE chadhava_offerings
-       SET name = COALESCE($1, name), price = COALESCE($2, price),
-           description = COALESCE($3, description), image_url = COALESCE($4, image_url),
-           updated_at = NOW()
+       SET item_name = COALESCE($1, item_name), price = COALESCE($2, price),
+           benefit = COALESCE($3, benefit), images = COALESCE($4, images)
        WHERE id = $5 AND chadhava_id = $6 RETURNING *`,
-      [name, price, description, image_url, offeringId, chadhavaId]
+      [name, price, description, image_url ? [image_url] : null, offeringId, chadhavaId]
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Offering not found' }); return; }

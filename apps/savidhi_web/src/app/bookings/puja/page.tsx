@@ -1,13 +1,42 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { BookingCard } from '@/components/shared/BookingCard';
+import { pujaBookingService } from '@/lib/services';
 import { MOCK_PUJA_BOOKINGS } from '@/data';
 import type { PujaBooking } from '@/data';
 
 const FILTERS = ['All', 'Ongoing', 'Upcoming', 'Completed', 'Cancelled'];
+
+function mapPujaBooking(b: any): PujaBooking {
+  return {
+    id: b.id,
+    bookingId: b.id,
+    pujaName: b.puja_name ?? b.pujaName ?? '',
+    templeName: b.temple_name ?? b.templeName ?? '',
+    bookedOn: b.created_at ? new Date(b.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+    pujaOn: b.event_start_time ? new Date(b.event_start_time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+    status: mapStatus(b.status),
+  };
+}
+
+function mapStatus(s: string): PujaBooking['status'] {
+  const map: Record<string, PujaBooking['status']> = {
+    CONFIRMED: 'YET_TO_START',
+    PENDING: 'YET_TO_START',
+    INPROGRESS: 'ONGOING',
+    LIVE_ADDED: 'ONGOING',
+    SHORT_VIDEO_ADDED: 'VIDEO_PROCESSING',
+    SANKALP_VIDEO_ADDED: 'VIDEO_PROCESSING',
+    TO_BE_SHIPPED: 'PRASAD_SHIPPED',
+    SHIPPED: 'PRASAD_SHIPPED',
+    COMPLETED: 'COMPLETE',
+    CANCELLED: 'CANCELLED',
+  };
+  return map[s] ?? 'YET_TO_START';
+}
 
 const filterMap: Record<string, (b: PujaBooking) => boolean> = {
   All: () => true,
@@ -19,7 +48,22 @@ const filterMap: Record<string, (b: PujaBooking) => boolean> = {
 
 export default function PujaBookingsPage() {
   const [filter, setFilter] = useState('All');
-  const bookings = MOCK_PUJA_BOOKINGS.filter(filterMap[filter] || filterMap.All);
+  const [bookings, setBookings] = useState<PujaBooking[]>([]);
+
+  useEffect(() => {
+    pujaBookingService.list({ page: 1 })
+      .then((res) => {
+        const raw = res.data?.data ?? [];
+        if (raw.length > 0) {
+          setBookings(raw.map(mapPujaBooking));
+        } else {
+          setBookings(MOCK_PUJA_BOOKINGS);
+        }
+      })
+      .catch(() => setBookings(MOCK_PUJA_BOOKINGS));
+  }, []);
+
+  const filtered = bookings.filter(filterMap[filter] || filterMap.All);
 
   return (
     <div className="section-container py-8 max-w-2xl mx-auto">
@@ -30,7 +74,6 @@ export default function PujaBookingsPage() {
         <h1 className="text-xl font-bold text-text-primary">Puja Bookings</h1>
       </div>
 
-      {/* Filter Chips */}
       <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
         {FILTERS.map((f) => (
           <button
@@ -45,12 +88,11 @@ export default function PujaBookingsPage() {
         ))}
       </div>
 
-      {/* Bookings */}
       <div className="space-y-3">
-        {bookings.map((b) => (
+        {filtered.map((b) => (
           <BookingCard key={b.id} booking={b} />
         ))}
-        {bookings.length === 0 && (
+        {filtered.length === 0 && (
           <p className="text-center text-text-muted py-12">No bookings found</p>
         )}
       </div>

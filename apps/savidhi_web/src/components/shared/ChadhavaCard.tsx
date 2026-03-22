@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { MapPin } from 'lucide-react';
 import type { Chadhava } from '@/data/models';
+import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
 
 interface ChadhavaCardProps {
   chadhava: Chadhava;
@@ -13,11 +14,12 @@ export function ChadhavaCard({ chadhava }: ChadhavaCardProps) {
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image
-            src={chadhava.imageUrl || '/images/placeholder.jpg'}
+            src={normaliseMediaUrl(chadhava.imageUrl) || '/images/placeholder.jpg'}
             alt={chadhava.name}
             fill
             className="object-cover"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            unoptimized={isLocalMediaUrl(chadhava.imageUrl)}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           {chadhava.isWeekly && (

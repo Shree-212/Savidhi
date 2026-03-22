@@ -4,6 +4,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { templeService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
+import { resolveMediaUrl } from '../../utils';
 import type { Temple } from '../../data';
 
 interface Props { navigation: any; route: any; }
@@ -58,7 +59,7 @@ export function TempleDetailScreen({ navigation, route }: Props) {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.heroContainer}>
-          <Image source={{ uri: temple.images[0] }} style={styles.heroImage} />
+          <Image source={{ uri: resolveMediaUrl(temple.images[0]) }} style={styles.heroImage} />
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Icon name="arrow-left" size={22} color={Colors.textWhite} />
           </TouchableOpacity>
@@ -97,7 +98,7 @@ export function TempleDetailScreen({ navigation, route }: Props) {
           {/* Video */}
           <Text style={styles.sectionTitle}>Our Past Puja Video Here</Text>
           <View style={styles.videoContainer}>
-            <Image source={{ uri: temple.videoThumbnail }} style={styles.videoThumb} />
+            <Image source={{ uri: resolveMediaUrl(temple.videoThumbnail) }} style={styles.videoThumb} />
             <View style={styles.playButton}>
               <Icon name="play" size={28} color={Colors.textWhite} />
             </View>

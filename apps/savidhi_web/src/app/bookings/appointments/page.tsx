@@ -1,13 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
+import { appointmentService } from '@/lib/services';
 import { MOCK_APPOINTMENT_BOOKINGS } from '@/data';
+import { normaliseMediaUrl } from '@/lib/utils';
 import type { AppointmentBooking } from '@/data';
 
 const FILTERS = ['All', 'Ongoing', 'Upcoming', 'Completed', 'Cancelled'];
+
+function mapAppointmentBooking(a: any): AppointmentBooking {
+  const scheduledAt = a.scheduled_at ?? '';
+  const date = scheduledAt ? new Date(scheduledAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  const time = scheduledAt ? new Date(scheduledAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+  const statusMap: Record<string, AppointmentBooking['status']> = {
+    LINK_YET_TO_BE_GENERATED: 'YET_TO_START',
+    INPROGRESS: 'MEET_IN_PROGRESS',
+    COMPLETED: 'COMPLETE',
+    CANCELLED: 'CANCELLED',
+  };
+  return {
+    id: a.id,
+    bookingId: a.id,
+    astrologerName: a.astrologer_name ?? '',
+    astrologerImage: normaliseMediaUrl(a.astrologer_pic ?? a.profile_pic ?? ''),
+    date,
+    timeSlot: time,
+    status: statusMap[a.status] ?? 'YET_TO_START',
+  };
+}
 
 const filterMap: Record<string, (b: AppointmentBooking) => boolean> = {
   All: () => true,
@@ -19,7 +42,22 @@ const filterMap: Record<string, (b: AppointmentBooking) => boolean> = {
 
 export default function AppointmentBookingsPage() {
   const [filter, setFilter] = useState('All');
-  const bookings = MOCK_APPOINTMENT_BOOKINGS.filter(filterMap[filter] || filterMap.All);
+  const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
+
+  useEffect(() => {
+    appointmentService.list({ page: 1 })
+      .then((res) => {
+        const raw = res.data?.data ?? [];
+        if (raw.length > 0) {
+          setBookings(raw.map(mapAppointmentBooking));
+        } else {
+          setBookings(MOCK_APPOINTMENT_BOOKINGS);
+        }
+      })
+      .catch(() => setBookings(MOCK_APPOINTMENT_BOOKINGS));
+  }, []);
+
+  const filtered = bookings.filter(filterMap[filter] || filterMap.All);
 
   return (
     <div className="section-container py-8 max-w-2xl mx-auto">
@@ -30,7 +68,6 @@ export default function AppointmentBookingsPage() {
         <h1 className="text-xl font-bold text-text-primary">Appointment Bookings</h1>
       </div>
 
-      {/* Filter Chips */}
       <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
         {FILTERS.map((f) => (
           <button
@@ -45,12 +82,11 @@ export default function AppointmentBookingsPage() {
         ))}
       </div>
 
-      {/* Bookings */}
       <div className="space-y-3">
-        {bookings.map((b) => (
+        {filtered.map((b) => (
           <AppointmentCard key={b.id} booking={b} />
         ))}
-        {bookings.length === 0 && (
+        {filtered.length === 0 && (
           <p className="text-center text-text-muted py-12">No appointments found</p>
         )}
       </div>

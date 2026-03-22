@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Colors, Typography, BorderRadius, Spacing } from '../../theme';
 import { AppointmentBooking } from '../../data';
+import { resolveMediaUrl } from '../../utils';
 import { StatusBadge } from './StatusBadge';
 
 interface AppointmentCardProps {
@@ -12,7 +13,7 @@ interface AppointmentCardProps {
 export function AppointmentCard({ appointment, onPress }: AppointmentCardProps) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
-      <Image source={{ uri: appointment.astrologerImage }} style={styles.avatar} />
+      <Image source={{ uri: resolveMediaUrl(appointment.astrologerImage) }} style={styles.avatar} />
       <View style={styles.info}>
         <Text style={styles.name}>{appointment.astrologerName}</Text>
         <Text style={styles.date}>{appointment.date}</Text>

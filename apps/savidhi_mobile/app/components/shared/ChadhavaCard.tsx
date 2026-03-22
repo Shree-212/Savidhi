@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'rea
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, BorderRadius, Spacing } from '../../theme';
 import { Chadhava } from '../../data';
+import { resolveMediaUrl } from '../../utils';
 
 interface ChadhavaCardProps {
   chadhava: Chadhava;
@@ -12,7 +13,7 @@ interface ChadhavaCardProps {
 export function ChadhavaCard({ chadhava, onPress }: ChadhavaCardProps) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
-      <Image source={{ uri: chadhava.imageUrl }} style={styles.image} />
+      <Image source={{ uri: resolveMediaUrl(chadhava.imageUrl) }} style={styles.image} />
       <View style={styles.overlay} />
       {chadhava.isWeekly && (
         <View style={styles.weeklyBadge}>

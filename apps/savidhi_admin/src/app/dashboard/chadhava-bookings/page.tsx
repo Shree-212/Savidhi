@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { chadhavaEventService, chadhavaBookingService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -10,138 +10,260 @@ import { Modal } from '@/components/shared/Modal';
 import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import type { ChadhavaEvent, ChadhavaBooking, TimelineEvent } from '@/types';
 
+/* ── helpers ──────────────────────────────────────────────── */
+
+const STATUS_COLOR: Record<string, TimelineEvent['color']> = {
+  NOT_STARTED: 'orange',
+  INPROGRESS:  'teal',
+  COMPLETED:   'green',
+};
+
+type ChadhavaEventStage =
+  | 'YET_TO_START'
+  | 'LIVE_ADDED'
+  | 'SHORT_VIDEO_ADDED'
+  | 'SANKALP_VIDEO_ADDED'
+  | 'TO_BE_SHIPPED'
+  | 'SHIPPED';
+
+function toTimelineEvent(e: any): TimelineEvent {
+  const d = new Date(e.start_time ?? e.startTime);
+  return {
+    id:            e.id,
+    title:         `${(e.chadhava_name ?? e.chadhavaName ?? '').toUpperCase()} -${(e.temple_name ?? e.temple ?? '').split(' ')[0]?.toUpperCase() ?? ''}`,
+    subtitle:      `BOOKINGS: ${e.total_bookings ?? 0}/${e.max_bookings ?? 100}`,
+    startHour:     d.getHours() + d.getMinutes() / 60,
+    durationHours: 2,
+    day:           d.getDate(),
+    date:          e.start_time ?? e.startTime,
+    color:         STATUS_COLOR[e.status] ?? 'orange',
+    status:        e.status,
+    stage:         e.stage,
+  };
+}
+
+function mapEvent(e: any): ChadhavaEvent & { stage: ChadhavaEventStage; rawStartTime: string } {
+  return {
+    ...e,
+    chadhavaName: e.chadhava_name ?? e.chadhavaName ?? '',
+    temple:       e.temple_name  ?? e.temple ?? '',
+    bookings:     `${e.total_bookings ?? 0}/${e.max_bookings ?? 100}`,
+    startTime:    e.start_time
+      ? new Date(e.start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : e.startTime ?? '',
+    pujari:       e.pujari_name ?? e.pujari ?? 'Not Assigned',
+    stage:        e.stage ?? 'YET_TO_START',
+    rawStartTime: e.start_time ?? '',
+  };
+}
+
+function mapBooking(b: any): ChadhavaBooking {
+  return {
+    id:                   b.id,
+    bookedBy:             b.devotee_name ?? b.bookedBy ?? '',
+    devoteeCount:         b.devotees?.length ?? b.devoteeCount ?? 0,
+    bookingTime:          b.event_start_time
+      ? new Date(b.event_start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : b.bookingTime ?? '',
+    offerings:            b.offerings
+      ? b.offerings.map((o: any) => o.item_name ?? o.name).join(', ')
+      : b.offerings_summary ?? '',
+    cost:                 Number(b.cost ?? 0),
+    status:               b.status,
+    chadhavaName:         b.chadhava_name ?? b.chadhavaName ?? '',
+    temple:               b.temple_name   ?? b.temple ?? '',
+    bookedAt:             b.created_at
+      ? new Date(b.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : b.bookedAt ?? '',
+    devotees:             (b.devotees ?? []).map((d: any) => ({ name: d.name, gotra: d.gotra })),
+    totalOfferings:       (b.offerings ?? []).map((o: any) => ({
+      name:     o.item_name ?? o.name ?? '',
+      quantity: o.quantity ?? 0,
+    })),
+    sankalp:              b.sankalp ?? '',
+    prasadDeliveryAddress: b.prasad_delivery_address ?? b.prasadDeliveryAddress ?? '',
+    pujari:               b.pujari_name ?? b.pujari ?? '',
+    sankalpVideoTimeStamp: b.sankalp_video_timestamp ?? b.sankalpVideoTimeStamp,
+  };
+}
+
+/* ── stage actions ─────────────────────────────────────────── */
+const STAGE_ACTIONS: Record<ChadhavaEventStage, { label: string }> = {
+  YET_TO_START:        { label: 'Add Live Feed Link' },
+  LIVE_ADDED:          { label: 'Add Short Video' },
+  SHORT_VIDEO_ADDED:   { label: 'Add Sankalp Video' },
+  SANKALP_VIDEO_ADDED: { label: 'Mark Ready to Ship' },
+  TO_BE_SHIPPED:       { label: 'Ship Prashad' },
+  SHIPPED:             { label: 'Track Bulk Packages' },
+};
+
+/* ══════════════════════════════════════════════════════════ */
+
 export default function ChadhavaBookingsPage() {
-  const [tab, setTab] = useState('List');
-  const [search, setSearch] = useState('');
+  const [tab,        setTab]        = useState('List');
+  const [search,     setSearch]     = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
   const [selectedBooking, setSelectedBooking] = useState<ChadhavaBooking | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<ChadhavaEvent | null>(null);
-  const [showLiveModal, setShowLiveModal] = useState(false);
+  const [selectedEvent,   setSelectedEvent]   = useState<(ChadhavaEvent & { stage: ChadhavaEventStage; bookingsData?: any[] }) | null>(null);
+
+  const [showLiveModal,    setShowLiveModal]    = useState(false);
+  const [showVideoModal,   setShowVideoModal]   = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
+  const [showShipModal,    setShowShipModal]    = useState(false);
 
-  // Data state
-  const [chadhavaEvents, setChadhavaEvents] = useState<ChadhavaEvent[]>([]);
+  const [liveLink,       setLiveLink]       = useState('');
+  const [shortVideoUrl,  setShortVideoUrl]  = useState('');
+  const [sankalpVideoUrl, setSankalpVideoUrl] = useState('');
+
+  const [chadhavaEvents, setChadhavaEvents] = useState<(ChadhavaEvent & { stage: ChadhavaEventStage })[]>([]);
   const [chadhavaBookings, setChadhavaBookings] = useState<ChadhavaBooking[]>([]);
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [timelineEvents,   setTimelineEvents]   = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
 
-  // Fetch chadhava events
+  /* ── Fetch events ── */
   const fetchEvents = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await chadhavaEventService.list({ search: search || undefined });
+      const res = await chadhavaEventService.list({ limit: 100 });
       const raw = res.data?.data ?? res.data ?? [];
-      const mapped = raw.map((e: any) => ({
-        ...e,
-        chadhavaName: e.chadhava_name ?? e.chadhavaName ?? '',
-        temple: e.temple_name ?? e.temple ?? '',
-        bookings: `${e.total_bookings ?? 0}/${e.max_bookings ?? 100}`,
-        devoteeCount: e.total_devotees ?? e.devoteeCount ?? 0,
-        startTime: e.start_time ? new Date(e.start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : e.startTime ?? '',
-        pujari: e.pujari_name ?? e.pujari ?? 'Not Assigned',
-        stage: e.stage ?? 'YET_TO_START',
-      }));
-      setChadhavaEvents(mapped);
+      setChadhavaEvents(raw.map(mapEvent));
+      setTimelineEvents(raw.map(toTimelineEvent));
     } catch (err: any) {
       setError(err.message || 'Failed to load chadhava events');
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, []);
 
-  // Fetch bookings for expanded event
+  /* ── Fetch bookings for expanded event ── */
   const fetchBookings = useCallback(async (eventId: string) => {
     try {
-      const res = await chadhavaBookingService.list({ eventId });
-      setChadhavaBookings(res.data?.data ?? res.data ?? []);
+      const res = await chadhavaBookingService.list({ chadhava_event_id: eventId });
+      const raw = res.data?.data ?? res.data ?? [];
+      setChadhavaBookings(raw.map(mapBooking));
     } catch {
       setChadhavaBookings([]);
     }
   }, []);
 
-  // Fetch timeline
-  const fetchTimeline = useCallback(async () => {
+  /* ── Fetch event detail (for modal) ── */
+  const fetchEventDetail = useCallback(async (eventId: string) => {
     try {
-      const res = await chadhavaEventService.list({ view: 'timeline' });
-      setTimelineEvents(res.data?.data ?? res.data ?? []);
+      const res = await chadhavaEventService.getById(eventId);
+      const data = res.data?.data ?? res.data;
+      const mapped = mapEvent(data) as any;
+      mapped.bookingsData = (data.bookings ?? []).map((b: any) => ({
+        ...b,
+        devotees:  b.devotees  ?? [],
+        offerings: b.offerings ?? [],
+      }));
+      setSelectedEvent(mapped);
     } catch {
-      setTimelineEvents([]);
+      // fallback: find in list
     }
   }, []);
 
-  useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   useEffect(() => {
-    if (tab === 'Timeline') {
-      fetchTimeline();
-    }
-  }, [tab, fetchTimeline]);
-
-  useEffect(() => {
-    if (expandedId) {
-      fetchBookings(expandedId);
-    } else {
-      setChadhavaBookings([]);
-    }
+    if (expandedId) fetchBookings(expandedId);
+    else setChadhavaBookings([]);
   }, [expandedId, fetchBookings]);
+
+  /* ── Stage advance ── */
+  const handleAdvanceStage = async (eventId: string, data?: Record<string, any>) => {
+    try {
+      await chadhavaEventService.advanceStage(eventId, { ...data });
+      await fetchEvents();
+      if (selectedEvent?.id === eventId) await fetchEventDetail(eventId);
+    } catch (err: any) {
+      alert(err.response?.data?.message || err.message || 'Failed to advance stage');
+    }
+  };
 
   const handleViewBooking = async (bookingId: string) => {
     try {
       const res = await chadhavaBookingService.getById(bookingId);
-      setSelectedBooking(res.data?.data ?? res.data);
+      const data = res.data?.data ?? res.data;
+      setSelectedBooking(mapBooking(data));
     } catch {
       alert('Failed to load booking details');
     }
   };
 
+  const handleCancelBooking = async (bookingId: string) => {
+    if (!confirm('Cancel this booking?')) return;
+    try {
+      await chadhavaBookingService.cancel(bookingId);
+      setSelectedBooking(null);
+      if (expandedId) fetchBookings(expandedId);
+      fetchEvents();
+    } catch (err: any) {
+      alert(err.message || 'Failed to cancel booking');
+    }
+  };
+
+  /* ── Columns ── */
   const eventColumns = [
-    { key: 'id', label: 'ID' },
+    { key: 'id', label: 'ID', render: (r: any) => <span className="text-[10px] font-mono">{r.id.slice(0, 8)}</span> },
     { key: 'chadhavaName', label: 'Chadhava Name' },
-    { key: 'temple', label: 'Temple' },
-    { key: 'bookings', label: 'Bookings', render: (r: ChadhavaEvent) => (
-      <span className={r.bookings.startsWith('9') ? 'text-status-completed' : 'text-status-not-started'}>{r.bookings}</span>
-    )},
+    { key: 'temple',       label: 'Temple' },
+    { key: 'bookings',     label: 'Bookings', render: (r: any) => {
+      const [cur, max] = (r.bookings as string).split('/').map(Number);
+      const pct = max > 0 ? cur / max : 0;
+      return <span className={pct >= 0.9 ? 'text-status-completed font-bold' : ''}>{r.bookings}</span>;
+    }},
     { key: 'startTime', label: 'Start Time' },
-    { key: 'status', label: 'Status', render: (r: ChadhavaEvent) => <StatusBadge status={r.status} /> },
-    { key: 'pujari', label: 'Pujari' },
-    { key: 'action', label: 'Action', render: (r: ChadhavaEvent) => (
+    { key: 'status',    label: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
+    { key: 'pujari',    label: 'Pujari' },
+    { key: 'action',    label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">
-        <ExpandButton expanded={expandedId === r.id} onClick={() => {
-          setExpandedId(expandedId === r.id ? null : r.id);
-          setSelectedEvent(r);
-        }} />
-        <DeleteButton />
+        <ExpandButton expanded={expandedId === r.id} onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} />
+        <DeleteButton onClick={() => alert('Delete not available for events with active bookings')} />
       </div>
     )},
   ];
 
   const bookingColumns = [
-    { key: 'id', label: 'ID' },
+    { key: 'id',       label: 'ID',       render: (r: any) => <span className="text-[10px] font-mono">{r.id.slice(0, 8)}</span> },
     { key: 'bookedBy', label: 'Booked By' },
     { key: 'bookingTime', label: 'Booking Time' },
-    { key: 'offerings', label: 'Offerings' },
-    { key: 'cost', label: 'Cost', render: (r: ChadhavaBooking) => <span className="text-primary">₹{r.cost}</span> },
-    { key: 'status', label: 'Status', render: (r: ChadhavaBooking) => <StatusBadge status={r.status} /> },
-    { key: 'action', label: 'Action', render: (r: ChadhavaBooking) => (
+    { key: 'offerings',   label: 'Offerings' },
+    { key: 'cost',        label: 'Cost', render: (r: ChadhavaBooking) => <span className="text-primary">₹{r.cost}</span> },
+    { key: 'status',      label: 'Status', render: (r: ChadhavaBooking) => <StatusBadge status={r.status} /> },
+    { key: 'action',      label: 'Action', render: (r: ChadhavaBooking) => (
       <div className="flex items-center gap-1">
         <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
-        <DeleteButton />
+        <DeleteButton onClick={() => handleCancelBooking(r.id)} />
       </div>
     )},
   ];
 
-  if (loading && chadhavaEvents.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-sm text-muted-foreground">Loading chadhava events...</div>
-      </div>
-    );
-  }
+  /* ── Derived for event modal ── */
+  const eventStage   = (selectedEvent as any)?.stage as ChadhavaEventStage | undefined;
+  const allDevotees  = ((selectedEvent as any)?.bookingsData ?? []).flatMap((b: any) =>
+    (b.devotees ?? []).map((d: any) => ({ name: d.name, gotra: d.gotra, offerings: b.offerings ?? [] }))
+  );
+  const totalOfferings = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of (selectedEvent as any)?.bookingsData ?? []) {
+      for (const o of b.offerings ?? []) {
+        const name = o.item_name ?? o.name ?? '';
+        map.set(name, (map.get(name) ?? 0) + (o.quantity ?? 1));
+      }
+    }
+    return Array.from(map.entries()).map(([name, qty]) => ({ name, qty }));
+  }, [selectedEvent]);
+  const shipAddresses = ((selectedEvent as any)?.bookingsData ?? [])
+    .filter((b: any) => b.prasad_delivery_address)
+    .map((b: any) => ({ name: b.devotee_name ?? 'Devotee', address: b.prasad_delivery_address }));
 
+  if (loading && chadhavaEvents.length === 0) {
+    return <div className="flex items-center justify-center h-64"><div className="text-sm text-muted-foreground">Loading chadhava events...</div></div>;
+  }
   if (error && chadhavaEvents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3">
@@ -159,7 +281,6 @@ export default function ChadhavaBookingsPage() {
         onTabChange={setTab}
         search={search}
         onSearchChange={setSearch}
-        showDateNav={tab === 'Timeline'}
         onAdd={() => {}}
       />
 
@@ -175,26 +296,22 @@ export default function ChadhavaBookingsPage() {
       ) : (
         <TimelineView
           events={timelineEvents}
-          onEventClick={(evt) => {
-            const found = chadhavaEvents.find(e => e.id === evt?.id);
-            if (found) setSelectedEvent(found);
-            else if (chadhavaEvents.length > 0) setSelectedEvent(chadhavaEvents[0]);
-          }}
+          onEventClick={(evt) => { if (evt?.id) fetchEventDetail(evt.id); }}
         />
       )}
 
-      {/* Individual Chadhava Booking Detail */}
+      {/* ── Individual Booking Detail Modal ── */}
       <Modal
         open={!!selectedBooking}
         onClose={() => setSelectedBooking(null)}
-        title={`Booking <${selectedBooking?.id}> Details`}
+        title={`Booking <${selectedBooking?.id?.slice(0, 8)}> Details`}
         statusBadge={selectedBooking && <StatusBadge status={selectedBooking.status} />}
       >
         {selectedBooking && (
           <div className="space-y-4">
-            <div className="flex justify-between">
+            <div className="flex justify-between items-start">
               <div>
-                <p className="text-xs font-bold">Chadhava : {selectedBooking.chadhavaName}</p>
+                <p className="text-xs font-bold text-foreground">Chadhava : {selectedBooking.chadhavaName}</p>
                 <p className="text-[11px] text-muted-foreground mt-1">Temple: {selectedBooking.temple}</p>
                 <p className="text-[11px] text-muted-foreground">Booked at: {selectedBooking.bookedAt}</p>
               </div>
@@ -203,7 +320,7 @@ export default function ChadhavaBookingsPage() {
 
             <div className="border border-border rounded-lg p-3">
               <span className="text-[10px] font-bold uppercase tracking-wider">Devotee Details</span>
-              {selectedBooking.devotees.map((d, i) => (
+              {(selectedBooking.devotees ?? []).map((d, i) => (
                 <div key={i} className="text-[11px] mt-1">
                   <span className="text-foreground">{d.name}</span>
                   <span className="text-muted-foreground ml-2">Gotra: {d.gotra}</span>
@@ -211,14 +328,16 @@ export default function ChadhavaBookingsPage() {
               ))}
             </div>
 
-            <div className="border border-border rounded-lg p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider mb-1">Sankalp</p>
-              <p className="text-[11px] text-muted-foreground">{selectedBooking.sankalp}</p>
-            </div>
+            {selectedBooking.sankalp && (
+              <div className="border border-border rounded-lg p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1">Sankalp</p>
+                <p className="text-[11px] text-muted-foreground">{selectedBooking.sankalp}</p>
+              </div>
+            )}
 
             <div className="border border-border rounded-lg p-3">
               <p className="text-[10px] font-bold uppercase tracking-wider mb-1">Offerings</p>
-              {selectedBooking.totalOfferings.map((o, i) => (
+              {(selectedBooking.totalOfferings ?? []).map((o: { name: string; quantity: number }, i: number) => (
                 <div key={i} className="flex justify-between text-[11px]">
                   <span className="text-foreground">{o.name}</span>
                   <span className="text-primary">{o.quantity}</span>
@@ -229,9 +348,15 @@ export default function ChadhavaBookingsPage() {
             <p className="text-[11px] text-muted-foreground">Prasad Delivery Address: {selectedBooking.prasadDeliveryAddress}</p>
             <p className="text-[11px] text-muted-foreground">Pujari: {selectedBooking.pujari}</p>
 
+            {selectedBooking.sankalpVideoTimeStamp && (
+              <p className="text-[11px] text-muted-foreground">
+                Sankalp Video Time Stamp: {selectedBooking.sankalpVideoTimeStamp} <span className="text-primary cursor-pointer">✏️</span>
+              </p>
+            )}
+
             <div className="flex gap-3 mt-4">
               {selectedBooking.status === 'NOT_STARTED' && (
-                <OutlineButton className="flex-1">Cancel Booking</OutlineButton>
+                <OutlineButton className="flex-1" onClick={() => handleCancelBooking(selectedBooking.id)}>Cancel Booking</OutlineButton>
               )}
               <PrimaryButton className="flex-1" onClick={() => setSelectedBooking(null)}>Close</PrimaryButton>
             </div>
@@ -239,76 +364,197 @@ export default function ChadhavaBookingsPage() {
         )}
       </Modal>
 
-      {/* Chadhava Event Detail (timeline) */}
+      {/* ── Chadhava Event Detail Modal (timeline click) ── */}
       <Modal
-        open={!!selectedEvent && tab === 'Timeline'}
+        open={!!selectedEvent}
         onClose={() => setSelectedEvent(null)}
-        title={`<CDVA Evn ${selectedEvent?.id}> Details`}
+        title={`<CDVA Evn ${selectedEvent?.id?.slice(0, 8)}> Details`}
         statusBadge={selectedEvent && <StatusBadge status={selectedEvent.status} />}
         wide
       >
         {selectedEvent && (
           <div className="space-y-4">
-            <p className="text-xs font-bold">Chadhava : {selectedEvent.chadhavaName}</p>
-            <p className="text-[11px] text-muted-foreground">Temple: {selectedEvent.temple}</p>
-            <p className="text-[11px] text-muted-foreground">Start Time: {selectedEvent.startTime}</p>
+            <div>
+              <p className="text-xs font-bold text-foreground">Chadhava : {selectedEvent.chadhavaName}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Temple: {selectedEvent.temple}</p>
+              <p className="text-[11px] text-muted-foreground">Start Time: {selectedEvent.startTime}</p>
+            </div>
 
+            {/* Devotee Details */}
             <div className="border border-border rounded-lg p-3">
               <div className="flex justify-between mb-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider">Devotee Details</span>
-                <span className="text-[10px] text-muted-foreground">102</span>
+                <span className="text-[10px] text-muted-foreground">{allDevotees.length}</span>
               </div>
-              {[1,2,3].map((_, i) => (
-                <div key={i} className="text-[11px] mb-2">
-                  <div><span className="text-foreground">Rama Prasad</span> <span className="text-muted-foreground">Gotra: Kashyap</span></div>
-                  <div className="text-muted-foreground text-[10px]">Offerings: 1x Laddu, 2x 500gm ghee, 1x Lotus</div>
+              {allDevotees.length > 0 ? (
+                <div className="max-h-40 overflow-y-auto space-y-2">
+                  {allDevotees.map((d: any, i: number) => (
+                    <div key={i} className="text-[11px]">
+                      <span className="text-foreground">{d.name}</span>
+                      <span className="text-muted-foreground ml-2">Gotra: {d.gotra}</span>
+                      {d.offerings?.length > 0 && (
+                        <div className="text-[10px] text-muted-foreground">
+                          Offerings: {d.offerings.map((o: any) => `${o.quantity}x ${o.item_name ?? o.name}`).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <p className="text-[11px] text-muted-foreground">No devotees yet</p>
+              )}
             </div>
 
-            <div className="border border-border rounded-lg p-3">
-              <div className="flex justify-between mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider">Total Offerings</span>
-                <span className="text-[10px] text-muted-foreground">2</span>
-              </div>
-              {[{ name: 'Laddu', qty: 122 }, { name: '250ml Milk Abhisekh', qty: 32 }, { name: 'Lotus', qty: 12 }, { name: '500gm Ghee', qty: 98 }].map((o, i) => (
-                <div key={i} className="flex justify-between text-[11px]">
-                  <span className="text-foreground">{o.name}</span>
-                  <span className="text-status-completed">{o.qty}</span>
+            {/* Total Offerings */}
+            {totalOfferings.length > 0 && (
+              <div className="border border-border rounded-lg p-3">
+                <div className="flex justify-between mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Total Offerings</span>
+                  <span className="text-[10px] text-muted-foreground">{totalOfferings.length}</span>
                 </div>
-              ))}
-            </div>
+                {totalOfferings.map((o, i) => (
+                  <div key={i} className="flex justify-between text-[11px]">
+                    <span className="text-foreground">{o.name}</span>
+                    <span className="text-status-completed">{o.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
-            <p className="text-[11px] text-muted-foreground">Pujari: {selectedEvent.pujari} ✏️</p>
+            <p className="text-[11px] text-muted-foreground">Pujari: {selectedEvent.pujari} <span className="text-primary cursor-pointer">✏️</span></p>
 
-            <div className="flex gap-3">
-              <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Cancel Booking</OutlineButton>
-              <PrimaryButton className="flex-1" onClick={() => { setShowLiveModal(true); setSelectedEvent(null); }}>Add Live Feed Link</PrimaryButton>
+            {/* Live link indicator */}
+            {eventStage && eventStage !== 'YET_TO_START' && (
+              <p className="text-[11px] text-muted-foreground">
+                Live Link: <span className="text-status-completed">Added</span> <span className="text-primary cursor-pointer">✏️</span>
+              </p>
+            )}
+
+            {/* Sankalp video section */}
+            {eventStage && ['SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'].includes(eventStage) && (
+              <div className="border border-border rounded-lg p-3">
+                <p className="text-[10px] font-bold mb-2">Sankalp Video <span className="text-primary cursor-pointer">✏️</span></p>
+                <div className="bg-accent rounded-lg h-24 flex items-center justify-center text-muted-foreground text-xs">▶ Video</div>
+              </div>
+            )}
+
+            {eventStage === 'SHIPPED' && (
+              <p className="text-[11px] text-muted-foreground">Rating: ⭐ 5 Star (99)</p>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-3 mt-4">
+              {eventStage === 'YET_TO_START' && (
+                <>
+                  <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Cancel Booking</OutlineButton>
+                  <PrimaryButton className="flex-1" onClick={() => setShowLiveModal(true)}>Add Live Feed Link</PrimaryButton>
+                </>
+              )}
+              {eventStage === 'LIVE_ADDED' && (
+                <PrimaryButton className="flex-1" onClick={() => setShowVideoModal(true)}>Add Short Video</PrimaryButton>
+              )}
+              {eventStage === 'SHORT_VIDEO_ADDED' && (
+                <PrimaryButton className="flex-1" onClick={() => setShowSankalpModal(true)}>Add Sankalp Video</PrimaryButton>
+              )}
+              {eventStage === 'SANKALP_VIDEO_ADDED' && (
+                <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Ready to Ship</PrimaryButton>
+              )}
+              {eventStage === 'TO_BE_SHIPPED' && (
+                <PrimaryButton className="flex-1" onClick={() => setShowShipModal(true)}>Ship Prashad</PrimaryButton>
+              )}
+              {eventStage === 'SHIPPED' && (
+                <PrimaryButton className="flex-1">Track Bulk Packages</PrimaryButton>
+              )}
             </div>
           </div>
         )}
       </Modal>
 
+      {/* ── Add Live Feed Link Modal ── */}
       <Modal open={showLiveModal} onClose={() => setShowLiveModal(false)} title="Add Live Feed Link" onBack={() => setShowLiveModal(false)}>
         <div className="space-y-4">
-          <input placeholder="Paste You Tube Private Link" className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-          <PrimaryButton className="w-full" onClick={() => setShowLiveModal(false)}>Submit</PrimaryButton>
+          <input
+            value={liveLink}
+            onChange={e => setLiveLink(e.target.value)}
+            placeholder="Paste YouTube Private Link"
+            className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <PrimaryButton className="w-full" onClick={async () => {
+            if (!liveLink.trim()) return alert('Please enter a link');
+            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { live_link: liveLink });
+            setLiveLink('');
+            setShowLiveModal(false);
+          }}>Submit</PrimaryButton>
         </div>
       </Modal>
 
+      {/* ── Add Short Video Modal ── */}
+      <Modal open={showVideoModal} onClose={() => setShowVideoModal(false)} title="Add Puja Short Video" onBack={() => setShowVideoModal(false)}>
+        <div className="space-y-4">
+          <input
+            value={shortVideoUrl}
+            onChange={e => setShortVideoUrl(e.target.value)}
+            placeholder="Paste YouTube Private Link"
+            className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          {shortVideoUrl && (
+            <div className="bg-accent rounded-lg h-40 flex items-center justify-center text-muted-foreground text-xs border border-border">▶ Video Preview</div>
+          )}
+          <PrimaryButton className="w-full" onClick={async () => {
+            if (!shortVideoUrl.trim()) return alert('Please enter a video link');
+            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { short_video_url: shortVideoUrl });
+            setShortVideoUrl('');
+            setShowVideoModal(false);
+          }}>Submit</PrimaryButton>
+        </div>
+      </Modal>
+
+      {/* ── Add Sankalp Video Modal ── */}
       <Modal open={showSankalpModal} onClose={() => setShowSankalpModal(false)} title="Add Sankalp Video" onBack={() => setShowSankalpModal(false)}>
         <div className="space-y-4">
-          <input placeholder="Paste You Tube Private Link" className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-          <div className="bg-accent rounded-lg h-40 flex items-center justify-center text-muted-foreground text-xs">▶ Video Preview</div>
+          <input
+            value={sankalpVideoUrl}
+            onChange={e => setSankalpVideoUrl(e.target.value)}
+            placeholder="Paste YouTube Private Link"
+            className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          {sankalpVideoUrl && (
+            <div className="bg-accent rounded-lg h-40 flex items-center justify-center text-muted-foreground text-xs border border-border">▶ Video Preview</div>
+          )}
           <h4 className="text-[10px] font-bold uppercase tracking-wider">Time Stamp of Devotee Names</h4>
-          {['Ram Prasad', 'Ram Prasad', 'Shyam Prasad', 'Shyam Prasad'].map((name, i) => (
+          {allDevotees.map((d: any, i: number) => (
             <div key={i} className="flex items-center gap-3">
-              <span className="text-xs text-foreground w-28">{name}</span>
+              <span className="text-xs text-foreground w-28 truncate">{d.name}</span>
               <input placeholder="Minute" className="flex-1 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
               <input placeholder="Second" className="flex-1 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
           ))}
-          <PrimaryButton className="w-full" onClick={() => setShowSankalpModal(false)}>Submit</PrimaryButton>
+          <PrimaryButton className="w-full" onClick={async () => {
+            if (!sankalpVideoUrl.trim()) return alert('Please enter a video link');
+            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+            setSankalpVideoUrl('');
+            setShowSankalpModal(false);
+          }}>Submit</PrimaryButton>
+        </div>
+      </Modal>
+
+      {/* ── Ship Package Modal ── */}
+      <Modal open={showShipModal} onClose={() => setShowShipModal(false)} title="Ship Package" onBack={() => setShowShipModal(false)}>
+        <div className="space-y-3">
+          {shipAddresses.length > 0 ? shipAddresses.map((addr: any, i: number) => (
+            <div key={i} className="border border-border rounded-lg p-3">
+              <p className="text-xs font-bold text-foreground">{addr.name}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{addr.address}</p>
+            </div>
+          )) : (
+            <p className="text-[11px] text-muted-foreground">No delivery addresses found</p>
+          )}
+          <PrimaryButton className="w-full" onClick={async () => {
+            if (selectedEvent) await handleAdvanceStage(selectedEvent.id);
+            setShowShipModal(false);
+          }}>
+            Create Bulk Pickup in Ship Rocket
+          </PrimaryButton>
         </div>
       </Modal>
     </div>

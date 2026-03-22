@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { isAuthenticated, clearAuthTokens } from '@/lib/auth';
 import { userService, authService } from '@/lib/services';
+import { normaliseMediaUrl } from '@/lib/utils';
 
 interface MenuItem { icon: React.ElementType; label: string; href: string; badge?: number; }
 interface MenuSection { title: string; items: MenuItem[]; }
@@ -103,7 +104,7 @@ export default function ProfilePage() {
       <div className="card p-6 mb-6">
         <div className="flex items-center gap-4">
           <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
-            <Image src={user.imageUrl || '/images/placeholder.jpg'} alt={user.name} fill className="object-cover" />
+            <Image src={normaliseMediaUrl(user.imageUrl) || '/images/placeholder.jpg'} alt={user.name} fill className="object-cover" unoptimized />
           </div>
           <div className="flex-1">
             <h1 className="text-lg font-bold text-text-primary">{user.name}</h1>

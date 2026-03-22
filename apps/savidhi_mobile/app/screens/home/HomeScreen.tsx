@@ -67,7 +67,7 @@ function mapChadhava(c: any) {
     offerings,
     templeId: c.temple_id ?? '',
     isWeekly: c.booking_mode === 'SUBSCRIPTION',
-    startingPrice: offerings.length > 0 ? Math.min(...offerings.map((o: any) => o.price)) : 0,
+    startingPrice: Number(c.min_price ?? (offerings.length > 0 ? Math.min(...offerings.map((o: any) => o.price)) : 0)),
   };
 }
 

@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIn
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { appointmentService } from '../../services';
+import { resolveMediaUrl } from '../../utils';
 import type { AppointmentStatusStep, AppointmentStatusDetail } from '../../data';
 
 function TimelineStep({ step, isLast }: { step: AppointmentStatusStep; isLast: boolean }) {
@@ -37,18 +38,20 @@ export function AppointmentStatusScreen({ navigation, route }: { navigation: any
       try {
         const res = await appointmentService.getById(bookingId);
         const d = res.data?.data ?? res.data;
-        const stages = d.stages ?? d.steps ?? [];
+        const s = d.status ?? 'LINK_YET_TO_BE_GENERATED';
+        const isInprogress = s === 'INPROGRESS';
+        const isDone = s === 'COMPLETED';
         setStatus({
-          bookingId: d.booking_id ?? d.id ?? bookingId,
-          astrologerName: d.astrologer_name ?? d.astrologer?.name ?? '',
-          astrologerImage: d.astrologer_image ?? d.astrologer?.profile_pic ?? '',
-          pujaId: d.puja_id ?? '',
-          steps: stages.map((s: any) => ({
-            label: s.label ?? s.stage ?? '',
-            subtitle: s.subtitle ?? s.description ?? '',
-            completed: s.completed ?? s.status === 'DONE',
-            actionLabel: s.action_label ?? undefined,
-          })),
+          bookingId: d.id ?? bookingId,
+          astrologerName: d.astrologer_name ?? '',
+          astrologerImage: resolveMediaUrl(d.astrologer_pic ?? d.profile_pic ?? ''),
+          pujaId: d.astrologer_id ?? '',
+          steps: [
+            { label: 'Booking Confirmed', subtitle: d.created_at ? `Booked on ${new Date(d.created_at).toLocaleDateString('en-IN')}` : undefined, completed: true },
+            { label: 'Meet Link Shared', subtitle: d.meet_link ? 'Meeting link is ready' : 'Link sent 30 min before', completed: isInprogress || isDone, actionLabel: isInprogress && d.meet_link ? 'Join Meeting' : undefined },
+            { label: 'Consultation in Progress', subtitle: d.scheduled_at ? new Date(d.scheduled_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : undefined, completed: isInprogress || isDone },
+            { label: 'Completed', completed: isDone },
+          ],
         });
       } catch (err) {
         console.error('AppointmentStatusScreen fetch error:', err);
@@ -79,7 +82,7 @@ export function AppointmentStatusScreen({ navigation, route }: { navigation: any
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Astrologer Info */}
         <View style={styles.card}>
-          <Image source={{ uri: status.astrologerImage }} style={styles.avatar} />
+          <Image source={{ uri: resolveMediaUrl(status.astrologerImage) }} style={styles.avatar} />
           <View style={styles.cardInfo}>
             <Text style={styles.name}>{status.astrologerName}</Text>
             <View style={styles.idRow}>

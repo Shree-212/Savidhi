@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Calendar } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { AppointmentBooking } from '@/data/models';
+import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
 
 interface AppointmentCardProps {
   booking: AppointmentBooking;
@@ -15,11 +16,12 @@ export function AppointmentCard({ booking }: AppointmentCardProps) {
         <div className="flex gap-4">
           <div className="relative w-14 h-14 rounded-full overflow-hidden shrink-0">
             <Image
-              src={booking.astrologerImage}
+              src={normaliseMediaUrl(booking.astrologerImage)}
               alt={booking.astrologerName}
               fill
               className="object-cover"
               sizes="56px"
+              unoptimized={isLocalMediaUrl(booking.astrologerImage)}
             />
           </div>
           <div className="flex-1 space-y-2">

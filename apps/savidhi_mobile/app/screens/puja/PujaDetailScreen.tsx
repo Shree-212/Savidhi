@@ -5,6 +5,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { pujaService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
+import { resolveMediaUrl } from '../../utils';
 import type { Puja } from '../../data';
 
 interface Props { navigation: any; route: any; }
@@ -60,7 +61,7 @@ export function PujaDetailScreen({ navigation, route }: Props) {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Hero Image */}
         <View style={styles.heroContainer}>
-          <Image source={{ uri: puja.imageUrl }} style={styles.heroImage} />
+          <Image source={{ uri: resolveMediaUrl(puja.imageUrl) }} style={styles.heroImage} />
           <View style={styles.heroOverlay} />
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Icon name="arrow-left" size={22} color={Colors.textWhite} />
@@ -107,7 +108,7 @@ export function PujaDetailScreen({ navigation, route }: Props) {
           {/* Video Thumbnail */}
           <Text style={styles.sectionTitle}>Video You Will Receive</Text>
           <View style={styles.videoContainer}>
-            <Image source={{ uri: puja.videoThumbnail }} style={styles.videoThumb} />
+            <Image source={{ uri: resolveMediaUrl(puja.videoThumbnail) }} style={styles.videoThumb} />
             <View style={styles.playButton}>
               <Icon name="play" size={28} color={Colors.textWhite} />
             </View>
