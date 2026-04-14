@@ -2,12 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
 import { appointmentService } from '@/lib/services';
-import { MOCK_APPOINTMENT_BOOKINGS } from '@/data';
 import { normaliseMediaUrl } from '@/lib/utils';
-import type { AppointmentBooking } from '@/data';
+import type { AppointmentBooking } from '@/data/models';
 
 const FILTERS = ['All', 'Ongoing', 'Upcoming', 'Completed', 'Cancelled'];
 
@@ -43,18 +42,19 @@ const filterMap: Record<string, (b: AppointmentBooking) => boolean> = {
 export default function AppointmentBookingsPage() {
   const [filter, setFilter] = useState('All');
   const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     appointmentService.list({ page: 1 })
       .then((res) => {
         const raw = res.data?.data ?? [];
-        if (raw.length > 0) {
-          setBookings(raw.map(mapAppointmentBooking));
-        } else {
-          setBookings(MOCK_APPOINTMENT_BOOKINGS);
-        }
+        setBookings(raw.map(mapAppointmentBooking));
       })
-      .catch(() => setBookings(MOCK_APPOINTMENT_BOOKINGS));
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load appointments'))
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = bookings.filter(filterMap[filter] || filterMap.All);
@@ -82,14 +82,22 @@ export default function AppointmentBookingsPage() {
         ))}
       </div>
 
-      <div className="space-y-3">
-        {filtered.map((b) => (
-          <AppointmentCard key={b.id} booking={b} />
-        ))}
-        {filtered.length === 0 && (
-          <p className="text-center text-text-muted py-12">No appointments found</p>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        </div>
+      ) : error ? (
+        <p className="text-center text-red-500 py-12">{error}</p>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((b) => (
+            <AppointmentCard key={b.id} booking={b} />
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-center text-text-muted py-12">No appointments found</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

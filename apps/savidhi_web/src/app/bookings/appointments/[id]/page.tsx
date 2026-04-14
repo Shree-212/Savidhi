@@ -5,9 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, Phone, Video, Loader2 } from 'lucide-react';
 import { appointmentService } from '@/lib/services';
-import { MOCK_APPOINTMENT_STATUS } from '@/data';
 import { normaliseMediaUrl } from '@/lib/utils';
-import type { AppointmentStatusDetail, AppointmentStatusStep } from '@/data';
+import type { AppointmentStatusDetail, AppointmentStatusStep } from '@/data/models';
 
 function buildSteps(a: any): AppointmentStatusStep[] {
   const s = a.status ?? 'LINK_YET_TO_BE_GENERATED';
@@ -52,11 +51,9 @@ export default function AppointmentStatusPage({ params }: { params: Promise<{ id
             pujaId: a.astrologer_id ?? '',
             steps: buildSteps(a),
           });
-        } else {
-          setStatus(MOCK_APPOINTMENT_STATUS);
         }
       })
-      .catch(() => setStatus(MOCK_APPOINTMENT_STATUS))
+      .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -68,7 +65,13 @@ export default function AppointmentStatusPage({ params }: { params: Promise<{ id
     );
   }
 
-  if (!status) return null;
+  if (!status) {
+    return (
+      <div className="section-container py-20 text-center text-text-secondary">
+        Appointment not found. <Link href="/bookings/appointments" className="text-primary-500 underline">Go back</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="section-container py-8 max-w-2xl mx-auto">

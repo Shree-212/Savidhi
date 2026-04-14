@@ -1,10 +1,12 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, User } from 'lucide-react';
+import { ArrowLeft, Loader2, User } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { MOCK_PUJAS } from '@/data';
+import { pujaService } from '@/lib/services';
+import { mapPuja } from '@/lib/mappers';
+import type { Puja } from '@/data/models';
 
 const DEVOTEE_OPTIONS = [
   { count: 1, label: '1 Devotee' },
@@ -17,7 +19,8 @@ const STEP_LABELS = ['Select Puja', 'Devotee Details', 'Make Payment', 'Sankalp 
 
 export default function PujaBookingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const puja = MOCK_PUJAS.find((p) => p.id === id) || MOCK_PUJAS[0];
+  const [puja, setPuja] = useState<Puja | null>(null);
+  const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0);
   const [devoteeCount, setDevoteeCount] = useState(1);
   const [name, setName] = useState('');
@@ -25,6 +28,32 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
   const [houseNo, setHouseNo] = useState('');
   const [pincode, setPincode] = useState('');
   const [address, setAddress] = useState('');
+
+  useEffect(() => {
+    pujaService.getById(id)
+      .then((res) => {
+        const raw = res.data?.data ?? res.data;
+        if (raw) setPuja(mapPuja(raw));
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!puja) {
+    return (
+      <div className="section-container py-20 text-center text-text-secondary">
+        Puja not found. <Link href="/puja" className="text-primary-500 underline">Go back</Link>
+      </div>
+    );
+  }
 
   const totalPrice = devoteeCount * puja.pricePerDevotee;
 
@@ -98,14 +127,14 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                 className="w-full border border-border-DEFAULT rounded-xl px-4 py-3 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-primary-300"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Smita Bhardwaj"
+                placeholder="Your full name"
               />
               <label className="block text-sm text-text-secondary mb-1">Gotra</label>
               <input
                 className="w-full border border-border-DEFAULT rounded-xl px-4 py-3 text-sm mb-6 focus:outline-none focus:ring-2 focus:ring-primary-300"
                 value={gotra}
                 onChange={(e) => setGotra(e.target.value)}
-                placeholder="Kashyap"
+                placeholder="Your gotra"
               />
 
               <h2 className="font-semibold text-text-primary mb-4">Prasad Delivery Address</h2>
@@ -114,13 +143,13 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                   className="border border-border-DEFAULT rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
                   value={houseNo}
                   onChange={(e) => setHouseNo(e.target.value)}
-                  placeholder="H.B 991"
+                  placeholder="House number"
                 />
                 <input
                   className="border border-border-DEFAULT rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
                   value={pincode}
                   onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="745412"
+                  placeholder="Pincode"
                   inputMode="numeric"
                   maxLength={6}
                 />
@@ -129,7 +158,7 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                 className="w-full border border-border-DEFAULT rounded-xl px-4 py-3 text-sm mb-6 focus:outline-none focus:ring-2 focus:ring-primary-300"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="Near Light House, Paradeeep, Odisha"
+                placeholder="Full address"
               />
 
               {/* Price Breakdown */}
@@ -139,8 +168,8 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                   <span className="text-text-primary font-medium">₹{puja.pricePerDevotee}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">Savings Goal</span>
-                  <span className="text-green-500 font-medium">₹150</span>
+                  <span className="text-text-secondary">Devotees</span>
+                  <span className="text-text-primary font-medium">× {devoteeCount}</span>
                 </div>
                 <div className="flex justify-between border-t border-border-light pt-2">
                   <span className="font-semibold text-text-primary">Total</span>

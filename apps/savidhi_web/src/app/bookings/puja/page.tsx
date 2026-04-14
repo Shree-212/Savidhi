@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingCard } from '@/components/shared/BookingCard';
 import { pujaBookingService } from '@/lib/services';
-import { MOCK_PUJA_BOOKINGS } from '@/data';
-import type { PujaBooking } from '@/data';
+import type { PujaBooking } from '@/data/models';
 
 const FILTERS = ['All', 'Ongoing', 'Upcoming', 'Completed', 'Cancelled'];
 
@@ -49,18 +48,19 @@ const filterMap: Record<string, (b: PujaBooking) => boolean> = {
 export default function PujaBookingsPage() {
   const [filter, setFilter] = useState('All');
   const [bookings, setBookings] = useState<PujaBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     pujaBookingService.list({ page: 1 })
       .then((res) => {
         const raw = res.data?.data ?? [];
-        if (raw.length > 0) {
-          setBookings(raw.map(mapPujaBooking));
-        } else {
-          setBookings(MOCK_PUJA_BOOKINGS);
-        }
+        setBookings(raw.map(mapPujaBooking));
       })
-      .catch(() => setBookings(MOCK_PUJA_BOOKINGS));
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load bookings'))
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = bookings.filter(filterMap[filter] || filterMap.All);
@@ -88,14 +88,22 @@ export default function PujaBookingsPage() {
         ))}
       </div>
 
-      <div className="space-y-3">
-        {filtered.map((b) => (
-          <BookingCard key={b.id} booking={b} />
-        ))}
-        {filtered.length === 0 && (
-          <p className="text-center text-text-muted py-12">No bookings found</p>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        </div>
+      ) : error ? (
+        <p className="text-center text-red-500 py-12">{error}</p>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((b) => (
+            <BookingCard key={b.id} booking={b} />
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-center text-text-muted py-12">No bookings found</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

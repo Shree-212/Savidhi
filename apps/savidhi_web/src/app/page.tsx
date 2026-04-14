@@ -18,7 +18,6 @@ import {
 import { PujaCard } from '@/components/shared/PujaCard';
 import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
 import { TempleCard } from '@/components/shared/TempleCard';
-import { MOCK_PUJAS, MOCK_CHADHAVAS, MOCK_TEMPLES } from '@/data';
 import { templeService, pujaService, chadhavaService } from '@/lib/services';
 import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
@@ -104,36 +103,29 @@ export default function HomePage() {
   const chadhavaScroll = useHorizontalScroll();
   const templeScroll = useHorizontalScroll();
 
-  // Fetch real data from API, fallback to mock
+  // Fetch real data from the API
   const [pujas, setPujas] = useState<any[]>([]);
   const [chadhavas, setChadhavas] = useState<any[]>([]);
   const [temples, setTemples] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadData() {
-      try {
-        const [pujasRes, chadhavasRes, templesRes] = await Promise.allSettled([
-          pujaService.list({ limit: 10 }),
-          chadhavaService.list({ limit: 10 }),
-          templeService.list({ limit: 10 }),
-        ]);
+      const [pujasRes, chadhavasRes, templesRes] = await Promise.allSettled([
+        pujaService.list({ limit: 10 }),
+        chadhavaService.list({ limit: 10 }),
+        templeService.list({ limit: 10 }),
+      ]);
 
-        if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.success && pujasRes.value.data.data?.length > 0) {
-          setPujas(pujasRes.value.data.data.map(mapPuja));
-        }
+      if (pujasRes.status === 'fulfilled' && pujasRes.value.data?.data?.length) {
+        setPujas(pujasRes.value.data.data.map(mapPuja));
+      }
 
-        if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.success && chadhavasRes.value.data.data?.length > 0) {
-          setChadhavas(chadhavasRes.value.data.data.map(mapChadhava));
-        }
+      if (chadhavasRes.status === 'fulfilled' && chadhavasRes.value.data?.data?.length) {
+        setChadhavas(chadhavasRes.value.data.data.map(mapChadhava));
+      }
 
-        if (templesRes.status === 'fulfilled' && templesRes.value.data?.success && templesRes.value.data.data?.length > 0) {
-          setTemples(templesRes.value.data.data.map(mapTemple));
-        }
-      } catch {
-        // Fall back to mock data if API unreachable
-        setPujas(MOCK_PUJAS);
-        setChadhavas(MOCK_CHADHAVAS);
-        setTemples(MOCK_TEMPLES);
+      if (templesRes.status === 'fulfilled' && templesRes.value.data?.data?.length) {
+        setTemples(templesRes.value.data.data.map(mapTemple));
       }
     }
     loadData();

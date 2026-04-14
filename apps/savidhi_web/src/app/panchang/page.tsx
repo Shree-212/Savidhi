@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, Calendar, Sun, Moon, Loader2 } from 'lucide-
 import { ChipToggle } from '@/components/shared/ChipToggle';
 import { panchangService } from '@/lib/services';
 import { PanchangData, CalendarEvent } from '@/data/models';
-import { MOCK_CALENDAR_EVENTS } from '@/data';
 
 const TABS = ['Panchang', 'Calendar'];
 
@@ -31,6 +30,9 @@ export default function PanchangPage() {
   const [panchang, setPanchang] = useState<PanchangData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   const fetchPanchang = useCallback(async (date: string) => {
     setLoading(true);
@@ -52,6 +54,20 @@ export default function PanchangPage() {
   useEffect(() => {
     fetchPanchang(dateStr);
   }, [dateStr, fetchPanchang]);
+
+  useEffect(() => {
+    if (tab !== 'Calendar') return;
+    const now = new Date();
+    setEventsLoading(true);
+    setEventsError(null);
+    panchangService.getEvents({ month: now.getMonth() + 1, year: now.getFullYear() })
+      .then((res) => {
+        const raw = res.data?.data ?? [];
+        setEvents(raw as CalendarEvent[]);
+      })
+      .catch((e: unknown) => setEventsError(e instanceof Error ? e.message : 'Failed to load events'))
+      .finally(() => setEventsLoading(false));
+  }, [tab]);
 
   function changeDate(delta: number) {
     const [y, m, d] = dateStr.split('-').map(Number);
@@ -207,7 +223,18 @@ export default function PanchangPage() {
         /* Calendar Tab */
         <div>
           <h2 className="font-semibold text-text-primary mb-4">Upcoming Events</h2>
-          {MOCK_CALENDAR_EVENTS.map((event: CalendarEvent) => (
+          {eventsLoading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+            </div>
+          )}
+          {!eventsLoading && eventsError && (
+            <p className="text-center text-red-500 py-8 text-sm">{eventsError}</p>
+          )}
+          {!eventsLoading && !eventsError && events.length === 0 && (
+            <p className="text-center text-text-muted py-8 text-sm">No events this month</p>
+          )}
+          {!eventsLoading && !eventsError && events.map((event: CalendarEvent) => (
             <div key={event.date + event.title} className="border border-border-DEFAULT rounded-xl p-4 mb-3 bg-white">
               <div className="flex items-start gap-3">
                 <div className="w-12 h-12 bg-primary-50 rounded-xl flex items-center justify-center shrink-0">

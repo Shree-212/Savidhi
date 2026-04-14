@@ -5,9 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, Phone, Share2, Play, Loader2 } from 'lucide-react';
 import { pujaBookingService } from '@/lib/services';
-import { MOCK_PUJA_STATUS } from '@/data';
 import { normaliseMediaUrl } from '@/lib/utils';
-import type { PujaStatusDetail, PujaStatusStep } from '@/data';
+import type { PujaStatusDetail, PujaStatusStep } from '@/data/models';
 
 const STAGE_ORDER = ['YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'];
 
@@ -66,11 +65,9 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
             pujaId: b.puja_event_id ?? '',
             steps: buildSteps(b),
           });
-        } else {
-          setStatus(MOCK_PUJA_STATUS);
         }
       })
-      .catch(() => setStatus(MOCK_PUJA_STATUS))
+      .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -82,7 +79,13 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  if (!status) return null;
+  if (!status) {
+    return (
+      <div className="section-container py-20 text-center text-text-secondary">
+        Booking not found. <Link href="/bookings/puja" className="text-primary-500 underline">Go back</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="section-container py-8 max-w-2xl mx-auto">

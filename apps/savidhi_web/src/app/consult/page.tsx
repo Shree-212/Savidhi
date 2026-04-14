@@ -1,38 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 import { SearchBar } from '@/components/shared/SearchBar';
 import { AstrologerCard } from '@/components/shared/AstrologerCard';
-import { MOCK_ASTROLOGERS } from '@/data';
 import { astrologerService } from '@/lib/services';
+import { mapAstrologer } from '@/lib/mappers';
+import type { Astrologer } from '@/data/models';
 
 export default function ConsultPage() {
   const [search, setSearch] = useState('');
-  const [astrologers, setAstrologers] = useState(MOCK_ASTROLOGERS);
+  const [astrologers, setAstrologers] = useState<Astrologer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
+      setError(null);
       try {
         const res = await astrologerService.list({ limit: 50 });
-        if (res.data?.success && res.data.data?.length > 0) {
-          const apiAstrologers = res.data.data.map((a: any) => ({
-            id: a.id,
-            name: a.name,
-            specialty: a.designation || '',
-            experience: `${a.start_date ? new Date().getFullYear() - new Date(a.start_date).getFullYear() : 10} Years Of Experience`,
-            pricePerMin: a.price_15min ? Math.round(a.price_15min / 15) : 61,
-            appointmentsCompleted: a.total_appointments || 0,
-            rating: a.rating || 4.5,
-            languages: a.languages || [],
-            expertise: (a.expertise || '').split(', '),
-            about: a.about || '',
-            image: a.profile_pic || '',
-            images: a.slider_images || [],
-          }));
-          setAstrologers(apiAstrologers);
-        }
-      } catch {
-        // Silently fall back to mock data
+        setAstrologers((res.data?.data ?? []).map(mapAstrologer));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load astrologers');
+      } finally {
+        setLoading(false);
       }
     }
     load();
@@ -50,14 +42,22 @@ export default function ConsultPage() {
       <div className="max-w-md mb-6">
         <SearchBar value={search} onChange={setSearch} placeholder="Search astrologers..." />
       </div>
-      <div className="space-y-4 max-w-2xl">
-        {filtered.map((astro: any) => (
-          <AstrologerCard key={astro.id} astrologer={astro} />
-        ))}
-        {filtered.length === 0 && (
-          <p className="text-center text-text-muted py-12">No astrologers found</p>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        </div>
+      ) : error ? (
+        <p className="text-center text-red-500 py-12">{error}</p>
+      ) : (
+        <div className="space-y-4 max-w-2xl">
+          {filtered.map((astro: any) => (
+            <AstrologerCard key={astro.id} astrologer={astro} />
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-center text-text-muted py-12">No astrologers found</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
