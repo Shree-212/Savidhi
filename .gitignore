@@ -73,6 +73,10 @@ ehthumbs.db
 .claude/
 
 # Savidhi-specific
+# Dummy data assets
+Savidhi Gen 1 Dummy Data Assets/
+
+
 # Docker volumes
 postgres_data/
 media_uploads/
