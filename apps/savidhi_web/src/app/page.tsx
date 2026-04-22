@@ -239,12 +239,6 @@ export default function HomePage() {
               <PujaCard puja={puja} />
             </div>
           ))}
-          {/* Duplicate for more scrollable content */}
-          {pujas.map((puja) => (
-            <div key={`dup-${puja.id}`} className="min-w-[260px] sm:min-w-[280px] snap-start">
-              <PujaCard puja={puja} />
-            </div>
-          ))}
         </div>
       </section>
 
@@ -313,11 +307,6 @@ export default function HomePage() {
               <ChadhavaCard chadhava={c} />
             </div>
           ))}
-          {chadhavas.map((c) => (
-            <div key={`dup-${c.id}`} className="min-w-[260px] sm:min-w-[280px] snap-start">
-              <ChadhavaCard chadhava={c} />
-            </div>
-          ))}
         </div>
       </section>
 
@@ -363,11 +352,6 @@ export default function HomePage() {
         >
           {temples.map((temple) => (
             <div key={temple.id} className="min-w-[260px] sm:min-w-[300px] snap-start">
-              <TempleCard temple={temple} />
-            </div>
-          ))}
-          {temples.map((temple) => (
-            <div key={`dup-${temple.id}`} className="min-w-[260px] sm:min-w-[300px] snap-start">
               <TempleCard temple={temple} />
             </div>
           ))}

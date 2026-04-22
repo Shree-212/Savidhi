@@ -109,8 +109,11 @@ export default function TemplesPage() {
     { key: 'pujas_count', label: 'Pujas' },
     { key: 'action', label: 'Action', render: (r: Temple) => (
       <div className="flex items-center gap-1">
-        <ViewButton onClick={() => { setIsNew(false); setEditing(r); }} />
-        <EditButton onClick={() => { setIsNew(false); setEditing(r); }} />
+        <ViewButton onClick={() => { setIsNew(false); setEditing(r); }} title="Quick View (modal)" />
+        <EditButton
+          onClick={() => { window.location.href = `/dashboard/temples/${r.id}/edit`; }}
+          title="Full Edit Page"
+        />
         <DeleteButton onClick={() => handleDelete(r.id)} />
       </div>
     )},

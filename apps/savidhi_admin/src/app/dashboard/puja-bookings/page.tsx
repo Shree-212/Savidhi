@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { pujaEventService, pujaBookingService } from '@/lib/services';
+import { pujaEventService, pujaBookingService, pujaService, pujariService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { TimelineView } from '@/components/shared/TimelineView';
 import { Modal } from '@/components/shared/Modal';
-import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
+import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton, ViewButton } from '@/components/shared/ActionButtons';
 import type { PujaEvent, PujaBooking, PujaEventStage, TimelineEvent } from '@/types';
 
 /* ── helpers ──────────────────────────────────────────────── */
@@ -104,6 +104,16 @@ export default function PujaBookingsPage() {
   const [shortVideoUrl, setShortVideoUrl] = useState('');
   const [sankalpVideoUrl, setSankalpVideoUrl] = useState('');
 
+  // Create-event modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [availablePujas, setAvailablePujas] = useState<Array<{ id: string; name: string; temple_name?: string }>>([]);
+  const [availablePujaris, setAvailablePujaris] = useState<Array<{ id: string; name: string }>>([]);
+  const [newEventPujaId, setNewEventPujaId] = useState('');
+  const [newEventPujariId, setNewEventPujariId] = useState('');
+  const [newEventDate, setNewEventDate] = useState('');
+  const [newEventTime, setNewEventTime] = useState('');
+  const [creating, setCreating] = useState(false);
+
   // Data state
   const [pujaEvents, setPujaEvents] = useState<(PujaEvent & { stage: PujaEventStage })[]>([]);
   const [pujaBookings, setPujaBookings] = useState<PujaBooking[]>([]);
@@ -156,6 +166,52 @@ export default function PujaBookingsPage() {
   }, []);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  // Load dropdowns for Create Event modal
+  useEffect(() => {
+    (async () => {
+      try {
+        const [pRes, pjRes] = await Promise.all([
+          pujaService.list({ limit: 200 }),
+          pujariService.list({ limit: 200 }),
+        ]);
+        setAvailablePujas(pRes.data?.data ?? []);
+        setAvailablePujaris(pjRes.data?.data ?? []);
+      } catch {
+        /* no-op */
+      }
+    })();
+  }, []);
+
+  const openCreateModal = () => {
+    setNewEventPujaId('');
+    setNewEventPujariId('');
+    setNewEventDate('');
+    setNewEventTime('');
+    setShowCreateModal(true);
+  };
+
+  const handleCreateEvent = async () => {
+    if (!newEventPujaId || !newEventDate || !newEventTime) {
+      alert('Please select a puja, date, and time');
+      return;
+    }
+    try {
+      setCreating(true);
+      const start_time = new Date(`${newEventDate}T${newEventTime}`).toISOString();
+      await pujaEventService.create({
+        puja_id: newEventPujaId,
+        pujari_id: newEventPujariId || undefined,
+        start_time,
+      });
+      setShowCreateModal(false);
+      await fetchEvents();
+    } catch (err: any) {
+      alert(err.response?.data?.message || err.message || 'Failed to create event');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     if (expandedId) fetchBookings(expandedId);
@@ -212,6 +268,7 @@ export default function PujaBookingsPage() {
     { key: 'pujari', label: 'Pujari' },
     { key: 'action', label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">
+        <ViewButton onClick={() => fetchEventDetail(r.id)} />
         <ExpandButton expanded={expandedId === r.id} onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} />
         <DeleteButton onClick={() => alert('Puja events cannot be deleted once bookings exist')} />
       </div>
@@ -270,7 +327,7 @@ export default function PujaBookingsPage() {
         onTabChange={setTab}
         search={search}
         onSearchChange={setSearch}
-        onAdd={() => {}}
+        onAdd={openCreateModal}
       />
 
       {tab === 'List' ? (
@@ -525,6 +582,70 @@ export default function PujaBookingsPage() {
             setSankalpVideoUrl('');
             setShowSankalpModal(false);
           }}>Submit</PrimaryButton>
+        </div>
+      </Modal>
+
+      {/* ── Create Puja Event Modal ─────────────────────── */}
+      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create New Puja Event">
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider">Puja</label>
+            <select
+              value={newEventPujaId}
+              onChange={(e) => setNewEventPujaId(e.target.value)}
+              className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground mt-1"
+            >
+              <option value="">Select a puja</option>
+              {availablePujas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.temple_name ? ` — ${p.temple_name}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider">Pujari (optional)</label>
+            <select
+              value={newEventPujariId}
+              onChange={(e) => setNewEventPujariId(e.target.value)}
+              className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground mt-1"
+            >
+              <option value="">Auto-assign</option>
+              {availablePujaris.map((pj) => (
+                <option key={pj.id} value={pj.id}>{pj.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider">Date</label>
+              <input
+                type="date"
+                value={newEventDate}
+                onChange={(e) => setNewEventDate(e.target.value)}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider">Time</label>
+              <input
+                type="time"
+                value={newEventTime}
+                onChange={(e) => setNewEventTime(e.target.value)}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <OutlineButton className="flex-1" onClick={() => setShowCreateModal(false)}>Cancel</OutlineButton>
+            <PrimaryButton className="flex-1" onClick={handleCreateEvent} disabled={creating}>
+              {creating ? 'Creating…' : 'Create Event'}
+            </PrimaryButton>
+          </div>
         </div>
       </Modal>
 

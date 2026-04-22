@@ -20,7 +20,8 @@ const PORT = process.env.PORT ?? 4003;
 app.use(helmet());
 app.use(cors({ origin: (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(','), credentials: true }));
 app.use(express.json());
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false }));
+const _isProd = process.env.NODE_ENV === 'production';
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: _isProd ? 100 : 10_000, standardHeaders: true, legacyHeaders: false }));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'catalog-service', timestamp: new Date().toISOString() });

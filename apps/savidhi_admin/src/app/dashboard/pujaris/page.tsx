@@ -211,7 +211,10 @@ export default function PujarisPage() {
     { key: 'pujaInQueue', label: 'Puja in Queue', render: () => <span>-</span> },
     { key: 'action', label: 'Action', render: (r: PujariAdmin) => (
       <div className="flex items-center gap-1">
-        <ScheduleButton onClick={() => openLedger(r.id)} />
+        <ScheduleButton
+          onClick={() => { window.location.href = `/dashboard/pujaris/${r.id}/ledger`; }}
+          title="Ledger History"
+        />
         <ViewButton onClick={() => openEdit(r)} />
         <EditButton onClick={() => openEdit(r)} />
         <DeleteButton onClick={() => handleDelete(r.id)} />

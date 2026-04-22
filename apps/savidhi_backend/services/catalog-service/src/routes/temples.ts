@@ -71,9 +71,15 @@ templesRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), a
 });
 
 templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    const fields = ['name', 'address', 'pincode', 'google_map_link', 'about', 'history_and_significance', 'sample_video_url', 'slider_images'];
+    // post-edit + raw media + audit fields (all optional on PATCH)
+    const fields = [
+      'name', 'address', 'pincode', 'google_map_link', 'about', 'history_and_significance',
+      'sample_video_url', 'slider_images',
+      'sample_video_url_raw', 'slider_images_raw', 'raw_media_audit_note',
+    ];
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -86,19 +92,43 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
       }
     }
 
-    if (updates.length === 0) { res.status(400).json({ success: false, message: 'No fields to update' }); return; }
+    await client.query('BEGIN');
 
-    updates.push(`updated_at = NOW()`);
-    values.push(id);
+    if (updates.length > 0) {
+      updates.push(`updated_at = NOW()`);
+      values.push(id);
+      const result = await client.query(
+        `UPDATE temples SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+        values,
+      );
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ success: false, message: 'Temple not found' });
+        return;
+      }
+    }
 
-    const result = await pool.query(
-      `UPDATE temples SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
-      values
-    );
+    // Sync temple<->deity many-to-many if deity_ids is provided
+    if (Array.isArray(req.body.deity_ids)) {
+      await client.query(`DELETE FROM temple_deities WHERE temple_id = $1`, [id]);
+      for (const deityId of req.body.deity_ids) {
+        await client.query(
+          `INSERT INTO temple_deities (temple_id, deity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, deityId],
+        );
+      }
+    }
 
-    if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Temple updated' });
-  } catch (err) { next(err); }
+    const finalResult = await client.query(`SELECT * FROM temples WHERE id = $1`, [id]);
+    await client.query('COMMIT');
+
+    res.json({ success: true, data: finalResult.rows[0], message: 'Temple updated' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 templesRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {

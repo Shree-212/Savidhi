@@ -185,6 +185,36 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
   }
 });
 
+/**
+ * PATCH /:id/cancel-repeat
+ * Stops a SUBSCRIPTION booking from re-occurring on future events without
+ * cancelling the already-booked one. Flips `booking_type` to 'ONE_TIME'.
+ */
+pujaBookingsRouter.patch('/:id/cancel-repeat', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const role = req.headers['x-user-role'] as string;
+    const userId = req.headers['x-user-id'] as string;
+
+    const check = await pool.query(`SELECT devotee_id, booking_type FROM puja_bookings WHERE id = $1`, [id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+    if (role === 'DEVOTEE' && check.rows[0].devotee_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    if (check.rows[0].booking_type !== 'SUBSCRIPTION') {
+      return res.status(400).json({ success: false, message: 'Booking is not a subscription' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE puja_bookings SET booking_type = 'ONE_TIME', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id],
+    );
+    res.json({ success: true, data: rows[0], message: 'Subscription stopped; current booking remains active.' });
+  } catch (err) { next(err); }
+});
+
 /** PATCH /:id/cancel – cancel booking */
 pujaBookingsRouter.patch('/:id/cancel', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {

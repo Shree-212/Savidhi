@@ -22,10 +22,18 @@ app.use(cors({
   origin: (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(','),
   credentials: true,
 }));
-app.use(express.json());
+// Preserve raw body for Razorpay webhook HMAC verification.
+app.use(
+  express.json({
+    verify: (req: any, _res, buf) => {
+      if (req.originalUrl?.includes('/razorpay/webhook')) req.rawBody = buf;
+    },
+  }),
+);
+const _isProd = process.env.NODE_ENV === 'production';
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: _isProd ? 200 : 10_000,
   standardHeaders: true,
   legacyHeaders: false,
 }));

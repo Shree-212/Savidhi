@@ -7,6 +7,7 @@ import { TabBar } from '../components/shared/TabBar';
 // Auth
 import { SplashScreen } from '../screens/auth/SplashScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { OnboardingScreen } from '../screens/auth/OnboardingScreen';
 
 // Puja Tab
 import { HomeScreen } from '../screens/home/HomeScreen';
@@ -33,11 +34,17 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { PujaBookingsScreen } from '../screens/bookings/PujaBookingsScreen';
 import { AppointmentBookingsScreen } from '../screens/bookings/AppointmentBookingsScreen';
 import { AppointmentStatusScreen } from '../screens/bookings/AppointmentStatusScreen';
+import { ChadhavaStatusScreen } from '../screens/bookings/ChadhavaStatusScreen';
+import { TrackPackageScreen } from '../screens/bookings/TrackPackageScreen';
+import { CancelRepeatScreen } from '../screens/bookings/CancelRepeatScreen';
+import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
+import { FamilyScreen } from '../screens/family/FamilyScreen';
 
 /* ── Type Definitions ─────────────────────────────────── */
 
 export type RootStackParamList = {
   Splash: undefined;
+  Onboarding: undefined;
   Login: undefined;
   MainTabs: undefined;
 };
@@ -71,7 +78,12 @@ export type ProfileStackParamList = {
   PujaBookings: undefined;
   AppointmentBookings: undefined;
   PujaStatus: { bookingId: string };
+  ChadhavaStatus: { bookingId: string };
   AppointmentStatus: { bookingId: string };
+  TrackPackage: { bookingId: string; bookingType: 'PUJA' | 'CHADHAVA' };
+  Notifications: undefined;
+  Family: undefined;
+  CancelRepeat: undefined;
 };
 
 /* ── Navigators ───────────────────────────────────────── */
@@ -135,7 +147,12 @@ function ProfileTabStack() {
       <ProfileStack.Screen name="PujaBookings" component={PujaBookingsScreen} />
       <ProfileStack.Screen name="AppointmentBookings" component={AppointmentBookingsScreen} />
       <ProfileStack.Screen name="PujaStatus" component={PujaStatusScreen} />
+      <ProfileStack.Screen name="ChadhavaStatus" component={ChadhavaStatusScreen} />
       <ProfileStack.Screen name="AppointmentStatus" component={AppointmentStatusScreen} />
+      <ProfileStack.Screen name="TrackPackage" component={TrackPackageScreen} />
+      <ProfileStack.Screen name="Notifications" component={NotificationsScreen} />
+      <ProfileStack.Screen name="Family" component={FamilyScreen} />
+      <ProfileStack.Screen name="CancelRepeat" component={CancelRepeatScreen} />
     </ProfileStack.Navigator>
   );
 }
@@ -165,6 +182,7 @@ export function AppNavigator() {
     <NavigationContainer>
       <RootStack.Navigator id="RootStack" screenOptions={noHeader}>
         <RootStack.Screen name="Splash" component={SplashScreen} />
+        <RootStack.Screen name="Onboarding" component={OnboardingScreen} />
         <RootStack.Screen name="Login" component={LoginScreen} />
         <RootStack.Screen name="MainTabs" component={MainTabs} />
       </RootStack.Navigator>

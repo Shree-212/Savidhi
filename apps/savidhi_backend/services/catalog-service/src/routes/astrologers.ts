@@ -105,32 +105,46 @@ astrologersRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req:
   } catch (err) { next(err); }
 });
 
+/**
+ * GET /:id/ledger — ledger entries for an astrologer with settlement totals.
+ * Uses the canonical `ledger_entries` table (party_type='ASTROLOGER').
+ */
 astrologersRouter.get('/:id/ledger', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const page = Math.max(1, Number(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
 
-    // Verify astrologer exists
-    const astrologer = await pool.query('SELECT id, name FROM astrologers WHERE id = $1 AND is_active = true', [id]);
+    const astrologer = await pool.query('SELECT id, name, unsettled_amount FROM astrologers WHERE id = $1', [id]);
     if (astrologer.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
 
-    const countResult = await pool.query('SELECT COUNT(*) FROM astrologer_ledger WHERE astrologer_id = $1', [id]);
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM ledger_entries WHERE party_type = 'ASTROLOGER' AND party_id = $1`,
+      [id],
+    );
     const total = parseInt(countResult.rows[0].count);
 
     const result = await pool.query(
-      `SELECT * FROM astrologer_ledger WHERE astrologer_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-      [id, limit, offset]
+      `SELECT le.*,
+              COALESCE(a.scheduled_at, a.created_at) AS event_time,
+              d.name AS devotee_name,
+              a.duration AS appointment_duration
+       FROM ledger_entries le
+       LEFT JOIN appointments a ON a.id = le.event_id AND le.event_type = 'APPOINTMENT'
+       LEFT JOIN devotees d ON d.id = a.devotee_id
+       WHERE le.party_type = 'ASTROLOGER' AND le.party_id = $1
+       ORDER BY le.created_at DESC LIMIT $2 OFFSET $3`,
+      [id, limit, offset],
     );
 
-    // Calculate totals
     const totals = await pool.query(
       `SELECT
-        COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0) AS total_credits,
-        COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0) AS total_debits
-       FROM astrologer_ledger WHERE astrologer_id = $1`,
-      [id]
+         COALESCE(SUM(fee) FILTER (WHERE settled = false), 0) AS unsettled,
+         COALESCE(SUM(fee) FILTER (WHERE settled = true), 0) AS settled,
+         COALESCE(SUM(fee), 0) AS total_earned
+       FROM ledger_entries WHERE party_type = 'ASTROLOGER' AND party_id = $1`,
+      [id],
     );
 
     res.json({
@@ -138,15 +152,89 @@ astrologersRouter.get('/:id/ledger', requireAuth, requireAdmin('ADMIN'), async (
       data: {
         astrologer: astrologer.rows[0],
         entries: result.rows,
-        total_credits: parseFloat(totals.rows[0].total_credits),
-        total_debits: parseFloat(totals.rows[0].total_debits),
-        balance: parseFloat(totals.rows[0].total_credits) - parseFloat(totals.rows[0].total_debits),
+        unsettled: parseFloat(totals.rows[0].unsettled),
+        settled: parseFloat(totals.rows[0].settled),
+        total_earned: parseFloat(totals.rows[0].total_earned),
       },
-      total,
-      page,
-      limit,
+      total, page, limit,
       message: 'Astrologer ledger',
     });
+  } catch (err) { next(err); }
+});
+
+/** POST /:id/ledger/settle — mark all unsettled rows as settled (admin action). */
+astrologersRouter.post('/:id/ledger/settle', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    await client.query('BEGIN');
+    const updated = await client.query(
+      `UPDATE ledger_entries SET settled = true, settled_at = NOW()
+       WHERE party_type = 'ASTROLOGER' AND party_id = $1 AND settled = false
+       RETURNING id, fee`,
+      [id],
+    );
+    const amount = updated.rows.reduce((s, r) => s + Number(r.fee), 0);
+    await client.query(`UPDATE astrologers SET unsettled_amount = 0, updated_at = NOW() WHERE id = $1`, [id]);
+    await client.query('COMMIT');
+    res.json({ success: true, data: { settled_count: updated.rows.length, amount }, message: 'Ledger settled' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ─── Blackout Dates ──────────────────────────────────────────────────────────
+
+astrologersRouter.get('/:id/blackouts', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      `SELECT blackout_date, reason, created_at FROM astrologer_blackout_dates
+       WHERE astrologer_id = $1 AND blackout_date >= CURRENT_DATE - INTERVAL '7 days'
+       ORDER BY blackout_date`,
+      [id],
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) { next(err); }
+});
+
+astrologersRouter.post('/:id/blackouts', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { dates, reason } = req.body ?? {};
+    if (!Array.isArray(dates) || dates.length === 0) {
+      res.status(400).json({ success: false, message: 'dates must be a non-empty array of YYYY-MM-DD' });
+      return;
+    }
+    const values: string[] = [];
+    const params: unknown[] = [id];
+    dates.forEach((d: string) => {
+      params.push(d, reason ?? null);
+      values.push(`($1, $${params.length - 1}, $${params.length})`);
+    });
+    const { rows } = await pool.query(
+      `INSERT INTO astrologer_blackout_dates (astrologer_id, blackout_date, reason)
+       VALUES ${values.join(', ')}
+       ON CONFLICT (astrologer_id, blackout_date) DO UPDATE SET reason = EXCLUDED.reason
+       RETURNING *`,
+      params,
+    );
+    res.status(201).json({ success: true, data: rows });
+  } catch (err) { next(err); }
+});
+
+astrologersRouter.delete('/:id/blackouts/:date', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id, date } = req.params;
+    const { rowCount } = await pool.query(
+      `DELETE FROM astrologer_blackout_dates WHERE astrologer_id = $1 AND blackout_date = $2`,
+      [id, date],
+    );
+    if (!rowCount) { res.status(404).json({ success: false, message: 'Blackout not found' }); return; }
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 

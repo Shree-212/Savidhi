@@ -81,6 +81,9 @@ Savidhi Gen 1 Dummy Data Assets/
 postgres_data/
 media_uploads/
 
+# MCP config (may contain API keys)
+.mcp.json
+
 # Service account keys
 *.json.key
 *-key.json
@@ -89,3 +92,7 @@ service-account-key.json
 # Additional log files
 combined.log
 error.log
+apps/savidhi_backend/.env
+
+# Media-service dev uploads (seed images are regenerated via .claude/scripts/copy-seed-assets.sh)
+apps/savidhi_backend/services/media-service/uploads/

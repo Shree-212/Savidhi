@@ -73,6 +73,9 @@ services:
       JWT_ACCESS_EXPIRES: 1h
       JWT_REFRESH_EXPIRES: 7d
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID:-}
     depends_on:
       - postgres
       - redis
@@ -172,6 +175,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
       NOTIFICATION_SERVICE_URL: http://notification-service:4006
     depends_on:
       - postgres
@@ -230,9 +234,23 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4006
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001,http://localhost:3002,http://localhost:8081}
+      # Legacy placeholder env vars kept for backwards-compat.
       SMS_API_KEY: ${SMS_API_KEY:-}
       WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
       FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
+      # Twilio SMS / WhatsApp — reuse credentials from auth-service.
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_SMS_FROM: ${TWILIO_SMS_FROM:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      # SMTP email.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Savidhi <no-reply@savidhi.in>}
+      # Firebase Admin SDK JSON key (single-line) for FCM push.
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
     networks:
       - savidhi-network
     volumes:

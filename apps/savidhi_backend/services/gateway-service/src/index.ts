@@ -21,11 +21,21 @@ app.use(cors({
   origin: (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(','),
   credentials: true,
 }));
+// In development the rate-limiter is effectively off — hot-reload + Next.js
+// dev server can easily issue 200+ requests per minute per tab. We only enforce
+// in production, and even then we skip static media so a page load's image
+// fan-out doesn't blow the budget.
+const isProd = process.env.NODE_ENV === 'production';
+
 app.use(rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max:       Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max:       isProd ? (Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 600) : 10_000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) =>
+    req.path === '/health' ||
+    req.path.startsWith('/uploads/') ||
+    req.path.startsWith('/api/v1/media/files/'),
 }));
 
 // ─── JWT Verification Middleware ──────────────────────────────────────────────

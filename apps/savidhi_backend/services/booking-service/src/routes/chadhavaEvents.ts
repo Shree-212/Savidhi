@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../lib/db';
-import { requireAdmin } from '../middleware/auth';
+import { requireAdmin, requireAuth } from '../middleware/auth';
 
 export const chadhavaEventsRouter = Router();
 
@@ -13,10 +13,11 @@ const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; 
   TO_BE_SHIPPED:         { next: 'SHIPPED',               statusUpdate: 'COMPLETED' },
 };
 
-/** GET / – list chadhava events */
-chadhavaEventsRouter.get('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+/** GET / – list chadhava events. Admins see all; devotees see upcoming non-cancelled. */
+chadhavaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, chadhava_id, from_date, to_date, page = '1', limit = '20' } = req.query;
+    const { status, chadhava_id, from_date, to_date, upcoming, page = '1', limit = '20' } = req.query;
+    const role = req.headers['x-user-role'] as string;
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
     const offset = (pageNum - 1) * limitNum;
@@ -25,10 +26,16 @@ chadhavaEventsRouter.get('/', requireAdmin, async (req: Request, res: Response, 
     const params: unknown[] = [];
     let idx = 1;
 
+    if (role === 'DEVOTEE') {
+      conditions.push(`ce.status != 'COMPLETED'`);
+      conditions.push(`ce.start_time >= NOW() - INTERVAL '1 day'`);
+    }
+
     if (status) { conditions.push(`ce.status = $${idx++}`); params.push(status); }
     if (chadhava_id) { conditions.push(`ce.chadhava_id = $${idx++}`); params.push(chadhava_id); }
     if (from_date) { conditions.push(`ce.start_time >= $${idx++}`); params.push(from_date); }
     if (to_date) { conditions.push(`ce.start_time <= $${idx++}`); params.push(to_date); }
+    if (upcoming === 'true') { conditions.push(`ce.start_time >= NOW()`); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -58,10 +65,11 @@ chadhavaEventsRouter.get('/', requireAdmin, async (req: Request, res: Response, 
   } catch (err) { next(err); }
 });
 
-/** GET /:id – event detail with bookings */
-chadhavaEventsRouter.get('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+/** GET /:id – event detail with bookings (admin) / public (devotee) */
+chadhavaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const role = req.headers['x-user-role'] as string;
 
     const eventResult = await pool.query(
       `SELECT ce.*,
@@ -76,6 +84,11 @@ chadhavaEventsRouter.get('/:id', requireAdmin, async (req: Request, res: Respons
     );
     if (eventResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Chadhava event not found' });
+    }
+
+    // Devotees get event info only
+    if (role === 'DEVOTEE') {
+      return res.json({ success: true, data: eventResult.rows[0] });
     }
 
     const bookingsResult = await pool.query(
@@ -108,6 +121,65 @@ chadhavaEventsRouter.get('/:id', requireAdmin, async (req: Request, res: Respons
     event.bookings = bookingsResult.rows;
 
     res.json({ success: true, data: event });
+  } catch (err) { next(err); }
+});
+
+/** POST / – create chadhava event (admin) */
+chadhavaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { chadhava_id, pujari_id, start_time } = req.body;
+    if (!chadhava_id || !start_time) {
+      return res.status(400).json({ success: false, message: 'chadhava_id and start_time are required' });
+    }
+
+    const chResult = await pool.query(`SELECT max_bookings_per_event FROM chadhavas WHERE id = $1`, [chadhava_id]);
+    if (chResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Chadhava not found' });
+    }
+
+    const maxBookings = chResult.rows[0].max_bookings_per_event;
+
+    const { rows } = await pool.query(
+      `INSERT INTO chadhava_events (chadhava_id, pujari_id, start_time, max_bookings)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [chadhava_id, pujari_id ?? null, start_time, maxBookings],
+    );
+
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+/** PATCH /:id – admin updates event metadata (pujari / start_time / max_bookings) */
+chadhavaEventsRouter.patch('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['pujari_id', 'start_time', 'max_bookings'];
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) {
+        sets.push(`${field} = $${idx++}`);
+        params.push(req.body[field]);
+      }
+    }
+    if (sets.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid fields to update' });
+    }
+
+    sets.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const { rows } = await pool.query(
+      `UPDATE chadhava_events SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+      params,
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Chadhava event not found' });
+    }
+
+    res.json({ success: true, data: rows[0] });
   } catch (err) { next(err); }
 });
 

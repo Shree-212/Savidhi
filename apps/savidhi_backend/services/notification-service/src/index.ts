@@ -16,9 +16,10 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+const _isProd = process.env.NODE_ENV === 'production';
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: _isProd ? 200 : 10_000,
   standardHeaders: true,
   legacyHeaders: false,
 }));

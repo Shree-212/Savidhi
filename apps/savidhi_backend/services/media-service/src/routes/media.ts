@@ -120,15 +120,24 @@ router.post('/upload/local', requireAuth, upload.single('file'), (req: Request, 
   });
 });
 
-// ─── GET /files/:filename — serve locally-uploaded files ─────────────────────
-router.get('/files/:filename', (req: Request, res: Response) => {
-  const filename = path.basename(req.params.filename); // prevent path traversal
-  const filePath = path.join(UPLOAD_DIR, filename);
-  if (!fs.existsSync(filePath)) {
+// ─── GET /files/*path — serve locally-uploaded files (incl. subdirectories) ──
+// Uses a wildcard param so seed-asset paths like /files/seed/pujas/abc/1.jpg
+// resolve to <UPLOAD_DIR>/seed/pujas/abc/1.jpg.
+// Path traversal defence: normalise the requested path and reject anything
+// that escapes UPLOAD_DIR.
+router.get('/files/*', (req: Request, res: Response) => {
+  // req.params[0] contains everything after /files/
+  const requested = (req.params as any)[0] as string || '';
+  const resolved = path.resolve(UPLOAD_DIR, requested);
+  if (!resolved.startsWith(path.resolve(UPLOAD_DIR))) {
+    res.status(400).json({ success: false, message: 'Invalid path' });
+    return;
+  }
+  if (!fs.existsSync(resolved)) {
     res.status(404).json({ success: false, message: 'File not found' });
     return;
   }
-  res.sendFile(filePath);
+  res.sendFile(resolved);
 });
 
 // ─── DELETE /images/:key ──────────────────────────────────────────────────────

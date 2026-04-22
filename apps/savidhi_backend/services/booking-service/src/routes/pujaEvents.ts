@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../lib/db';
-import { requireAdmin } from '../middleware/auth';
+import { requireAdmin, requireAuth } from '../middleware/auth';
 
 export const pujaEventsRouter = Router();
 
@@ -13,10 +13,11 @@ const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; 
   TO_BE_SHIPPED:         { next: 'SHIPPED',               statusUpdate: 'COMPLETED' },
 };
 
-/** GET / – list puja events (admin) */
-pujaEventsRouter.get('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+/** GET / – list puja events. Admins see all; devotees see future non-cancelled events. */
+pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, puja_id, from_date, to_date, page = '1', limit = '20' } = req.query;
+    const { status, puja_id, from_date, to_date, upcoming, page = '1', limit = '20' } = req.query;
+    const role = req.headers['x-user-role'] as string;
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
     const offset = (pageNum - 1) * limitNum;
@@ -25,10 +26,17 @@ pujaEventsRouter.get('/', requireAdmin, async (req: Request, res: Response, next
     const params: unknown[] = [];
     let idx = 1;
 
+    // Devotees can only see events they can still book (future, not completed)
+    if (role === 'DEVOTEE') {
+      conditions.push(`pe.status != 'COMPLETED'`);
+      conditions.push(`pe.start_time >= NOW() - INTERVAL '1 day'`);
+    }
+
     if (status) { conditions.push(`pe.status = $${idx++}`); params.push(status); }
     if (puja_id) { conditions.push(`pe.puja_id = $${idx++}`); params.push(puja_id); }
     if (from_date) { conditions.push(`pe.start_time >= $${idx++}`); params.push(from_date); }
     if (to_date) { conditions.push(`pe.start_time <= $${idx++}`); params.push(to_date); }
+    if (upcoming === 'true') { conditions.push(`pe.start_time >= NOW()`); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -60,10 +68,11 @@ pujaEventsRouter.get('/', requireAdmin, async (req: Request, res: Response, next
   } catch (err) { next(err); }
 });
 
-/** GET /:id – event detail with nested bookings */
-pujaEventsRouter.get('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+/** GET /:id – event detail with nested bookings (admin) / public event info (devotee) */
+pujaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const role = req.headers['x-user-role'] as string;
 
     const eventResult = await pool.query(
       `SELECT pe.*,
@@ -78,6 +87,11 @@ pujaEventsRouter.get('/:id', requireAdmin, async (req: Request, res: Response, n
     );
     if (eventResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Puja event not found' });
+    }
+
+    // Devotees get event info only — no bookings list
+    if (role === 'DEVOTEE') {
+      return res.json({ success: true, data: eventResult.rows[0] });
     }
 
     const bookingsResult = await pool.query(

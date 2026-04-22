@@ -106,12 +106,30 @@ export const appointmentService = {
   cancel: (id: string) => api.patch(`/bookings/appointments/${id}/cancel`),
 };
 
+// ─── Events (upcoming instances of a puja / chadhava) ────────────────────────
+export const pujaEventService = {
+  list: (params?: { puja_id?: string; upcoming?: boolean; limit?: number }) =>
+    api.get('/bookings/puja-events', { params }),
+  getById: (id: string) => api.get(`/bookings/puja-events/${id}`),
+};
+
+export const chadhavaEventService = {
+  list: (params?: { chadhava_id?: string; upcoming?: boolean; limit?: number }) =>
+    api.get('/bookings/chadhava-events', { params }),
+  getById: (id: string) => api.get(`/bookings/chadhava-events/${id}`),
+};
+
 // ─── Payments ────────────────────────────────────────────────────────────────
 export const paymentService = {
   createOrder: (data: { booking_type: 'PUJA' | 'CHADHAVA' | 'APPOINTMENT'; booking_id: string; amount: number }) =>
     api.post('/bookings/payments/create-order', data),
-  verify: (data: { payment_id: string; gateway_payment_id: string; gateway_signature: string }) =>
-    api.post('/bookings/payments/verify', data),
+  verify: (data: {
+    payment_id: string;
+    gateway_order_id: string;
+    gateway_payment_id: string;
+    gateway_signature: string;
+  }) => api.post('/bookings/payments/verify', data),
+  getRazorpayKey: () => api.get('/bookings/payments/razorpay/key'),
 };
 
 // ─── Panchang ─────────────────────────────────────────────────────────────────

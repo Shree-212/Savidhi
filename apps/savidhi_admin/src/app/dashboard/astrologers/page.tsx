@@ -247,10 +247,17 @@ export default function AstrologersPage() {
     { key: 'appointmentsInQueue', label: 'Appointments in Queue', render: () => <span>-</span> },
     { key: 'action', label: 'Action', render: (r: AstrologerAdmin) => (
       <div className="flex items-center gap-1">
-        <ScheduleButton onClick={() => openLedger(r.id)} />
+        <ScheduleButton
+          onClick={() => { window.location.href = `/dashboard/astrologers/${r.id}/ledger`; }}
+          title="Ledger History"
+        />
         <ViewButton onClick={() => openEdit(r)} />
         <EditButton onClick={() => openEdit(r)} />
-        <button onClick={() => openOffDays(r)} className="w-6 h-6 rounded flex items-center justify-center text-status-inprogress hover:bg-primary/10 text-[10px]">📅</button>
+        <button
+          onClick={() => { window.location.href = `/dashboard/astrologers/${r.id}/off-days`; }}
+          className="w-6 h-6 rounded flex items-center justify-center text-status-inprogress hover:bg-primary/10 text-[10px]"
+          title="Off-Day Management"
+        >📅</button>
         <DeleteButton onClick={() => handleDelete(r.id)} />
       </div>
     )},

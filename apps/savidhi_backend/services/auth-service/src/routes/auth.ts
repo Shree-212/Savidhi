@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import Joi from 'joi';
 import pool from '../lib/db';
 import redisClient, { connectRedis } from '../lib/redis';
+import * as twilioHelper from '../lib/twilio';
 
 export const authRouter = Router();
 
@@ -195,6 +196,11 @@ authRouter.post('/refresh', async (req: Request, res: Response, next: NextFuncti
 });
 
 // ─── POST /otp/send (Devotee phone login) ──────────────────────────────────
+// Strategy:
+//   1. If Twilio credentials present, use Twilio Verify (real SMS).
+//   2. Otherwise, fall back to a local 6-digit OTP stashed in Redis + logged
+//      to console for local dev.
+// In either case the client sees the same API.
 
 authRouter.post('/otp/send', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -202,15 +208,27 @@ authRouter.post('/otp/send', async (req: Request, res: Response, next: NextFunct
     if (error) return res.status(400).json({ success: false, message: error.details[0].message });
 
     const { phone } = value;
+
+    // Dev/test phone numbers (9000000000-9000000099) always use the Redis stub so
+    // automated end-to-end tests can read the OTP without hitting Twilio (which
+    // won't SMS unverified numbers on a trial account).
+    const isTestPhone = /^90000000\d{2}$/.test(phone);
+
+    if (twilioHelper.isConfigured() && !isTestPhone) {
+      try {
+        await twilioHelper.sendOtp(phone);
+        return res.json({ success: true, message: 'OTP sent via SMS', channel: 'twilio' });
+      } catch (err: any) {
+        console.error('[twilio] sendOtp failed, falling back to Redis stub:', err.message ?? err);
+      }
+    }
+
+    // Redis stub — dev fallback
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
     const redis = await connectRedis();
-    await redis.set(`otp:${phone}`, otp, { EX: 300 }); // 5 min TTL
-
-    // TODO: Send OTP via SMS service (notification-service)
+    await redis.set(`otp:${phone}`, otp, { EX: 300 });
     console.log(`[auth] OTP for ${phone}: ${otp}`);
-
-    res.json({ success: true, message: 'OTP sent successfully' });
+    res.json({ success: true, message: 'OTP sent successfully', channel: 'stub' });
   } catch (err) {
     next(err);
   }
@@ -224,15 +242,31 @@ authRouter.post('/otp/verify', async (req: Request, res: Response, next: NextFun
     if (error) return res.status(400).json({ success: false, message: error.details[0].message });
 
     const { phone, otp } = value;
+    let verified = false;
 
-    const redis = await connectRedis();
-    const storedOtp = await redis.get(`otp:${phone}`);
+    const isTestPhone = /^90000000\d{2}$/.test(phone);
 
-    if (!storedOtp || storedOtp !== otp) {
-      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    if (twilioHelper.isConfigured() && !isTestPhone) {
+      try {
+        verified = await twilioHelper.checkOtp(phone, otp);
+      } catch (err: any) {
+        console.error('[twilio] checkOtp failed, falling back to Redis stub:', err.message ?? err);
+      }
     }
 
-    await redis.del(`otp:${phone}`);
+    if (!verified) {
+      // Redis stub fallback (also handles the case where we sent via stub above)
+      const redis = await connectRedis();
+      const storedOtp = await redis.get(`otp:${phone}`);
+      if (storedOtp && storedOtp === otp) {
+        verified = true;
+        await redis.del(`otp:${phone}`);
+      }
+    }
+
+    if (!verified) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    }
 
     // Find or create devotee
     let devotee = (await pool.query('SELECT * FROM devotees WHERE phone = $1', [phone])).rows[0];
@@ -314,9 +348,13 @@ authRouter.get('/verify', async (req: Request, res: Response) => {
 
   try {
     const decoded: any = jwt.verify(tokenToVerify, JWT_ACCESS_SECRET);
+    // Devotees don't have a role in the JWT payload; fall back to the user type so
+    // downstream services' requireAuth middleware (which checks both user-id AND role)
+    // accepts devotees correctly.
+    const userRole = decoded.role && decoded.role.length > 0 ? decoded.role : decoded.type;
     res.json({
       success: true,
-      data: { userId: decoded.sub, userType: decoded.type, userRole: decoded.role ?? '' },
+      data: { userId: decoded.sub, userType: decoded.type, userRole },
     });
   } catch {
     res.status(401).json({ success: false, message: 'Invalid token' });
