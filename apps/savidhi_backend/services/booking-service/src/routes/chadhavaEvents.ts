@@ -4,6 +4,9 @@ import { requireAdmin, requireAuth } from '../middleware/auth';
 
 export const chadhavaEventsRouter = Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: unknown) => typeof v === 'string' && UUID_RE.test(v);
+
 // ─── Stage transitions (same machine as puja events) ─────────────────────────
 const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; statusUpdate?: string }> = {
   YET_TO_START:          { next: 'LIVE_ADDED',            requiredField: 'live_link',          statusUpdate: 'INPROGRESS' },
@@ -32,7 +35,16 @@ chadhavaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, n
     }
 
     if (status) { conditions.push(`ce.status = $${idx++}`); params.push(status); }
-    if (chadhava_id) { conditions.push(`ce.chadhava_id = $${idx++}`); params.push(chadhava_id); }
+    if (chadhava_id) {
+      // Accept either a UUID directly, or a slug (resolve via subquery on chadhavas.slug)
+      if (isUuid(chadhava_id)) {
+        conditions.push(`ce.chadhava_id = $${idx++}`);
+        params.push(chadhava_id);
+      } else {
+        conditions.push(`ce.chadhava_id = (SELECT id FROM chadhavas WHERE slug = $${idx++})`);
+        params.push(chadhava_id);
+      }
+    }
     if (from_date) { conditions.push(`ce.start_time >= $${idx++}`); params.push(from_date); }
     if (to_date) { conditions.push(`ce.start_time <= $${idx++}`); params.push(to_date); }
     if (upcoming === 'true') { conditions.push(`ce.start_time >= NOW()`); }

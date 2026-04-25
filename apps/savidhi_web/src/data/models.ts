@@ -1,6 +1,7 @@
 /* ── Puja ─────────────────────────────────────────────── */
 export interface Puja {
   id: string;
+  slug: string;
   name: string;
   templeName: string;
   templeLocation: string;
@@ -31,6 +32,7 @@ export interface ChadhavaOffering {
 
 export interface Chadhava {
   id: string;
+  slug: string;
   name: string;
   templeName: string;
   templeLocation: string;
@@ -60,6 +62,7 @@ export interface Pujari {
 
 export interface Temple {
   id: string;
+  slug: string;
   name: string;
   location: string;
   pincode: string;
@@ -76,6 +79,7 @@ export interface Temple {
 /* ── Astrologer ───────────────────────────────────────── */
 export interface Astrologer {
   id: string;
+  slug: string;
   name: string;
   specialty: string;
   experience: string;
@@ -115,6 +119,25 @@ export interface PujaBooking {
   status: PujaBookingStatus;
   isWeekly?: boolean;
   bookingId: string;
+}
+
+export type ChadhavaBookingStatus =
+  | 'YET_TO_START'
+  | 'ONGOING'
+  | 'PRASAD_SHIPPED'
+  | 'COMPLETE'
+  | 'CANCELLED';
+
+export interface ChadhavaBooking {
+  id: string;
+  bookingId: string;
+  chadhavaName: string;
+  templeName: string;
+  bookedOn: string;
+  chadhavaOn: string;
+  totalCost: number;
+  offeringsCount: number;
+  status: ChadhavaBookingStatus;
 }
 
 export type AppointmentBookingStatus =

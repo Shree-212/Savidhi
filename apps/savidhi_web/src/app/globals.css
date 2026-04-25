@@ -19,6 +19,15 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Prevent stray horizontal scrolling without clipping content. `overflow-x:
+   * clip` on the html element kills any horizontal scrollbar at the document
+   * level; we don't constrain max-width so children that briefly compute
+   * wider than viewport still render their interior — the browser clips at
+   * the document edge instead of allowing scroll. */
+  html {
+    overflow-x: clip;
+  }
 }
 
 @layer components {
@@ -47,4 +56,24 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  .petal-flow {
+    position: absolute;
+    top: -8%;
+    will-change: transform, opacity;
+    animation: savidhi-petal-flow var(--petal-duration, 12s) linear var(--petal-delay, 0s) infinite both;
+    pointer-events: none;
+  }
+}
+
+@keyframes savidhi-petal-flow {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg);            opacity: 0; }
+  8%   { opacity: 0.9; }
+  50%  { transform: translate3d(32px, 45vh, 0) rotate(220deg);    opacity: 0.85; }
+  90%  { opacity: 0.55; }
+  100% { transform: translate3d(-24px, 95vh, 0) rotate(460deg);   opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petal-flow { animation: none; opacity: 0; }
 }

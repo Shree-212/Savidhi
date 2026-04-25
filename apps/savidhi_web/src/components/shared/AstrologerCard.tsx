@@ -10,7 +10,7 @@ interface AstrologerCardProps {
 
 export function AstrologerCard({ astrologer }: AstrologerCardProps) {
   return (
-    <Link href={`/consult/${astrologer.id}`} className="group block">
+    <Link href={`/consult/${astrologer.slug || astrologer.id}`} className="group block">
       <div className="card hover:shadow-md transition-shadow flex gap-4">
         <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0">
           <Image

@@ -91,8 +91,13 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       });
     }
 
-    // Create Razorpay order
+    // Create Razorpay order. In dev / non-prod we fall back to stub mode if
+    // either the keys are missing OR the gateway rejects them (e.g. invalid
+    // test keys), so booking flows remain testable end-to-end without a live
+    // Razorpay account. In production a Razorpay failure stays a hard error.
     let gatewayOrderId: string;
+    let usedStub = false;
+
     if (razorpayConfigured()) {
       try {
         const rzpOrder = await razorpayClient!.orders.create({
@@ -103,12 +108,21 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
         });
         gatewayOrderId = rzpOrder.id;
       } catch (err: any) {
+        const detail = err?.error?.description ?? err?.message ?? 'unknown';
         console.error('[razorpay] order create failed:', err?.error ?? err.message);
-        return res.status(502).json({ success: false, message: 'Failed to create Razorpay order', detail: err?.error?.description });
+        if (process.env.NODE_ENV === 'production') {
+          return res.status(502).json({ success: false, message: 'Failed to create Razorpay order', detail });
+        }
+        // Dev fallback: pretend Razorpay is in stub mode for this order so the
+        // booking flow can still complete (the verify step also accepts stubs).
+        console.warn('[razorpay] falling back to stub order — non-prod environment');
+        gatewayOrderId = `order_stub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        usedStub = true;
       }
     } else {
-      // Stub mode — generate a fake order id so dev without keys still works
+      // Stub mode — keys not configured at all
       gatewayOrderId = `order_stub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      usedStub = true;
     }
 
     const { rows } = await pool.query(
@@ -121,8 +135,8 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       success: true,
       data: {
         ...rows[0],
-        razorpay_key_id: RAZORPAY_KEY_ID || null,
-        stub: !razorpayConfigured(),
+        razorpay_key_id: usedStub ? null : RAZORPAY_KEY_ID || null,
+        stub: usedStub,
       },
     });
   } catch (err) {
@@ -160,9 +174,12 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
       return res.status(400).json({ success: false, message: `Payment is already "${payment.status}"` });
     }
 
-    // If Razorpay is configured, enforce signature validation.
-    // In stub mode we accept whatever gateway_payment_id comes in (dev only).
-    if (razorpayConfigured()) {
+    // Stub orders (`order_stub_…`) bypass signature validation. They occur when
+    // Razorpay is unconfigured OR when create-order fell back to stub mode in
+    // dev. In production with valid keys, every order is signed-validated.
+    const isStubOrder = String(payment.gateway_order_id ?? '').startsWith('order_stub_');
+
+    if (razorpayConfigured() && !isStubOrder) {
       if (!gateway_signature || !gateway_order_id) {
         await client.query('ROLLBACK');
         return res.status(400).json({ success: false, message: 'gateway_order_id and gateway_signature are required' });

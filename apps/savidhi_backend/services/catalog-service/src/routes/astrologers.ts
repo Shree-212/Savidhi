@@ -4,6 +4,9 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 
 export const astrologersRouter = Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: string) => UUID_RE.test(v);
+
 astrologersRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -30,9 +33,11 @@ astrologersRouter.get('/', async (req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err); }
 });
 
-astrologersRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+astrologersRouter.get('/:identifier', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('SELECT * FROM astrologers WHERE id = $1 AND is_active = true', [req.params.id]);
+    const { identifier } = req.params;
+    const where = isUuid(identifier) ? 'id = $1' : 'slug = $1';
+    const result = await pool.query(`SELECT * FROM astrologers WHERE ${where} AND is_active = true`, [identifier]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
     res.json({ success: true, data: result.rows[0], message: 'Astrologer details' });
   } catch (err) { next(err); }
@@ -41,18 +46,18 @@ astrologersRouter.get('/:id', async (req: Request, res: Response, next: NextFunc
 astrologersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
-      name, phone, profile_pic, specializations, experience_years,
+      name, slug, phone, profile_pic, specializations, experience_years,
       per_minute_price, description, languages,
       bank_account_no, bank_ifsc, bank_name, upi_id, commission_percent,
       off_days
     } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO astrologers (name, phone, profile_pic, specializations, experience_years,
+      `INSERT INTO astrologers (name, slug, phone, profile_pic, specializations, experience_years,
         per_minute_price, description, languages,
         bank_account_no, bank_ifsc, bank_name, upi_id, commission_percent, off_days)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-      [name, phone, profile_pic, specializations || [], experience_years,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+      [name, slug || null, phone, profile_pic, specializations || [], experience_years,
         per_minute_price, description, languages || [],
         bank_account_no, bank_ifsc, bank_name, upi_id, commission_percent || 0,
         off_days || []]
@@ -65,7 +70,7 @@ astrologersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: 
   try {
     const { id } = req.params;
     const fields = [
-      'name', 'phone', 'profile_pic', 'specializations', 'experience_years',
+      'name', 'slug', 'phone', 'profile_pic', 'specializations', 'experience_years',
       'per_minute_price', 'description', 'languages',
       'bank_account_no', 'bank_ifsc', 'bank_name', 'upi_id', 'commission_percent',
       'rating'

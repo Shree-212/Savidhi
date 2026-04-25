@@ -10,7 +10,7 @@ interface TempleCardProps {
 
 export function TempleCard({ temple }: TempleCardProps) {
   return (
-    <Link href={`/temples/${temple.id}`} className="group block">
+    <Link href={`/temples/${temple.slug || temple.id}`} className="group block">
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image

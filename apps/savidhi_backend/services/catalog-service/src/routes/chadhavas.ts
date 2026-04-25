@@ -4,6 +4,9 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 
 export const chadhavasRouter = Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: string) => UUID_RE.test(v);
+
 /* ── Chadhavas CRUD ── */
 
 chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -37,20 +40,21 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 });
 
-chadhavasRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+chadhavasRouter.get('/:identifier', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const { identifier } = req.params;
+    const where = isUuid(identifier) ? 'c.id = $1' : 'c.slug = $1';
     const chadhava = await pool.query(
       `SELECT c.*, t.name AS temple_name, t.address AS temple_address
        FROM chadhavas c LEFT JOIN temples t ON c.temple_id = t.id
-       WHERE c.id = $1 AND c.is_active = true`,
-      [id]
+       WHERE ${where} AND c.is_active = true`,
+      [identifier]
     );
     if (chadhava.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
 
     const offerings = await pool.query(
       'SELECT * FROM chadhava_offerings WHERE chadhava_id = $1 ORDER BY created_at',
-      [id]
+      [chadhava.rows[0].id]
     );
 
     res.json({
@@ -63,11 +67,11 @@ chadhavasRouter.get('/:id', async (req: Request, res: Response, next: NextFuncti
 
 chadhavasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images } = req.body;
+    const { name, slug, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images } = req.body;
     const result = await pool.query(
-      `INSERT INTO chadhavas (name, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [name, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images || []]
+      `INSERT INTO chadhavas (name, slug, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [name, slug || null, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images || []]
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Chadhava created' });
   } catch (err) { next(err); }
@@ -76,7 +80,7 @@ chadhavasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
 chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const fields = ['name', 'temple_id', 'description', 'schedule_day', 'schedule_time', 'sample_video_url', 'slider_images'];
+    const fields = ['name', 'slug', 'temple_id', 'description', 'schedule_day', 'schedule_time', 'sample_video_url', 'slider_images'];
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;

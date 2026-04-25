@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   User, Phone, Edit2, BookOpen, Calendar, Gem, ChevronRight, Users,
-  MapPin, CreditCard, Bell, Globe, Shield, HelpCircle, Mail, Info,
+  Gift, MapPin, CreditCard, Bell, Globe, Shield, HelpCircle, Mail, Info,
   LogOut, LogIn, Loader2,
 } from 'lucide-react';
 import { isAuthenticated, clearAuthTokens } from '@/lib/auth';
@@ -19,6 +19,7 @@ interface MenuSection { title: string; items: MenuItem[]; }
 const menuSections: MenuSection[] = [
   { title: 'Bookings', items: [
     { icon: BookOpen, label: 'Puja Bookings', href: '/bookings/puja' },
+    { icon: Gift, label: 'Chadhava Bookings', href: '/bookings/chadhava' },
     { icon: Calendar, label: 'Appointments', href: '/bookings/appointments' },
   ]},
   { title: 'Account', items: [

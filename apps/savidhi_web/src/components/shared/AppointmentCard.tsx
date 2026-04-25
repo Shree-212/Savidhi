@@ -14,9 +14,9 @@ export function AppointmentCard({ booking }: AppointmentCardProps) {
     <Link href={`/bookings/appointments/${booking.bookingId}`} className="block">
       <div className="card hover:shadow-md transition-shadow">
         <div className="flex gap-4">
-          <div className="relative w-14 h-14 rounded-full overflow-hidden shrink-0">
+          <div className="relative w-14 h-14 rounded-full overflow-hidden shrink-0 bg-primary-50">
             <Image
-              src={normaliseMediaUrl(booking.astrologerImage)}
+              src={normaliseMediaUrl(booking.astrologerImage) || '/images/placeholder.jpg'}
               alt={booking.astrologerName}
               fill
               className="object-cover"

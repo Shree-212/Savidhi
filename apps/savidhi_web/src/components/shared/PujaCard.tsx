@@ -10,7 +10,7 @@ interface PujaCardProps {
 
 export function PujaCard({ puja }: PujaCardProps) {
   return (
-    <Link href={`/puja/${puja.id}`} className="group block">
+    <Link href={`/puja/${puja.slug || puja.id}`} className="group block">
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image

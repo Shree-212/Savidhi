@@ -6,6 +6,7 @@ import type { Puja, Chadhava, Temple, Astrologer } from '@/data/models';
 export function mapPuja(raw: any): Puja {
   return {
     id: raw.id,
+    slug: raw.slug ?? raw.id,
     name: raw.name,
     templeName: raw.temple_name ?? raw.templeName ?? '',
     templeLocation: raw.temple_address ?? raw.templeLocation ?? '',
@@ -38,6 +39,7 @@ export function mapChadhava(raw: any): Chadhava {
   }));
   return {
     id: raw.id,
+    slug: raw.slug ?? raw.id,
     name: raw.name,
     templeName: raw.temple_name ?? raw.templeName ?? '',
     templeLocation: raw.temple_address ?? raw.templeLocation ?? '',
@@ -64,6 +66,7 @@ export function mapChadhava(raw: any): Chadhava {
 export function mapTemple(raw: any): Temple {
   return {
     id: raw.id,
+    slug: raw.slug ?? raw.id,
     name: raw.name,
     location: raw.address ?? raw.location ?? '',
     pincode: raw.pincode ?? '',
@@ -89,6 +92,7 @@ export function mapTemple(raw: any): Temple {
 export function mapAstrologer(raw: any): Astrologer {
   return {
     id: raw.id,
+    slug: raw.slug ?? raw.id,
     name: raw.name,
     specialty: raw.designation ?? raw.specialty ?? '',
     experience: raw.experience ?? (raw.start_date ? `${Math.floor((Date.now() - new Date(raw.start_date).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} Years Of Experience` : ''),

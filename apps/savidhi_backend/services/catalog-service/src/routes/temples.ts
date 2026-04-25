@@ -4,6 +4,9 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 
 export const templesRouter = Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: string) => UUID_RE.test(v);
+
 templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -39,11 +42,13 @@ templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 });
 
-templesRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+templesRouter.get('/:identifier', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
-    const temple = await pool.query('SELECT * FROM temples WHERE id = $1 AND is_active = true', [id]);
+    const { identifier } = req.params;
+    const where = isUuid(identifier) ? 'id = $1' : 'slug = $1';
+    const temple = await pool.query(`SELECT * FROM temples WHERE ${where} AND is_active = true`, [identifier]);
     if (temple.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
+    const id = temple.rows[0].id;
 
     const pujaris = await pool.query('SELECT id, name, designation, profile_pic, rating FROM pujaris WHERE temple_id = $1 AND is_active = true', [id]);
     const pujas = await pool.query('SELECT id, name, price_for_1, schedule_day, schedule_time, slider_images FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
@@ -60,11 +65,11 @@ templesRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
 
 templesRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images } = req.body;
+    const { name, slug, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images } = req.body;
     const result = await pool.query(
-      `INSERT INTO temples (name, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [name, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images || []]
+      `INSERT INTO temples (name, slug, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [name, slug || null, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images || []]
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Temple created' });
   } catch (err) { next(err); }
@@ -76,7 +81,7 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
     const { id } = req.params;
     // post-edit + raw media + audit fields (all optional on PATCH)
     const fields = [
-      'name', 'address', 'pincode', 'google_map_link', 'about', 'history_and_significance',
+      'name', 'slug', 'address', 'pincode', 'google_map_link', 'about', 'history_and_significance',
       'sample_video_url', 'slider_images',
       'sample_video_url_raw', 'slider_images_raw', 'raw_media_audit_note',
     ];

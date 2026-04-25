@@ -10,7 +10,7 @@ interface ChadhavaCardProps {
 
 export function ChadhavaCard({ chadhava }: ChadhavaCardProps) {
   return (
-    <Link href={`/chadhava/${chadhava.id}`} className="group block">
+    <Link href={`/chadhava/${chadhava.slug || chadhava.id}`} className="group block">
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image

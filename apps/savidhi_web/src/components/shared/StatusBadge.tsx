@@ -1,7 +1,11 @@
 import { cn } from '@/lib/utils';
-import type { PujaBookingStatus, AppointmentBookingStatus } from '@/data/models';
+import type {
+  PujaBookingStatus,
+  ChadhavaBookingStatus,
+  AppointmentBookingStatus,
+} from '@/data/models';
 
-type BadgeStatus = PujaBookingStatus | AppointmentBookingStatus;
+type BadgeStatus = PujaBookingStatus | ChadhavaBookingStatus | AppointmentBookingStatus;
 
 const STATUS_CONFIG: Record<BadgeStatus, { label: string; className: string }> = {
   PRASAD_SHIPPED: { label: 'Prasad Shipped', className: 'bg-green-100 text-green-700' },

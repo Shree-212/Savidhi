@@ -4,6 +4,9 @@ import { requireAdmin, requireAuth } from '../middleware/auth';
 
 export const pujaEventsRouter = Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: unknown) => typeof v === 'string' && UUID_RE.test(v);
+
 // ─── Allowed stage transitions & side-effects ────────────────────────────────
 const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; statusUpdate?: string }> = {
   YET_TO_START:          { next: 'LIVE_ADDED',            requiredField: 'live_link',          statusUpdate: 'INPROGRESS' },
@@ -33,7 +36,16 @@ pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next:
     }
 
     if (status) { conditions.push(`pe.status = $${idx++}`); params.push(status); }
-    if (puja_id) { conditions.push(`pe.puja_id = $${idx++}`); params.push(puja_id); }
+    if (puja_id) {
+      // Accept either a UUID directly, or a slug (resolve via subquery on pujas.slug)
+      if (isUuid(puja_id)) {
+        conditions.push(`pe.puja_id = $${idx++}`);
+        params.push(puja_id);
+      } else {
+        conditions.push(`pe.puja_id = (SELECT id FROM pujas WHERE slug = $${idx++})`);
+        params.push(puja_id);
+      }
+    }
     if (from_date) { conditions.push(`pe.start_time >= $${idx++}`); params.push(from_date); }
     if (to_date) { conditions.push(`pe.start_time <= $${idx++}`); params.push(to_date); }
     if (upcoming === 'true') { conditions.push(`pe.start_time >= NOW()`); }

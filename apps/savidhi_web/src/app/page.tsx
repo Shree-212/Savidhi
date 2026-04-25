@@ -23,10 +23,30 @@ import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
 
 const HOW_TO_STEPS = [
-  { num: 1, title: 'Select A Puja As Per Your Need' },
-  { num: 2, title: 'Provide Name, Gotra & Sankalp Details' },
-  { num: 3, title: 'Receive Prasad & Hamper At Home' },
-  { num: 4, title: 'Get Blessings For Family From Home' },
+  {
+    num: 1,
+    title: 'Select A Puja As Per Your Need',
+    desc: 'Browse 100+ sacred pujas across renowned temples',
+    icon: BookOpen,
+  },
+  {
+    num: 2,
+    title: 'Provide Name, Gotra & Sankalp Details',
+    desc: 'Personalise your puja with family details',
+    icon: Users,
+  },
+  {
+    num: 3,
+    title: 'Receive Prasad & Hamper At Home',
+    desc: 'Sacred prasad delivered to your doorstep',
+    icon: Gift,
+  },
+  {
+    num: 4,
+    title: 'Get Blessings For Family From Home',
+    desc: 'Watch the live puja stream and receive divine blessings',
+    icon: Landmark,
+  },
 ];
 
 const SERVICES = [
@@ -79,6 +99,66 @@ function useHorizontalScroll() {
   return { ref, scroll };
 }
 
+/**
+ * Marigold/rose petals drifting downward across the hero. Pure CSS animation —
+ * no JS, no canvas, no layout thrash. Mixes small/medium petals with several
+ * larger ones for layered depth. Petals are `pointer-events-none` so they never
+ * block CTAs, and the animation is disabled when the user has
+ * `prefers-reduced-motion` set.
+ */
+const HERO_PETALS = [
+  { left: '3%',  delay: '0s',    duration: '13s', size: 14, color: 'text-primary-400' },
+  { left: '8%',  delay: '6.4s',  duration: '20s', size: 38, color: 'text-rose-500' },
+  { left: '14%', delay: '2.4s',  duration: '15s', size: 18, color: 'text-amber-500' },
+  { left: '19%', delay: '9.1s',  duration: '22s', size: 44, color: 'text-orange-500' },
+  { left: '24%', delay: '5.1s',  duration: '11s', size: 12, color: 'text-rose-400' },
+  { left: '29%', delay: '8.2s',  duration: '19s', size: 34, color: 'text-amber-600' },
+  { left: '34%', delay: '1.2s',  duration: '14s', size: 16, color: 'text-primary-300' },
+  { left: '40%', delay: '3.6s',  duration: '12s', size: 14, color: 'text-amber-400' },
+  { left: '45%', delay: '10.5s', duration: '23s', size: 42, color: 'text-rose-600' },
+  { left: '50%', delay: '6.2s',  duration: '13s', size: 20, color: 'text-rose-500' },
+  { left: '55%', delay: '4s',    duration: '20s', size: 40, color: 'text-orange-400' },
+  { left: '60%', delay: '0.8s',  duration: '15s', size: 13, color: 'text-primary-500' },
+  { left: '65%', delay: '4.2s',  duration: '12s', size: 17, color: 'text-amber-300' },
+  { left: '70%', delay: '2.1s',  duration: '14s', size: 15, color: 'text-rose-400' },
+  { left: '76%', delay: '7.5s',  duration: '21s', size: 36, color: 'text-rose-600' },
+  { left: '82%', delay: '5.7s',  duration: '11s', size: 19, color: 'text-primary-400' },
+  { left: '87%', delay: '11s',   duration: '22s', size: 32, color: 'text-amber-500' },
+  { left: '92%', delay: '3s',    duration: '13s', size: 14, color: 'text-amber-500' },
+  { left: '97%', delay: '0.4s',  duration: '12s', size: 16, color: 'text-primary-300' },
+];
+
+function HeroPetals() {
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden pointer-events-none z-[1]"
+      aria-hidden="true"
+    >
+      {HERO_PETALS.map((p, i) => (
+        <span
+          key={i}
+          className={`petal-flow ${p.color}`}
+          style={{
+            left: p.left,
+            width: `${p.size}px`,
+            height: `${Math.round(p.size * 1.4)}px`,
+            ['--petal-duration' as string]: p.duration,
+            ['--petal-delay' as string]: p.delay,
+          } as React.CSSProperties}
+        >
+          <svg
+            viewBox="0 0 24 32"
+            fill="currentColor"
+            className="w-full h-full drop-shadow-[0_2px_3px_rgba(232,129,58,0.3)]"
+          >
+            <path d="M12 0 C18 8 22 16 12 32 C2 16 6 8 12 0 Z" />
+          </svg>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function CarouselNav({ onLeft, onRight }: { onLeft: () => void; onRight: () => void }) {
   return (
     <div className="flex gap-2">
@@ -94,6 +174,49 @@ function CarouselNav({ onLeft, onRight }: { onLeft: () => void; onRight: () => v
       >
         <ChevronRight className="w-4 h-4 text-text-secondary" />
       </button>
+    </div>
+  );
+}
+
+function HowToVideoThumbnail() {
+  return (
+    <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-xl ring-1 ring-black/5 group cursor-pointer">
+      <Image
+        src="https://images.unsplash.com/photo-1757308530438-4e2340a6475f?w=1200&q=85&auto=format&fit=crop"
+        alt="How to book puja with Savidhi — brass aarti lamp at Ganga Ghat, Varanasi"
+        fill
+        className="object-cover transition-transform duration-700 group-hover:scale-105"
+        sizes="(max-width: 1024px) 100vw, 45vw"
+      />
+
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/30 group-hover:via-black/5 transition-colors" />
+
+      <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-md px-2.5 py-1 shadow-md">
+        <p className="text-[9px] font-semibold text-text-muted uppercase tracking-wide leading-none">
+          How to use
+        </p>
+        <p className="text-xs font-bold text-primary-500 leading-tight mt-0.5">
+          Book Puja
+        </p>
+      </div>
+
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="relative">
+          <span className="absolute inset-0 rounded-full bg-white/40 animate-ping" />
+          <div className="relative w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
+            <Play className="w-5 h-5 text-primary-500 ml-0.5 fill-primary-500" />
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
+        <p className="text-white text-sm font-bold leading-tight drop-shadow">
+          Booking made simple
+        </p>
+        <span className="bg-primary-500 hover:bg-primary-600 text-white text-[11px] font-semibold rounded-full px-3 py-1 shadow-lg transition-colors flex-shrink-0">
+          Learn More
+        </span>
+      </div>
     </div>
   );
 }
@@ -137,7 +260,8 @@ export default function HomePage() {
       {/* Desktop: text overlaid on hero image. Mobile: stacked vertically */}
 
       {/* ── Mobile Hero (< md) ── */}
-      <section className="md:hidden bg-[#FBF5EB] overflow-hidden">
+      <section className="md:hidden relative bg-[#FBF5EB] overflow-hidden">
+        <HeroPetals />
         {/* Text block — stacked above illustration */}
         <div className="px-5 pt-8 pb-5 text-center">
           <h1 className="[font-family:var(--font-cabin)] text-[1.625rem] font-bold text-[#502C06] tracking-[0.12em] uppercase leading-snug">
@@ -189,6 +313,9 @@ export default function HomePage() {
             priority
             sizes="100vw"
           />
+
+          {/* Falling petals — between image and text overlay */}
+          <HeroPetals />
 
           {/* Text content overlaid on top of the image */}
           <div className="absolute inset-0 flex flex-col items-center justify-start pt-8 lg:pt-12 xl:pt-16 px-4">
@@ -243,48 +370,59 @@ export default function HomePage() {
       </section>
 
       {/* ═══════════ HOW TO BOOK ═══════════ */}
-      <section className="bg-white py-10">
-        <div className="section-container">
-          <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-6">
-            How To Book Puja With Savidhi?
-          </h2>
-          <div className="grid lg:grid-cols-2 gap-8 items-center">
-            {/* Steps */}
-            <div className="space-y-5">
-              {HOW_TO_STEPS.map((step) => (
-                <div key={step.num} className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-primary-500 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">
-                    {step.num}
-                  </div>
-                  <p className="text-sm sm:text-base text-text-primary pt-1">{step.title}</p>
-                </div>
-              ))}
+      <section className="relative bg-gradient-to-br from-orange-100/70 via-orange-50 to-amber-50/60 border-y border-orange-200/60 py-10 sm:py-12 overflow-hidden">
+        {/* Decorative orbs */}
+        <div className="absolute top-0 right-0 w-72 h-72 bg-primary-200/40 rounded-full blur-3xl pointer-events-none -translate-y-1/3 translate-x-1/4" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-orange-200/50 rounded-full blur-2xl pointer-events-none translate-y-1/3 -translate-x-1/4" />
+
+        <div className="section-container relative z-10">
+          <div className="grid lg:grid-cols-[1fr_1.1fr] gap-8 lg:gap-12 items-center">
+            {/* Left: heading + steps */}
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-text-primary leading-tight mb-1.5">
+                How To Book Puja{' '}
+                <span className="text-primary-500">With Savidhi?</span>
+              </h2>
+              <p className="text-text-secondary text-xs sm:text-sm mb-6">
+                Book sacred pujas from your home in a few simple steps.
+              </p>
+
+              <ol className="relative">
+                {HOW_TO_STEPS.map((step, i) => (
+                  <li key={step.num} className="flex gap-3">
+                    {/* Number + connector rail */}
+                    <div className="flex flex-col items-center">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-orange-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 shadow-md shadow-primary-300/50 ring-2 ring-white z-10">
+                        {step.num}
+                      </div>
+                      {i < HOW_TO_STEPS.length - 1 && (
+                        <div className="w-px flex-1 min-h-[0.75rem] bg-gradient-to-b from-primary-300/80 via-primary-200/50 to-transparent my-0.5" />
+                      )}
+                    </div>
+
+                    {/* Card */}
+                    <div className={`flex-1 ${i === HOW_TO_STEPS.length - 1 ? 'pb-0' : 'pb-2.5'}`}>
+                      <div className="group flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/90 backdrop-blur-sm border border-orange-100 hover:border-primary-300 hover:shadow-sm transition-all">
+                        <div className="w-7 h-7 rounded-md bg-primary-50 group-hover:bg-primary-100 flex items-center justify-center flex-shrink-0 transition-colors">
+                          <step.icon className="w-3.5 h-3.5 text-primary-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-text-primary leading-snug">
+                            {step.title}
+                          </p>
+                          <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+                            {step.desc}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
             </div>
 
-            {/* Video Thumbnail */}
-            <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-orange-100 to-orange-50 shadow-lg group cursor-pointer">
-              <Image
-                src="https://images.unsplash.com/photo-1604608672516-f1b9b1d71e86?w=800"
-                alt="How to book puja"
-                fill
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 50vw"
-              />
-              <div className="absolute inset-0 bg-black/20 flex items-center justify-center group-hover:bg-black/30 transition">
-                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg">
-                  <Play className="w-6 h-6 text-primary-500 ml-1 fill-primary-500" />
-                </div>
-              </div>
-              <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5">
-                <p className="text-xs font-semibold text-text-primary">how to use</p>
-                <p className="text-sm font-bold text-primary-500">book puja</p>
-              </div>
-              <div className="absolute bottom-4 left-4">
-                <span className="bg-primary-500 text-white text-xs font-semibold rounded-full px-4 py-1.5">
-                  Learn More
-                </span>
-              </div>
-            </div>
+            {/* Right: video thumbnail */}
+            <HowToVideoThumbnail />
           </div>
         </div>
       </section>

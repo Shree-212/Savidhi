@@ -4,6 +4,9 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 
 export const pujasRouter = Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: string) => UUID_RE.test(v);
+
 pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -37,16 +40,17 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
   } catch (err) { next(err); }
 });
 
-pujasRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+pujasRouter.get('/:identifier', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const { identifier } = req.params;
+    const where = isUuid(identifier) ? 'p.id = $1' : 'p.slug = $1';
     const result = await pool.query(
       `SELECT p.*, t.name AS temple_name, d.name AS deity_name
        FROM pujas p
        LEFT JOIN temples t ON p.temple_id = t.id
        LEFT JOIN deities d ON p.deity_id = d.id
-       WHERE p.id = $1 AND p.is_active = true`,
-      [id]
+       WHERE ${where} AND p.is_active = true`,
+      [identifier]
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Puja not found' }); return; }
     res.json({ success: true, data: result.rows[0], message: 'Puja details' });
@@ -56,17 +60,18 @@ pujasRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) 
 pujasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
-      name, temple_id, deity_id, description, price_for_1, price_for_2,
+      name, slug, temple_id, deity_id, description, price_for_1, price_for_2,
       schedule_day, schedule_time, duration_minutes, sample_video_url,
       slider_images, benefits, items_used, how_will_it_happen
     } = req.body;
 
+    // slug is optional — the BEFORE INSERT trigger auto-generates from name when null
     const result = await pool.query(
-      `INSERT INTO pujas (name, temple_id, deity_id, description, price_for_1, price_for_2,
+      `INSERT INTO pujas (name, slug, temple_id, deity_id, description, price_for_1, price_for_2,
         schedule_day, schedule_time, duration_minutes, sample_video_url,
         slider_images, benefits, items_used, how_will_it_happen)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-      [name, temple_id, deity_id, description, price_for_1, price_for_2,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+      [name, slug || null, temple_id, deity_id, description, price_for_1, price_for_2,
         schedule_day, schedule_time, duration_minutes, sample_video_url,
         slider_images || [], benefits || [], items_used || [], how_will_it_happen]
     );
@@ -78,7 +83,7 @@ pujasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
   try {
     const { id } = req.params;
     const fields = [
-      'name', 'temple_id', 'deity_id', 'description', 'price_for_1', 'price_for_2',
+      'name', 'slug', 'temple_id', 'deity_id', 'description', 'price_for_1', 'price_for_2',
       'schedule_day', 'schedule_time', 'duration_minutes', 'sample_video_url',
       'slider_images', 'benefits', 'items_used', 'how_will_it_happen'
     ];

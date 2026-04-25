@@ -40,3 +40,36 @@ export function isLocalMediaUrl(url: string): boolean {
   if (!url) return false;
   return url.startsWith('/api/v1/media/files/') || url.startsWith('/uploads/');
 }
+
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** Convert "Durga Navami Upasana Puja" → "durga-navami-upasana-puja" for use in URLs. */
+export function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')   // strip diacritics
+    .replace(/[^a-z0-9\s-]/g, '')       // drop non-alphanum (keep spaces/hyphens)
+    .trim()
+    .replace(/\s+/g, '-')               // spaces → hyphens
+    .replace(/-+/g, '-')                // collapse repeats
+    .replace(/^-|-$/g, '');             // trim edges
+}
+
+/** Build a slug-id URL segment for SEO-friendly detail URLs.
+ *  e.g. slugWithId("Durga Navami Upasana Puja", "ee100000-...") →
+ *       "durga-navami-upasana-puja-ee100000-0000-0000-0000-000000000003"
+ *  The trailing UUID is required so the route handler can resolve the entity. */
+export function slugWithId(name: string | undefined | null, id: string): string {
+  if (!id) return '';
+  const slug = name ? slugify(name) : '';
+  return slug ? `${slug}-${id}` : id;
+}
+
+/** Extract the canonical UUID from a slug-id URL segment.
+ *  Accepts either a slug-id ("durga-navami-puja-ee100000-...") or a bare UUID. */
+export function extractIdFromSlug(slugOrId: string): string {
+  if (!slugOrId) return slugOrId;
+  const match = slugOrId.match(UUID_RE);
+  return match ? match[0] : slugOrId;
+}

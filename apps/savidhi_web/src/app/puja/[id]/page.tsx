@@ -2,8 +2,7 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Share2, Play } from 'lucide-react';
-import { Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Share2, Play, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
@@ -44,96 +43,154 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="min-h-screen bg-surface-warm">
-      {/* Hero slider */}
-      <div className="relative h-72 sm:h-96 w-full">
-        <ImageSlider
-          images={puja.sliderImages ?? (puja.imageUrl ? [puja.imageUrl] : [])}
-          alt={puja.name}
-          className="h-72 sm:h-96 w-full"
-        />
-        <div className="absolute top-4 left-4 right-4 flex justify-between z-10">
-          <Link href="/puja" className="w-9 h-9 bg-black/40 rounded-full flex items-center justify-center hover:bg-black/60 transition">
-            <ArrowLeft className="w-5 h-5 text-white" />
+      <div className="section-container max-w-6xl pt-3 sm:pt-6 pb-6 sm:pb-8">
+        {/* Top bar */}
+        <div className="flex items-center justify-between mb-3 sm:mb-5">
+          <Link
+            href="/puja"
+            className="inline-flex items-center gap-2 text-sm font-medium text-text-secondary hover:text-primary-500 transition group"
+          >
+            <span className="w-8 h-8 rounded-full bg-white border border-border-DEFAULT flex items-center justify-center group-hover:border-primary-300 group-hover:bg-primary-50 transition">
+              <ArrowLeft className="w-4 h-4" />
+            </span>
+            <span className="hidden sm:inline">Back to Pujas</span>
           </Link>
-          <button className="w-9 h-9 bg-black/40 rounded-full flex items-center justify-center hover:bg-black/60 transition">
-            <Share2 className="w-5 h-5 text-white" />
+          <button
+            className="w-9 h-9 rounded-full bg-white border border-border-DEFAULT flex items-center justify-center text-text-secondary hover:border-primary-300 hover:bg-primary-50 hover:text-primary-500 transition"
+            aria-label="Share"
+          >
+            <Share2 className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Two-column layout (lg+): gallery+CTA left (sticky), content right */}
+        <div className="grid lg:grid-cols-[5fr_7fr] gap-4 sm:gap-6 lg:gap-10 lg:items-start">
+          {/* LEFT — gallery + action card */}
+          <div className="min-w-0 lg:sticky lg:top-4 space-y-5">
+            <ImageSlider
+              images={puja.sliderImages ?? (puja.imageUrl ? [puja.imageUrl] : [])}
+              alt={puja.name}
+            />
+
+            {/* Action card — desktop only */}
+            <div className="hidden lg:block bg-white border border-orange-100 rounded-2xl p-5 shadow-[0_1px_2px_rgba(232,129,58,0.04)]">
+              {puja.countdown && (
+                <span className="inline-flex items-center bg-primary-100 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-semibold mb-3">
+                  {puja.countdown}
+                </span>
+              )}
+              {puja.pricePerDevotee && (
+                <div className="mb-4">
+                  <span className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Starting from</span>
+                  <p className="text-3xl font-bold text-primary-600 leading-none mt-0.5">
+                    ₹{puja.pricePerDevotee}
+                    <span className="text-sm text-text-muted font-medium ml-1.5">per devotee</span>
+                  </p>
+                </div>
+              )}
+              <Link href={`/puja/${puja.slug || puja.id}/book`}>
+                <Button className="w-full" size="lg">
+                  Select Puja
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          {/* RIGHT — content (min-w-0 lets the grid track shrink to the
+              column allotment instead of stretching past viewport on mobile) */}
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl lg:text-[2rem] font-bold text-text-primary leading-tight mb-3">
+              {puja.name}
+            </h1>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-6">
+              {puja.templeName && (
+                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
+                  <MapPin className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  <span>{puja.templeName}{puja.templeLocation ? `, ${puja.templeLocation}` : ''}</span>
+                </span>
+              )}
+              {puja.date && (
+                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
+                  <Calendar className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <span>{puja.date}{puja.time ? `, ${puja.time}` : ''}</span>
+                </span>
+              )}
+              <span className="inline-flex lg:hidden items-center bg-primary-100 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
+                {puja.countdown}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {puja.benefits.length > 0 && (
+                <ExpandableSection title="Benefits Of Puja" initiallyExpanded>
+                  {puja.benefits.map((b, i) => <p key={i}>• {b}</p>)}
+                </ExpandableSection>
+              )}
+
+              {puja.ritualsIncluded.length > 0 && (
+                <ExpandableSection title="Rituals Included">
+                  {puja.ritualsIncluded.map((r, i) => <p key={i}>• {r}</p>)}
+                </ExpandableSection>
+              )}
+
+              {puja.howToDo.length > 0 && (
+                <ExpandableSection title="How To Do Puja">
+                  {puja.howToDo.map((h, i) => <p key={i}>{i + 1}. {h}</p>)}
+                </ExpandableSection>
+              )}
+
+              {puja.parcelContents.length > 0 && (
+                <ExpandableSection title="What's Inside Your Parcel">
+                  {puja.parcelContents.map((p, i) => <p key={i}>• {p}</p>)}
+                </ExpandableSection>
+              )}
+            </div>
+
+            {puja.videoThumbnail && (
+              <div className="mt-6">
+                <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-2.5">Video You Will Receive</h3>
+                <a
+                  href={puja.videoThumbnail}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden flex items-center justify-center bg-gradient-to-br from-black to-zinc-800 group block ring-1 ring-black/10"
+                >
+                  <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
+                    <Play className="w-6 h-6 text-primary-500 ml-0.5 fill-primary-500" />
+                  </div>
+                </a>
+              </div>
+            )}
+
+            {puja.templeId && (
+              <Link
+                href={`/temples/${puja.templeId}`}
+                className="flex items-center justify-between gap-3 bg-white border border-orange-100 rounded-xl px-4 sm:px-5 py-3.5 mt-6 hover:border-primary-300 hover:bg-orange-50/50 transition-all shadow-[0_1px_2px_rgba(232,129,58,0.04)] hover:shadow-md"
+              >
+                <span className="flex-1 min-w-0 text-sm sm:text-[15px] font-semibold text-text-primary leading-snug break-words">
+                  Importance Of {puja.templeName}
+                </span>
+                <span className="text-primary-500 text-lg leading-none flex-shrink-0">→</span>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="section-container py-6 max-w-3xl">
-        <h1 className="text-2xl font-bold text-text-primary mb-2">{puja.name}</h1>
-        {puja.templeName && (
-          <div className="flex items-center gap-1.5 text-sm text-text-secondary mb-1">
-            <MapPin className="w-4 h-4 text-green-500" />
-            {puja.templeName}{puja.templeLocation ? `, ${puja.templeLocation}` : ''}
-          </div>
-        )}
-        {puja.date && (
-          <div className="flex items-center gap-4 text-sm text-text-secondary mb-6">
-            <span className="flex items-center gap-1.5">
-              <Calendar className="w-4 h-4" />
-              {puja.date}{puja.time ? `, ${puja.time}` : ''}
-            </span>
-            {puja.countdown && (
-              <span className="bg-primary-50 text-primary-600 px-2 py-0.5 rounded-md text-xs font-medium">
-                {puja.countdown}
+      {/* Mobile sticky CTA */}
+      <div className="lg:hidden sticky bottom-0 bg-white border-t border-orange-100 shadow-[0_-2px_12px_rgba(232,129,58,0.08)] z-20">
+        <div className="section-container max-w-2xl flex items-center gap-3 py-3">
+          {puja.pricePerDevotee && (
+            <div className="flex flex-col leading-tight flex-shrink-0">
+              <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wider">From</span>
+              <span className="text-xl font-bold text-primary-600 leading-none mt-0.5 tabular-nums">
+                ₹{puja.pricePerDevotee.toLocaleString()}
               </span>
-            )}
-          </div>
-        )}
-
-        {puja.benefits.length > 0 && (
-          <ExpandableSection title="Benefits Of Puja" initiallyExpanded>
-            {puja.benefits.map((b, i) => <p key={i}>• {b}</p>)}
-          </ExpandableSection>
-        )}
-
-        {puja.ritualsIncluded.length > 0 && (
-          <ExpandableSection title="Rituals Included">
-            {puja.ritualsIncluded.map((r, i) => <p key={i}>• {r}</p>)}
-          </ExpandableSection>
-        )}
-
-        {puja.howToDo.length > 0 && (
-          <ExpandableSection title="How To Do Puja">
-            {puja.howToDo.map((h, i) => <p key={i}>{i + 1}. {h}</p>)}
-          </ExpandableSection>
-        )}
-
-        {/* Video */}
-        {puja.videoThumbnail && (
-          <>
-            <h3 className="font-semibold text-text-primary text-sm mb-2 mt-4">Video You Will Receive</h3>
-            <a href={puja.videoThumbnail} target="_blank" rel="noreferrer" className="relative h-48 rounded-xl overflow-hidden mb-6 flex items-center justify-center bg-black block">
-              <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center">
-                <Play className="w-6 h-6 text-primary-500 fill-primary-500" />
-              </div>
-            </a>
-          </>
-        )}
-
-        {puja.parcelContents.length > 0 && (
-          <ExpandableSection title="What's Inside Your Parcel">
-            {puja.parcelContents.map((p, i) => <p key={i}>• {p}</p>)}
-          </ExpandableSection>
-        )}
-
-        {puja.templeId && (
-          <Link
-            href={`/temples/${puja.templeId}`}
-            className="flex items-center justify-between border border-border-DEFAULT rounded-xl px-4 py-3 mb-6 hover:bg-primary-50 transition"
-          >
-            <span className="text-sm font-medium text-text-primary">Importance Of {puja.templeName}</span>
-            <span className="text-primary-500 text-sm">→</span>
-          </Link>
-        )}
-
-        <div className="sticky bottom-0 bg-white border-t border-border-light py-4 -mx-4 px-4 sm:-mx-0 sm:px-0 sm:border-0 sm:bg-transparent sm:static">
-          <Link href={`/puja/${puja.id}/book`}>
-            <Button className="w-full" size="lg">
-              Select Puja{puja.pricePerDevotee ? ` · ₹${puja.pricePerDevotee}` : ''}
-            </Button>
+            </div>
+          )}
+          <Link href={`/puja/${puja.slug || puja.id}/book`} className="flex-1">
+            <Button className="w-full" size="lg">Select Puja</Button>
           </Link>
         </div>
       </div>
