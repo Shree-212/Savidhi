@@ -76,6 +76,10 @@ ehthumbs.db
 # Dummy data assets
 Savidhi Gen 1 Dummy Data Assets/
 
+# Spec & mockup reference materials (kept local only)
+Savidhi_Flow_Data_Structure__Logic.pdf
+Savidhi UI Screens/
+
 
 # Docker volumes
 postgres_data/
