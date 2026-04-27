@@ -12,7 +12,7 @@ data:
   BOOKING_SERVICE_URL: http://booking-service:4004
   MEDIA_SERVICE_URL: http://media-service:4005
   NOTIFICATION_SERVICE_URL: http://notification-service:4006
-  CORS_ORIGIN: https://savidhi.in,https://www.savidhi.in,https://admin.savidhi.in
+  CORS_ORIGIN: https://savidhi.in,https://www.savidhi.in,https://admin.savidhi.in,https://savidhi.com,https://www.savidhi.com,https://savidhi.org,https://www.savidhi.org
   AUTH_COOKIE_DOMAIN: .savidhi.in
   GCS_MEDIA_BUCKET: savidhi-media-prod
   GCS_UPLOAD_BUCKET: savidhi-uploads-prod
