@@ -5,10 +5,10 @@
 
 BEGIN;
 
--- 1. chadhava_events.stage — replace TO_BE_SHIPPED / SHIPPED with COMPLETED.
-UPDATE chadhava_events SET stage = 'COMPLETED' WHERE stage IN ('TO_BE_SHIPPED', 'SHIPPED');
-
+-- 1. chadhava_events.stage — drop the old constraint FIRST so we can update rows
+-- to the new COMPLETED value, then add the new constraint.
 ALTER TABLE chadhava_events DROP CONSTRAINT IF EXISTS chadhava_events_stage_check;
+UPDATE chadhava_events SET stage = 'COMPLETED' WHERE stage IN ('TO_BE_SHIPPED', 'SHIPPED');
 ALTER TABLE chadhava_events
   ADD CONSTRAINT chadhava_events_stage_check
   CHECK (stage IN ('YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'COMPLETED'));
