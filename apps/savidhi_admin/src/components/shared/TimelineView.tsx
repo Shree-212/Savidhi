@@ -1,9 +1,16 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TimelineEvent } from '@/types';
+
+function toDateInputValue(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8 AM – 8 PM
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -46,6 +53,7 @@ interface TimelineViewProps {
 
 export function TimelineView({ events, onEventClick }: TimelineViewProps) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -82,45 +90,74 @@ export function TimelineView({ events, onEventClick }: TimelineViewProps) {
 
   return (
     <div>
-      {/* ── Week navigation ── */}
+      {/* ── Date navigation ── */}
       <div className="flex items-center gap-2 mb-4">
         <button
-          onClick={() => setWeekStart(d => addDays(d, -7))}
+          aria-label="Previous day"
+          onClick={() => setWeekStart(d => addDays(d, -1))}
           className="h-8 w-8 bg-accent border border-border rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft size={14} />
         </button>
 
-        {/* Day cells */}
+        {/* Day cells — click to jump that date to the left edge */}
         {days.map((d, i) => (
-          <div
+          <button
             key={i}
+            type="button"
+            onClick={() => setWeekStart(d)}
             className={cn(
-              'flex-1 text-center py-1.5 rounded-lg text-xs select-none',
+              'flex-1 text-center py-1.5 rounded-lg text-xs select-none transition-colors',
               isSameDay(d, today)
                 ? 'bg-primary/20 border border-primary text-primary font-bold'
-                : 'text-muted-foreground',
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
             )}
           >
             <div className="font-semibold leading-tight">{d.getDate()}</div>
             <div className="text-[10px] leading-tight">{MONTH_SHORT[d.getMonth()]}</div>
-          </div>
+          </button>
         ))}
 
         <button
-          onClick={() => setWeekStart(d => addDays(d, 7))}
+          aria-label="Next day"
+          onClick={() => setWeekStart(d => addDays(d, 1))}
           className="h-8 w-8 bg-accent border border-border rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground"
         >
           <ChevronRight size={14} />
         </button>
 
-        <button
-          onClick={() => setWeekStart(startOfWeek(new Date()))}
-          className="flex items-center gap-1 h-8 px-3 bg-accent border border-border rounded-md text-[10px] text-muted-foreground hover:text-foreground whitespace-nowrap"
-        >
-          <Calendar size={12} />
-          {rangeLabel}
-        </button>
+        {/* Range button opens a native date picker; selecting jumps the window */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              const el = dateInputRef.current;
+              if (!el) return;
+              if (typeof el.showPicker === 'function') el.showPicker();
+              else el.click();
+            }}
+            className="flex items-center gap-1 h-8 px-3 bg-accent border border-border rounded-md text-[10px] text-muted-foreground hover:text-foreground whitespace-nowrap"
+          >
+            <Calendar size={12} />
+            {rangeLabel}
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={toDateInputValue(weekStart)}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) return;
+              const [y, m, d] = v.split('-').map(Number);
+              const picked = new Date(y, m - 1, d);
+              picked.setHours(0, 0, 0, 0);
+              setWeekStart(picked);
+            }}
+            className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
+            aria-hidden
+            tabIndex={-1}
+          />
+        </div>
       </div>
 
       {/* ── Hour labels ── */}
