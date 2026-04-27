@@ -15,6 +15,7 @@ import { settingsRouter } from './routes/settings';
 import { panchangRouter } from './routes/panchang';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT ?? 4003;
 
 app.use(helmet());

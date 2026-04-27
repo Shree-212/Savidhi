@@ -15,6 +15,7 @@ import { reportsRouter } from './routes/reports';
 import { startAppointmentAutoCompleteWorker } from './workers/appointmentAutoComplete';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT ?? 4004;
 
 // ─── Middleware ────────────────────────────────────────────────────────────────

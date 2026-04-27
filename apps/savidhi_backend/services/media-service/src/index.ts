@@ -9,6 +9,7 @@ import { mediaRouter } from './routes/media';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT ?? 4005;
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/app/uploads';
 

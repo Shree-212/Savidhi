@@ -7,6 +7,9 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import axios from 'axios';
 
 const app = express();
+// Trust the GKE/Cloud Run load balancer (single hop) so X-Forwarded-For is
+// honoured for client IP detection by express-rate-limit and the gateway logs.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT ?? 4000;
 
 const AUTH_SERVICE_URL    = process.env.AUTH_SERVICE_URL    ?? 'http://localhost:4001';
