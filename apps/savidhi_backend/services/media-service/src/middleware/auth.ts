@@ -1,19 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 
 /**
- * Placeholder auth middleware.
- * In production this would verify a JWT or session token passed
- * from the API gateway / auth-service.
+ * Identity is set by the gateway (`x-user-id`, `x-user-role`, `x-user-type`)
+ * after it verifies the JWT against auth-service. Downstream services trust
+ * the gateway and only require these headers to be present.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
+  const userId = req.headers['x-user-id'] as string | undefined;
+  const userRole = req.headers['x-user-role'] as string | undefined;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!userId || !userRole) {
     res.status(401).json({ success: false, message: 'Authentication required' });
     return;
   }
-
-  // TODO: verify JWT with auth-service shared secret / JWKS
-  // For now, pass through any bearer token for development.
   next();
 }

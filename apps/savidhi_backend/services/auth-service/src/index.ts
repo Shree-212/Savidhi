@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { connectRedis } from './lib/redis';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT ?? 4001;
 
 // ─── Middleware ────────────────────────────────────────────────────────────────

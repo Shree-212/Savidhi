@@ -1,0 +1,294 @@
+# All 7 microservices: Deployment + Service + HorizontalPodAutoscaler.
+# Image references use Artifact Registry. Update :v1 → :v2, :v3 etc on each release.
+---
+# ─── gateway-service (port 4000) ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-service
+  namespace: savidhi
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: gateway-service }
+  template:
+    metadata:
+      labels: { app: gateway-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: gateway
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/gateway-service:v1
+          ports: [{ containerPort: 4000 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env:
+            - name: PORT
+              value: "4000"
+          readinessProbe:
+            httpGet: { path: /health, port: 4000 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 4000 }
+            initialDelaySeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: savidhi
+  annotations:
+    cloud.google.com/backend-config: '{"default":"gateway-backend"}'
+spec:
+  type: ClusterIP
+  selector: { app: gateway-service }
+  ports:
+    - { port: 4000, targetPort: 4000, name: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-service-hpa
+  namespace: savidhi
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: gateway-service }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+# ─── auth-service (4001) ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: savidhi
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: auth-service }
+  template:
+    metadata:
+      labels: { app: auth-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: auth
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/auth-service:v1
+          ports: [{ containerPort: 4001 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env:
+            - { name: PORT, value: "4001" }
+          readinessProbe:
+            httpGet: { path: /health, port: 4001 }
+            initialDelaySeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth-service, namespace: savidhi }
+spec:
+  type: ClusterIP
+  selector: { app: auth-service }
+  ports: [{ port: 4001, targetPort: 4001 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: auth-service-hpa, namespace: savidhi }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: auth-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+# ─── user-service (4002) ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: user-service, namespace: savidhi }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: user-service }
+  template:
+    metadata:
+      labels: { app: user-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: user
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/user-service:v1
+          ports: [{ containerPort: 4002 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env: [{ name: PORT, value: "4002" }]
+          readinessProbe: { httpGet: { path: /health, port: 4002 }, initialDelaySeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: user-service, namespace: savidhi }
+spec: { type: ClusterIP, selector: { app: user-service }, ports: [{ port: 4002, targetPort: 4002 }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: user-service-hpa, namespace: savidhi }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: user-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
+---
+# ─── catalog-service (4003) ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: catalog-service, namespace: savidhi }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: catalog-service }
+  template:
+    metadata:
+      labels: { app: catalog-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: catalog
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/catalog-service:v1
+          ports: [{ containerPort: 4003 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env: [{ name: PORT, value: "4003" }]
+          readinessProbe: { httpGet: { path: /health, port: 4003 }, initialDelaySeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: catalog-service, namespace: savidhi }
+spec: { type: ClusterIP, selector: { app: catalog-service }, ports: [{ port: 4003, targetPort: 4003 }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: catalog-service-hpa, namespace: savidhi }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: catalog-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
+---
+# ─── booking-service (4004) ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: booking-service, namespace: savidhi }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: booking-service }
+  template:
+    metadata:
+      labels: { app: booking-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: booking
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v1
+          ports: [{ containerPort: 4004 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env: [{ name: PORT, value: "4004" }]
+          readinessProbe: { httpGet: { path: /health, port: 4004 }, initialDelaySeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: booking-service, namespace: savidhi }
+spec: { type: ClusterIP, selector: { app: booking-service }, ports: [{ port: 4004, targetPort: 4004 }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: booking-service-hpa, namespace: savidhi }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: booking-service }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
+---
+# ─── media-service (4005) ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: media-service, namespace: savidhi }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: media-service }
+  template:
+    metadata:
+      labels: { app: media-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: media
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v1
+          ports: [{ containerPort: 4005 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env: [{ name: PORT, value: "4005" }]
+          readinessProbe: { httpGet: { path: /health, port: 4005 }, initialDelaySeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: media-service, namespace: savidhi }
+spec: { type: ClusterIP, selector: { app: media-service }, ports: [{ port: 4005, targetPort: 4005 }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: media-service-hpa, namespace: savidhi }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: media-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
+---
+# ─── notification-service (4006) ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: notification-service, namespace: savidhi }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: notification-service }
+  template:
+    metadata:
+      labels: { app: notification-service }
+    spec:
+      serviceAccountName: savidhi-eso
+      containers:
+        - name: notification
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/notification-service:v1
+          ports: [{ containerPort: 4006 }]
+          envFrom:
+            - configMapRef: { name: savidhi-config }
+            - secretRef: { name: savidhi-env }
+          env: [{ name: PORT, value: "4006" }]
+          readinessProbe: { httpGet: { path: /health, port: 4006 }, initialDelaySeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: notification-service, namespace: savidhi }
+spec: { type: ClusterIP, selector: { app: notification-service }, ports: [{ port: 4006, targetPort: 4006 }] }

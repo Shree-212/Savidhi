@@ -32,10 +32,9 @@ function normaliseUrl(url: string): string {
 async function uploadFile(file: File): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
-  const token = typeof window !== 'undefined' ? localStorage.getItem('savidhi_admin_token') : null;
   const res = await fetch('/api/v1/media/upload/local', {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
     body: formData,
   });
   if (!res.ok) {

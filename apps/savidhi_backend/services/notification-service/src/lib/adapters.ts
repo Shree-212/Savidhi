@@ -112,7 +112,8 @@ async function getFcm() {
   if (fcmMessaging) return fcmMessaging;
   if (!FCM_KEY_JSON) return null;
   try {
-    const admin = await import('firebase-admin');
+    // firebase-admin is an optional runtime dep — only loaded when FCM_KEY_JSON is set.
+    const admin: any = await import('firebase-admin' as any);
     if (!admin.apps.length) {
       const creds = JSON.parse(FCM_KEY_JSON);
       admin.initializeApp({ credential: admin.credential.cert(creds) });

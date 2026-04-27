@@ -23,8 +23,7 @@ type ChadhavaEventStage =
   | 'LIVE_ADDED'
   | 'SHORT_VIDEO_ADDED'
   | 'SANKALP_VIDEO_ADDED'
-  | 'TO_BE_SHIPPED'
-  | 'SHIPPED';
+  | 'COMPLETED';
 
 function toTimelineEvent(e: any): TimelineEvent {
   const d = new Date(e.start_time ?? e.startTime);
@@ -88,13 +87,13 @@ function mapBooking(b: any): ChadhavaBooking {
 }
 
 /* ── stage actions ─────────────────────────────────────────── */
+// PDF: chadhava has NO prasad shipping. Terminal stage after sankalp is COMPLETED.
 const STAGE_ACTIONS: Record<ChadhavaEventStage, { label: string }> = {
   YET_TO_START:        { label: 'Add Live Feed Link' },
   LIVE_ADDED:          { label: 'Add Short Video' },
   SHORT_VIDEO_ADDED:   { label: 'Add Sankalp Video' },
-  SANKALP_VIDEO_ADDED: { label: 'Mark Ready to Ship' },
-  TO_BE_SHIPPED:       { label: 'Ship Prashad' },
-  SHIPPED:             { label: 'Track Bulk Packages' },
+  SANKALP_VIDEO_ADDED: { label: 'Mark Complete' },
+  COMPLETED:           { label: 'Completed' },
 };
 
 /* ══════════════════════════════════════════════════════════ */
@@ -110,7 +109,6 @@ export default function ChadhavaBookingsPage() {
   const [showLiveModal,    setShowLiveModal]    = useState(false);
   const [showVideoModal,   setShowVideoModal]   = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
-  const [showShipModal,    setShowShipModal]    = useState(false);
 
   const [liveLink,       setLiveLink]       = useState('');
   const [shortVideoUrl,  setShortVideoUrl]  = useState('');
@@ -312,9 +310,6 @@ export default function ChadhavaBookingsPage() {
     }
     return Array.from(map.entries()).map(([name, qty]) => ({ name, qty }));
   }, [selectedEvent]);
-  const shipAddresses = ((selectedEvent as any)?.bookingsData ?? [])
-    .filter((b: any) => b.prasad_delivery_address)
-    .map((b: any) => ({ name: b.devotee_name ?? 'Devotee', address: b.prasad_delivery_address }));
 
   if (loading && chadhavaEvents.length === 0) {
     return <div className="flex items-center justify-center h-64"><div className="text-sm text-muted-foreground">Loading chadhava events...</div></div>;
@@ -486,14 +481,14 @@ export default function ChadhavaBookingsPage() {
             )}
 
             {/* Sankalp video section */}
-            {eventStage && ['SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'].includes(eventStage) && (
+            {eventStage && ['SANKALP_VIDEO_ADDED', 'COMPLETED'].includes(eventStage) && (
               <div className="border border-border rounded-lg p-3">
                 <p className="text-[10px] font-bold mb-2">Sankalp Video <span className="text-primary cursor-pointer">✏️</span></p>
                 <div className="bg-accent rounded-lg h-24 flex items-center justify-center text-muted-foreground text-xs">▶ Video</div>
               </div>
             )}
 
-            {eventStage === 'SHIPPED' && (
+            {eventStage === 'COMPLETED' && (
               <p className="text-[11px] text-muted-foreground">Rating: ⭐ 5 Star (99)</p>
             )}
 
@@ -512,13 +507,7 @@ export default function ChadhavaBookingsPage() {
                 <PrimaryButton className="flex-1" onClick={() => setShowSankalpModal(true)}>Add Sankalp Video</PrimaryButton>
               )}
               {eventStage === 'SANKALP_VIDEO_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Ready to Ship</PrimaryButton>
-              )}
-              {eventStage === 'TO_BE_SHIPPED' && (
-                <PrimaryButton className="flex-1" onClick={() => setShowShipModal(true)}>Ship Prashad</PrimaryButton>
-              )}
-              {eventStage === 'SHIPPED' && (
-                <PrimaryButton className="flex-1">Track Bulk Packages</PrimaryButton>
+                <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Complete</PrimaryButton>
               )}
             </div>
           </div>
@@ -629,25 +618,6 @@ export default function ChadhavaBookingsPage() {
         </div>
       </Modal>
 
-      {/* ── Ship Package Modal ── */}
-      <Modal open={showShipModal} onClose={() => setShowShipModal(false)} title="Ship Package" onBack={() => setShowShipModal(false)}>
-        <div className="space-y-3">
-          {shipAddresses.length > 0 ? shipAddresses.map((addr: any, i: number) => (
-            <div key={i} className="border border-border rounded-lg p-3">
-              <p className="text-xs font-bold text-foreground">{addr.name}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{addr.address}</p>
-            </div>
-          )) : (
-            <p className="text-[11px] text-muted-foreground">No delivery addresses found</p>
-          )}
-          <PrimaryButton className="w-full" onClick={async () => {
-            if (selectedEvent) await handleAdvanceStage(selectedEvent.id);
-            setShowShipModal(false);
-          }}>
-            Create Bulk Pickup in Ship Rocket
-          </PrimaryButton>
-        </div>
-      </Modal>
     </div>
   );
 }

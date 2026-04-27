@@ -214,12 +214,11 @@ reportsRouter.get('/all-bookings', requireAdmin, async (req: Request, res: Respo
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
     const offset = (pageNum - 1) * limitNum;
 
-    const dateConditions: string[] = [];
     const dateParams: unknown[] = [];
     let paramIdx = 1;
 
-    if (from_date) { dateConditions.push(paramIdx); dateParams.push(from_date); paramIdx++; }
-    if (to_date) { dateConditions.push(paramIdx); dateParams.push(to_date); paramIdx++; }
+    if (from_date) { dateParams.push(from_date); paramIdx++; }
+    if (to_date) { dateParams.push(to_date); paramIdx++; }
 
     // Build optional date filters for each sub-query
     let pujaDateFilter = '';

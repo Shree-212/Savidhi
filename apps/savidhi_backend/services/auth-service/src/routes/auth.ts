@@ -10,8 +10,10 @@ export const authRouter = Router();
 
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET ?? 'changeme_access';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'changeme_refresh';
-const JWT_ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES ?? '1h';
+const JWT_ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES ?? '30m';
 const JWT_REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES ?? '7d';
+const ACCESS_COOKIE_MAX_AGE_MS = 30 * 60 * 1000;
+const COOKIE_DOMAIN = process.env.AUTH_COOKIE_DOMAIN || undefined;
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -78,8 +80,9 @@ authRouter.post('/login', async (req: Request, res: Response, next: NextFunction
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 3600000, // 1 hour
+      maxAge: ACCESS_COOKIE_MAX_AGE_MS,
       path: '/',
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
 
     res.json({
@@ -126,7 +129,10 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
 // ─── POST /logout ──────────────────────────────────────────────────────────
 
 authRouter.post('/logout', (_req: Request, res: Response) => {
-  res.clearCookie('savidhi_admin_token', { path: '/' });
+  res.clearCookie('savidhi_admin_token', {
+    path: '/',
+    ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+  });
   res.json({ success: true, message: 'Logged out' });
 });
 
@@ -184,8 +190,9 @@ authRouter.post('/refresh', async (req: Request, res: Response, next: NextFuncti
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 3600000,
+        maxAge: ACCESS_COOKIE_MAX_AGE_MS,
         path: '/',
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
     }
 

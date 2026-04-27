@@ -116,7 +116,17 @@ pujasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
 
 pujasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('UPDATE pujas SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [req.params.id]);
+    const { id } = req.params;
+    const inUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM puja_events
+       WHERE puja_id = $1 AND status IN ('NOT_STARTED', 'INPROGRESS') AND start_time >= NOW()`,
+      [id],
+    );
+    if (inUse.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Puja has upcoming events; cancel them first' });
+      return;
+    }
+    const result = await pool.query('UPDATE pujas SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Puja not found' }); return; }
     res.json({ success: true, message: 'Puja deleted' });
   } catch (err) { next(err); }

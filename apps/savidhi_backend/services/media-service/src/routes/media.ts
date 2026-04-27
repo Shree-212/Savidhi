@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { requireAuth } from '../middleware/auth';
+import { isGcsConfigured, getGcsUploadSignedUrl } from '../lib/gcs';
 
 const router = Router();
 
@@ -67,10 +68,21 @@ router.post('/upload/presigned-url', requireAuth, async (req: Request, res: Resp
       return;
     }
 
+    // Prefer GCS in production. Fall back to S3/MinIO if configured.
+    if (isGcsConfigured()) {
+      const key = `${folder}/${uuidv4()}-${fileName}`;
+      const signed = await getGcsUploadSignedUrl({ key, contentType });
+      if (signed) {
+        res.json({ success: true, uploadUrl: signed.uploadUrl, fileUrl: signed.publicUrl, key });
+        return;
+      }
+      // Fall through to S3 if GCS module failed to load.
+    }
+
     if (!s3Client || !s3Bucket) {
       res.status(503).json({
         success: false,
-        message: 'S3 is not configured. Use /upload/local for local development.',
+        message: 'No object storage configured. Set GCS_MEDIA_BUCKET+GCS_UPLOAD_BUCKET (prod) or S3_BUCKET+S3_REGION (dev). Use /upload/local for local development.',
       });
       return;
     }
