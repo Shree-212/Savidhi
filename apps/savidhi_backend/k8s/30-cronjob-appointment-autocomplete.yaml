@@ -1,0 +1,38 @@
+# Drives the appointment status state-machine every 5 minutes.
+# In dev the booking-service runs the same logic in-process via setInterval; in
+# prod RUN_AUTOCOMPLETE_WORKER=false (see ConfigMap) and this CronJob takes over.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: appointment-autocomplete
+  namespace: savidhi
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          serviceAccountName: savidhi-eso
+          restartPolicy: OnFailure
+          containers:
+            - name: tick
+              image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v1
+              command:
+                - node
+                - -e
+                - |
+                  require('./dist/src/workers/appointmentAutoComplete')
+                    .tickAppointmentAutoComplete()
+                    .then(() => process.exit(0))
+                    .catch((e) => { console.error(e); process.exit(1); });
+              envFrom:
+                - configMapRef: { name: savidhi-config }
+                - secretRef: { name: savidhi-env }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 200m, memory: 256Mi }

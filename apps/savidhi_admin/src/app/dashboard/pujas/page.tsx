@@ -18,7 +18,7 @@ interface Puja {
   deity_name: string;
   schedule_day: string;
   schedule_time: string;
-  max_bookings_per_event: number;
+  max_devotee: number;
   booking_mode: string;
   price_for_1: number;
   price_for_2: number;
@@ -105,7 +105,7 @@ export default function PujasPage() {
     setSendHamper(false);
     setEditing({
       id: '', name: '', temple_id: '', temple_name: '', deity_id: '', deity_name: '',
-      schedule_day: '', schedule_time: '', max_bookings_per_event: 0, booking_mode: 'BOTH',
+      schedule_day: '', schedule_time: '', max_devotee: 0, booking_mode: 'BOTH',
       price_for_1: 0, price_for_2: 0, price_for_4: 0, price_for_6: 0,
       benefits: '', rituals_included: '', sample_video_url: '', slider_images: [],
       hamper_id: '', send_hamper: false,
@@ -128,7 +128,7 @@ export default function PujasPage() {
         deity_id: deityRef.current?.value || '',
         schedule_day: dayRef.current?.value || '',
         schedule_time: timeRef.current?.value || '',
-        max_bookings_per_event: Number(maxBookingsRef.current?.value) || 0,
+        max_devotee: Number(maxBookingsRef.current?.value) || 0,
         booking_mode: bookingModeRef.current?.value || 'BOTH',
         price_for_1: Number(price1Ref.current?.value) || 0,
         price_for_2: Number(price2Ref.current?.value) || 0,
@@ -172,7 +172,7 @@ export default function PujasPage() {
     { key: 'temple_name', label: 'Temple' },
     { key: 'schedule_day', label: 'Day' },
     { key: 'schedule_time', label: 'Time' },
-    { key: 'max_bookings_per_event', label: 'Max B.' },
+    { key: 'max_devotee', label: 'Max B.' },
     { key: 'booking_mode', label: 'Booking Mode', render: (r: Puja) => <StatusBadge status={r.booking_mode} /> },
     { key: 'action', label: 'Action', render: (r: Puja) => (
       <div className="flex items-center gap-1">
@@ -209,7 +209,7 @@ export default function PujasPage() {
               </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <input ref={maxBookingsRef} defaultValue={editing.max_bookings_per_event || ''} placeholder="Max Devotee Per Event" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input ref={maxBookingsRef} defaultValue={editing.max_devotee || ''} placeholder="Max Devotee Per Event" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
               <select className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
                 <option>Default Pujari</option>
               </select>

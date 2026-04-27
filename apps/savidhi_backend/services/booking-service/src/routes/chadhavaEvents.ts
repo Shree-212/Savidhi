@@ -7,13 +7,13 @@ export const chadhavaEventsRouter = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v: unknown) => typeof v === 'string' && UUID_RE.test(v);
 
-// ─── Stage transitions (same machine as puja events) ─────────────────────────
+// ─── Stage transitions ──────────────────────────────────────────────────────
+// PDF: chadhava has NO prasad shipping. Terminal stage after sankalp is COMPLETED.
 const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; statusUpdate?: string }> = {
-  YET_TO_START:          { next: 'LIVE_ADDED',            requiredField: 'live_link',          statusUpdate: 'INPROGRESS' },
-  LIVE_ADDED:            { next: 'SHORT_VIDEO_ADDED',     requiredField: 'short_video_url' },
-  SHORT_VIDEO_ADDED:     { next: 'SANKALP_VIDEO_ADDED',   requiredField: 'sankalp_video_url' },
-  SANKALP_VIDEO_ADDED:   { next: 'TO_BE_SHIPPED' },
-  TO_BE_SHIPPED:         { next: 'SHIPPED',               statusUpdate: 'COMPLETED' },
+  YET_TO_START:        { next: 'LIVE_ADDED',          requiredField: 'live_link',        statusUpdate: 'INPROGRESS' },
+  LIVE_ADDED:          { next: 'SHORT_VIDEO_ADDED',   requiredField: 'short_video_url' },
+  SHORT_VIDEO_ADDED:   { next: 'SANKALP_VIDEO_ADDED', requiredField: 'sankalp_video_url' },
+  SANKALP_VIDEO_ADDED: { next: 'COMPLETED',           statusUpdate: 'COMPLETED' },
 };
 
 /** GET / – list chadhava events. Admins see all; devotees see upcoming non-cancelled. */
@@ -192,6 +192,26 @@ chadhavaEventsRouter.patch('/:id', requireAdmin, async (req: Request, res: Respo
     }
 
     res.json({ success: true, data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+/** DELETE /:id – delete a chadhava event (only if no active bookings) */
+chadhavaEventsRouter.delete('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const inUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM chadhava_bookings
+       WHERE chadhava_event_id = $1 AND status IN ('NOT_STARTED', 'INPROGRESS')`,
+      [id],
+    );
+    if (inUse.rows[0].n > 0) {
+      return res.status(409).json({ success: false, message: 'Event has active bookings; cancel them first' });
+    }
+    const { rows } = await pool.query(`DELETE FROM chadhava_events WHERE id = $1 RETURNING id`, [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Chadhava event not found' });
+    }
+    res.json({ success: true, message: 'Chadhava event deleted' });
   } catch (err) { next(err); }
 });
 

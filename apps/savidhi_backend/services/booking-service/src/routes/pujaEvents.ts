@@ -139,13 +139,13 @@ pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, nex
       return res.status(400).json({ success: false, message: 'puja_id and start_time are required' });
     }
 
-    // Fetch max_bookings from puja definition
-    const pujaResult = await pool.query(`SELECT max_bookings_per_event FROM pujas WHERE id = $1`, [puja_id]);
+    // Fetch max_devotee from puja definition
+    const pujaResult = await pool.query(`SELECT max_devotee FROM pujas WHERE id = $1`, [puja_id]);
     if (pujaResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Puja not found' });
     }
 
-    const maxBookings = pujaResult.rows[0].max_bookings_per_event;
+    const maxBookings = pujaResult.rows[0].max_devotee;
 
     const { rows } = await pool.query(
       `INSERT INTO puja_events (puja_id, pujari_id, start_time, max_bookings)
@@ -188,6 +188,26 @@ pujaEventsRouter.patch('/:id', requireAdmin, async (req: Request, res: Response,
     }
 
     res.json({ success: true, data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+/** DELETE /:id – delete a puja event (only if no active bookings) */
+pujaEventsRouter.delete('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const inUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM puja_bookings
+       WHERE puja_event_id = $1 AND status IN ('NOT_STARTED', 'INPROGRESS')`,
+      [id],
+    );
+    if (inUse.rows[0].n > 0) {
+      return res.status(409).json({ success: false, message: 'Event has active bookings; cancel them first' });
+    }
+    const { rows } = await pool.query(`DELETE FROM puja_events WHERE id = $1 RETURNING id`, [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Puja event not found' });
+    }
+    res.json({ success: true, message: 'Puja event deleted' });
   } catch (err) { next(err); }
 });
 

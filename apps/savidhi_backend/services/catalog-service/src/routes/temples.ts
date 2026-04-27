@@ -14,7 +14,7 @@ templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     const offset = (page - 1) * limit;
     const search = req.query.search as string;
 
-    let query = 'SELECT * FROM temples WHERE is_active = true';
+    let query = 'SELECT * FROM temples WHERE 1=1';
     const params: any[] = [];
 
     if (search) {
@@ -46,7 +46,7 @@ templesRouter.get('/:identifier', async (req: Request, res: Response, next: Next
   try {
     const { identifier } = req.params;
     const where = isUuid(identifier) ? 'id = $1' : 'slug = $1';
-    const temple = await pool.query(`SELECT * FROM temples WHERE ${where} AND is_active = true`, [identifier]);
+    const temple = await pool.query(`SELECT * FROM temples WHERE ${where}`, [identifier]);
     if (temple.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
     const id = temple.rows[0].id;
 
@@ -103,7 +103,7 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
       updates.push(`updated_at = NOW()`);
       values.push(id);
       const result = await client.query(
-        `UPDATE temples SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+        `UPDATE temples SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
         values,
       );
       if (result.rows.length === 0) {
@@ -138,7 +138,26 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
 
 templesRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('UPDATE temples SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [req.params.id]);
+    const { id } = req.params;
+    // PDF page 19: temple cannot be deleted while active dependencies exist.
+    const pujariCount = await pool.query('SELECT COUNT(*)::int AS n FROM pujaris WHERE temple_id = $1 AND is_active = true', [id]);
+    if (pujariCount.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Temple has active pujaris; deactivate them first' });
+      return;
+    }
+    const pujaCount = await pool.query('SELECT COUNT(*)::int AS n FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
+    if (pujaCount.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Temple has active pujas; deactivate them first' });
+      return;
+    }
+    const chadhavaCount = await pool.query('SELECT COUNT(*)::int AS n FROM chadhavas WHERE temple_id = $1 AND is_active = true', [id]);
+    if (chadhavaCount.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Temple has active chadhavas; deactivate them first' });
+      return;
+    }
+    // No dependents — hard delete (PDF: temples cannot be disabled, only deleted).
+    await pool.query('DELETE FROM temple_deities WHERE temple_id = $1', [id]);
+    const result = await pool.query('DELETE FROM temples WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
     res.json({ success: true, message: 'Temple deleted' });
   } catch (err) { next(err); }

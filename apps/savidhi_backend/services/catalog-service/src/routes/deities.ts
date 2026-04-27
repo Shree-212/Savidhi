@@ -30,8 +30,17 @@ deitiesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
 
 deitiesRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await pool.query('DELETE FROM temple_deities WHERE deity_id = $1', [req.params.id]);
-    const result = await pool.query('DELETE FROM deities WHERE id = $1 RETURNING id', [req.params.id]);
+    const { id } = req.params;
+    const pujaUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM pujas WHERE deity_id = $1 AND is_active = true`,
+      [id],
+    );
+    if (pujaUse.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Deity is referenced by active pujas; deactivate them first' });
+      return;
+    }
+    await pool.query('DELETE FROM temple_deities WHERE deity_id = $1', [id]);
+    const result = await pool.query('DELETE FROM deities WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Deity not found' }); return; }
     res.json({ success: true, message: 'Deity deleted' });
   } catch (err) { next(err); }

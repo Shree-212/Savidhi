@@ -98,7 +98,16 @@ pujarisRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
 
 pujarisRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('UPDATE pujaris SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [req.params.id]);
+    const { id } = req.params;
+    const inUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM pujas WHERE default_pujari_id = $1 AND is_active = true`,
+      [id],
+    );
+    if (inUse.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Pujari is the default for active pujas; reassign them first' });
+      return;
+    }
+    const result = await pool.query('UPDATE pujaris SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Pujari not found' }); return; }
     res.json({ success: true, message: 'Pujari deleted' });
   } catch (err) { next(err); }

@@ -118,7 +118,7 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
 
     // Fetch event + puja to calculate cost
     const eventResult = await client.query(
-      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_bookings_per_event
+      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee
        FROM puja_events pe
        JOIN pujas p ON p.id = pe.puja_id
        WHERE pe.id = $1`,

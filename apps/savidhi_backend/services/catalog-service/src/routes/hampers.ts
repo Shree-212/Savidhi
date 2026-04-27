@@ -82,7 +82,20 @@ hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
 
 hampersRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('DELETE FROM hampers WHERE id = $1 RETURNING id', [req.params.id]);
+    const { id } = req.params;
+    const pujaUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM pujas WHERE hamper_id = $1 AND send_hamper = true AND is_active = true`,
+      [id],
+    );
+    const chadhavaUse = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM chadhavas WHERE hamper_id = $1 AND send_hamper = true AND is_active = true`,
+      [id],
+    );
+    if (pujaUse.rows[0].n + chadhavaUse.rows[0].n > 0) {
+      res.status(409).json({ success: false, message: 'Hamper is referenced by active pujas/chadhavas; remove those references first' });
+      return;
+    }
+    const result = await pool.query('DELETE FROM hampers WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Hamper not found' }); return; }
     res.json({ success: true, message: 'Hamper deleted' });
   } catch (err) { next(err); }

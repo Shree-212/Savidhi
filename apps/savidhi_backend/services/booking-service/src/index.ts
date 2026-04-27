@@ -12,6 +12,7 @@ import { appointmentsRouter } from './routes/appointments';
 import { paymentsRouter } from './routes/payments';
 import { dashboardRouter } from './routes/dashboard';
 import { reportsRouter } from './routes/reports';
+import { startAppointmentAutoCompleteWorker } from './workers/appointmentAutoComplete';
 
 const app = express();
 const PORT = process.env.PORT ?? 4004;
@@ -58,6 +59,11 @@ app.use(errorHandler);
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[booking-service] Running on port ${PORT}`);
+  // In production this is replaced by a Kubernetes CronJob; locally we run it
+  // in-process so dev tests of the appointment state machine work.
+  if (process.env.RUN_AUTOCOMPLETE_WORKER !== 'false') {
+    startAppointmentAutoCompleteWorker();
+  }
 });
 
 export default app;
