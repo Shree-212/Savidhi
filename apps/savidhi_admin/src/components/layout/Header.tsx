@@ -196,7 +196,7 @@ export function Header() {
         <span className="text-sm font-bold text-foreground tracking-wide">Savidhi</span>
       </Link>
 
-      <nav className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-thin">
+      <nav className="flex items-center gap-1 flex-1 min-w-0 flex-wrap">
         <Link
           href={DASHBOARD.href}
           className={cn(
