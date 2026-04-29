@@ -47,16 +47,19 @@ pujarisRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
 pujarisRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
-      name, phone, designation, profile_pic, temple_id,
-      bank_account_no, bank_ifsc, bank_name, upi_id, commission_percent
+      name, designation, profile_pic, temple_id, start_date,
+      aadhar_number, pan_number, aadhar_pic, pan_pic,
+      bank_name, ifsc, account_number,
     } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO pujaris (name, phone, designation, profile_pic, temple_id,
-        bank_account_no, bank_ifsc, bank_name, upi_id, commission_percent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [name, phone, designation, profile_pic, temple_id,
-        bank_account_no, bank_ifsc, bank_name, upi_id, commission_percent || 0]
+      `INSERT INTO pujaris (name, designation, profile_pic, temple_id, start_date,
+         aadhar_number, pan_number, aadhar_pic, pan_pic,
+         bank_name, ifsc, account_number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [name, designation, profile_pic, temple_id, start_date || null,
+        aadhar_number || null, pan_number || null, aadhar_pic || null, pan_pic || null,
+        bank_name || null, ifsc || null, account_number || null],
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Pujari created' });
   } catch (err) { next(err); }
@@ -66,8 +69,9 @@ pujarisRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
   try {
     const { id } = req.params;
     const fields = [
-      'name', 'phone', 'designation', 'profile_pic', 'temple_id',
-      'bank_account_no', 'bank_ifsc', 'bank_name', 'upi_id', 'commission_percent', 'rating'
+      'name', 'designation', 'profile_pic', 'temple_id', 'start_date',
+      'aadhar_number', 'pan_number', 'aadhar_pic', 'pan_pic',
+      'bank_name', 'ifsc', 'account_number', 'rating',
     ];
     const updates: string[] = [];
     const values: any[] = [];

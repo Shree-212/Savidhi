@@ -19,6 +19,10 @@ interface ApiPujari {
   rating: number;
   start_date: string;
   is_active: boolean;
+  aadhar_number?: string;
+  pan_number?: string;
+  aadhar_pic?: string;
+  pan_pic?: string;
 }
 
 interface ApiLedgerEntry {
@@ -49,6 +53,10 @@ export default function PujarisPage() {
   const [formStartDate, setFormStartDate] = useState('');
   const [formTempleId, setFormTempleId] = useState('');
   const [formProfilePic, setFormProfilePic] = useState('');
+  const [formAadharNumber, setFormAadharNumber] = useState('');
+  const [formPanNumber, setFormPanNumber] = useState('');
+  const [formAadharPic, setFormAadharPic] = useState('');
+  const [formPanPic, setFormPanPic] = useState('');
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
@@ -93,6 +101,10 @@ export default function PujarisPage() {
             designation: p.designation,
             startDate: p.start_date,
             profilePic: p.profile_pic,
+            aadharNumber: p.aadhar_number,
+            panNumber: p.pan_number,
+            aadharPic: p.aadhar_pic,
+            panPic: p.pan_pic,
             rating: p.rating,
             unsettled,
           };
@@ -150,6 +162,10 @@ export default function PujarisPage() {
     setFormStartDate(pujari.startDate || '');
     setFormTempleId('');
     setFormProfilePic(pujari.profilePic ?? '');
+    setFormAadharNumber(pujari.aadharNumber ?? '');
+    setFormPanNumber(pujari.panNumber ?? '');
+    setFormAadharPic(pujari.aadharPic ?? '');
+    setFormPanPic(pujari.panPic ?? '');
   };
 
   const openCreate = () => {
@@ -166,6 +182,10 @@ export default function PujarisPage() {
     setFormStartDate('');
     setFormTempleId('');
     setFormProfilePic('');
+    setFormAadharNumber('');
+    setFormPanNumber('');
+    setFormAadharPic('');
+    setFormPanPic('');
   };
 
   const handleSave = async () => {
@@ -175,8 +195,12 @@ export default function PujarisPage() {
       const payload: any = {
         name: formName,
         designation: formDesignation,
-        start_date: formStartDate,
+        start_date: formStartDate || undefined,
         profile_pic: formProfilePic,
+        aadhar_number: formAadharNumber || undefined,
+        pan_number: formPanNumber || undefined,
+        aadhar_pic: formAadharPic || undefined,
+        pan_pic: formPanPic || undefined,
       };
       if (formTempleId) payload.temple_id = formTempleId;
 
@@ -279,18 +303,12 @@ export default function PujarisPage() {
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Identity Proof</h4>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Aadhar Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
-              <input placeholder="Pan Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formAadharNumber} onChange={(e) => setFormAadharNumber(e.target.value)} placeholder="Aadhar Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formPanNumber} onChange={(e) => setFormPanNumber(e.target.value)} placeholder="Pan Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-1">Aadhar Pic <span className="text-primary">✏️</span></p>
-                <div className="bg-accent rounded h-16 flex items-center justify-center text-xs text-muted-foreground">ID Card</div>
-              </div>
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-1">Pan Pic <span className="text-primary">✏️</span></p>
-                <div className="bg-accent rounded h-16 flex items-center justify-center text-xs text-muted-foreground">Pan Card</div>
-              </div>
+              <MediaUploadSingle label="Aadhar Pic" type="image" accept="image/*" value={formAadharPic} onChange={setFormAadharPic} />
+              <MediaUploadSingle label="Pan Pic"    type="image" accept="image/*" value={formPanPic}    onChange={setFormPanPic} />
             </div>
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Bank Account Details</h4>

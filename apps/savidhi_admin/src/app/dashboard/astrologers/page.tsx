@@ -27,6 +27,10 @@ interface ApiAstrologer {
   start_date: string;
   off_days: string[];
   is_active: boolean;
+  aadhar_number?: string;
+  pan_number?: string;
+  aadhar_pic?: string;
+  pan_pic?: string;
 }
 
 interface ApiLedgerEntry {
@@ -65,6 +69,10 @@ export default function AstrologersPage() {
   const [formPrice2h, setFormPrice2h] = useState('');
   const [formProfilePic, setFormProfilePic] = useState('');
   const [formSliderImages, setFormSliderImages] = useState<string[]>([]);
+  const [formAadharNumber, setFormAadharNumber] = useState('');
+  const [formPanNumber, setFormPanNumber] = useState('');
+  const [formAadharPic, setFormAadharPic] = useState('');
+  const [formPanPic, setFormPanPic] = useState('');
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
@@ -96,6 +104,10 @@ export default function AstrologersPage() {
             about: a.about,
             profilePic: a.profile_pic,
             sliderImages: a.slider_images,
+            aadharNumber: a.aadhar_number,
+            panNumber: a.pan_number,
+            aadharPic: a.aadhar_pic,
+            panPic: a.pan_pic,
             prices: {
               for15min: a.price_15min,
               for30min: a.price_30min,
@@ -165,6 +177,10 @@ export default function AstrologersPage() {
     setFormPrice2h(String(astrologer.prices?.for2hour || ''));
     setFormProfilePic(astrologer.profilePic ?? '');
     setFormSliderImages(astrologer.sliderImages ?? []);
+    setFormAadharNumber(astrologer.aadharNumber ?? '');
+    setFormPanNumber(astrologer.panNumber ?? '');
+    setFormAadharPic(astrologer.aadharPic ?? '');
+    setFormPanPic(astrologer.panPic ?? '');
   };
 
   const openCreate = () => {
@@ -188,6 +204,10 @@ export default function AstrologersPage() {
     setFormPrice2h('');
     setFormProfilePic('');
     setFormSliderImages([]);
+    setFormAadharNumber('');
+    setFormPanNumber('');
+    setFormAadharPic('');
+    setFormPanPic('');
   };
 
   const handleSave = async () => {
@@ -197,7 +217,7 @@ export default function AstrologersPage() {
       const payload: any = {
         name: formName,
         designation: formDesignation,
-        start_date: formStartDate,
+        start_date: formStartDate || undefined,
         languages: formLanguages.split(',').map((l) => l.trim()).filter(Boolean),
         expertise: formExpertise,
         about: formAbout,
@@ -207,6 +227,10 @@ export default function AstrologersPage() {
         price_2hour: Number(formPrice2h) || 0,
         profile_pic: formProfilePic,
         slider_images: formSliderImages,
+        aadhar_number: formAadharNumber || undefined,
+        pan_number: formPanNumber || undefined,
+        aadhar_pic: formAadharPic || undefined,
+        pan_pic: formPanPic || undefined,
       };
 
       if (isNew) {
@@ -302,6 +326,13 @@ export default function AstrologersPage() {
                 <option value="Vedic Astrologer">Vedic Astrologer</option>
                 <option value="Numerologist">Numerologist</option>
                 <option value="Tarot Reader">Tarot Reader</option>
+                <option value="Shastri">Shastri</option>
+                <option value="Prashna Astrology">Prashna Astrology</option>
+                <option value="KP Astrology">KP Astrology</option>
+                <option value="Vastu Shastra">Vastu Shastra</option>
+                <option value="Mystic Healer">Mystic Healer</option>
+                <option value="Past Life Reader">Past Life Reader</option>
+                <option value="Kundli Visheshajya">Kundli Visheshajya</option>
               </select>
               <input type="date" value={formStartDate} onChange={(e) => setFormStartDate(e.target.value)} placeholder="Start Date" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
@@ -329,18 +360,12 @@ export default function AstrologersPage() {
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Identity Proof</h4>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Aadhar Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
-              <input placeholder="Pan Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formAadharNumber} onChange={(e) => setFormAadharNumber(e.target.value)} placeholder="Aadhar Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formPanNumber} onChange={(e) => setFormPanNumber(e.target.value)} placeholder="Pan Number" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-1">Aadhar Pic <span className="text-primary">✏️</span></p>
-                <div className="bg-accent rounded h-16 flex items-center justify-center text-xs text-muted-foreground">ID</div>
-              </div>
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-1">Pan Pic <span className="text-primary">✏️</span></p>
-                <div className="bg-accent rounded h-16 flex items-center justify-center text-xs text-muted-foreground">Pan</div>
-              </div>
+              <MediaUploadSingle label="Aadhar Pic" type="image" accept="image/*" value={formAadharPic} onChange={setFormAadharPic} />
+              <MediaUploadSingle label="Pan Pic"    type="image" accept="image/*" value={formPanPic}    onChange={setFormPanPic} />
             </div>
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Prices</h4>
