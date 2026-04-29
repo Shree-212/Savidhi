@@ -52,3 +52,25 @@ export async function getGcsUploadSignedUrl(opts: {
   const publicUrl = `https://storage.googleapis.com/${GCS_MEDIA_BUCKET}/${opts.key}`;
   return { uploadUrl, publicUrl };
 }
+
+/**
+ * Server-side upload: write a buffer straight into the public media bucket
+ * and return its https://storage.googleapis.com URL. Used by /upload/local
+ * so admin clients can POST a multipart form and get back a public URL in
+ * one round-trip without dealing with signed-URL flow.
+ */
+export async function uploadBufferToMediaBucket(opts: {
+  key: string;
+  buffer: Buffer;
+  contentType: string;
+}): Promise<string | null> {
+  const client = await getGcsClient();
+  if (!client || !GCS_MEDIA_BUCKET) return null;
+
+  const file = client.bucket(GCS_MEDIA_BUCKET).file(opts.key);
+  await file.save(opts.buffer, {
+    contentType: opts.contentType,
+    resumable: false,
+  });
+  return `https://storage.googleapis.com/${GCS_MEDIA_BUCKET}/${opts.key}`;
+}

@@ -227,14 +227,14 @@ spec:
   metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
 ---
 # ─── media-service (4005) ────────────────────────────────────────────────────
-# Pinned to 1 replica until uploads move to GCS. emptyDir is per-pod, so
-# replicas > 1 means a write on pod A is invisible to pod B's static-file
-# server — uploaded image GETs 404 on the wrong-pod hop.
+# Stateless: uploads stream straight from multer memory buffer into the public
+# GCS bucket (savidhi-media-prod) via lib/gcs.ts. No PVC, no local-disk
+# emptyDir, scales freely.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: media-service, namespace: savidhi }
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: { app: media-service }
   template:
@@ -244,23 +244,15 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: media
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v3
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v4
           ports: [{ containerPort: 4005 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
             - secretRef: { name: savidhi-env }
           env:
             - { name: PORT, value: "4005" }
-            - { name: UPLOAD_DIR, value: "/var/savidhi/uploads" }
           readinessProbe: { httpGet: { path: /health, port: 4005 }, initialDelaySeconds: 5 }
           resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
-          volumeMounts:
-            - { name: uploads, mountPath: /var/savidhi/uploads }
-      # Local-disk uploads are ephemeral per-pod. With replicas: 2 a file written
-      # to pod A is invisible to pod B's static-file server, so this is only
-      # viable until uploads move to the GCS-signed-URL flow (see savidhi-gcp-deploy).
-      volumes:
-        - { name: uploads, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service
@@ -272,9 +264,8 @@ kind: HorizontalPodAutoscaler
 metadata: { name: media-service-hpa, namespace: savidhi }
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: media-service }
-  # Capped at 1 replica — see Deployment comment above.
-  minReplicas: 1
-  maxReplicas: 1
+  minReplicas: 2
+  maxReplicas: 6
   metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
 ---
 # ─── notification-service (4006) ─────────────────────────────────────────────

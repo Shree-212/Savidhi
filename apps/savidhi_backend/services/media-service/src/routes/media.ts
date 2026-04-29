@@ -4,7 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { requireAuth } from '../middleware/auth';
-import { isGcsConfigured, getGcsUploadSignedUrl } from '../lib/gcs';
+import { isGcsConfigured, getGcsUploadSignedUrl, uploadBufferToMediaBucket } from '../lib/gcs';
 
 const router = Router();
 
@@ -39,22 +39,13 @@ if (S3_REGION && s3Bucket) {
   );
 }
 
-// ─── Multer for local uploads ─────────────────────────────────────────────────
+// ─── Multer (memory) — uploads stream into a buffer, then forwarded to GCS.
+// Local-disk fallback (UPLOAD_DIR) is kept only for dev environments without
+// GCS_MEDIA_BUCKET configured.
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/app/uploads';
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${uuidv4()}${ext}`);
-  },
-});
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
 });
 
@@ -129,25 +120,54 @@ const handleUpload = (req: Request, res: Response, next: NextFunction) => {
   });
 };
 
-router.post('/upload/local', requireAuth, handleUpload, (req: Request, res: Response) => {
-  const file = req.file;
+router.post('/upload/local', requireAuth, handleUpload, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ success: false, message: 'No file uploaded' });
+      return;
+    }
 
-  if (!file) {
-    res.status(400).json({ success: false, message: 'No file uploaded' });
-    return;
+    const ext = path.extname(file.originalname);
+    const objectName = `${uuidv4()}${ext}`;
+
+    // Production path: write the buffer straight to the public media bucket
+    // and return its public https://storage.googleapis.com/... URL. Stateless
+    // — the media-service Deployment can scale freely.
+    if (isGcsConfigured()) {
+      const key = `uploads/${objectName}`;
+      const url = await uploadBufferToMediaBucket({
+        key,
+        buffer: file.buffer,
+        contentType: file.mimetype,
+      });
+      if (url) {
+        res.json({
+          success: true,
+          fileUrl: url,
+          key,
+          originalName: file.originalname,
+          size: file.size,
+        });
+        return;
+      }
+      console.warn('[media-service] GCS configured but upload returned null; falling back to disk');
+    }
+
+    // Local-dev fallback (no GCS env): persist to UPLOAD_DIR.
+    if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    const fullPath = path.join(UPLOAD_DIR, objectName);
+    fs.writeFileSync(fullPath, file.buffer);
+    res.json({
+      success: true,
+      fileUrl: `/api/v1/media/files/${objectName}`,
+      key: objectName,
+      originalName: file.originalname,
+      size: file.size,
+    });
+  } catch (err) {
+    next(err);
   }
-
-  // Return an /api/v1/media/files/:filename URL so it's served through
-  // the existing /api rewrite in Next.js — no extra proxy routes needed.
-  const fileUrl = `/api/v1/media/files/${file.filename}`;
-
-  res.json({
-    success: true,
-    fileUrl,
-    key: file.filename,
-    originalName: file.originalname,
-    size: file.size,
-  });
 });
 
 // ─── GET /files/*path — serve locally-uploaded files (incl. subdirectories) ──
