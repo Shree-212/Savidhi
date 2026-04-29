@@ -111,7 +111,25 @@ router.post('/upload/presigned-url', requireAuth, async (req: Request, res: Resp
 });
 
 // ─── POST /upload/local ───────────────────────────────────────────────────────
-router.post('/upload/local', requireAuth, upload.single('file'), (req: Request, res: Response) => {
+// Wrap multer so MulterError (LIMIT_FILE_SIZE etc.) and disk errors surface as
+// proper JSON instead of a generic 500 from the default Express error handler.
+const handleUpload = (req: Request, res: Response, next: NextFunction) => {
+  upload.single('file')(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      res.status(400).json({ success: false, message: err.message, code: err.code });
+      return;
+    }
+    if (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      console.error('[media-service] upload error:', err);
+      res.status(500).json({ success: false, message });
+      return;
+    }
+    next();
+  });
+};
+
+router.post('/upload/local', requireAuth, handleUpload, (req: Request, res: Response) => {
   const file = req.file;
 
   if (!file) {

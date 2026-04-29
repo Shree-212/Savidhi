@@ -241,14 +241,23 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: media
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v3
           ports: [{ containerPort: 4005 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
             - secretRef: { name: savidhi-env }
-          env: [{ name: PORT, value: "4005" }]
+          env:
+            - { name: PORT, value: "4005" }
+            - { name: UPLOAD_DIR, value: "/var/savidhi/uploads" }
           readinessProbe: { httpGet: { path: /health, port: 4005 }, initialDelaySeconds: 5 }
           resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          volumeMounts:
+            - { name: uploads, mountPath: /var/savidhi/uploads }
+      # Local-disk uploads are ephemeral per-pod. With replicas: 2 a file written
+      # to pod A is invisible to pod B's static-file server, so this is only
+      # viable until uploads move to the GCS-signed-URL flow (see savidhi-gcp-deploy).
+      volumes:
+        - { name: uploads, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service

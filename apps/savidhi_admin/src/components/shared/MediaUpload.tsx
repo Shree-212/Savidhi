@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { Upload, X, Film, ImageIcon, Loader2 } from 'lucide-react';
+import { mediaService } from '@/lib/services';
+import axios from 'axios';
 
 /** Normalise any uploaded-media URL so it's served via the /api rewrite (already active).
  *  - /api/v1/media/files/... → kept as-is (correct new format)
@@ -11,7 +13,6 @@ import { Upload, X, Film, ImageIcon, Loader2 } from 'lucide-react';
  *  - everything else (https://...) → kept as-is */
 function normaliseUrl(url: string): string {
   if (!url) return url;
-  // Already in the correct routed form
   if (url.startsWith('/api/v1/media/files/')) return url;
   try {
     const parsed = new URL(url);
@@ -20,7 +21,6 @@ function normaliseUrl(url: string): string {
       return `/api/v1/media/files/${filename}`;
     }
   } catch { /* not an absolute URL */ }
-  // Handle relative /uploads/... paths
   if (url.startsWith('/uploads/')) {
     const filename = url.replace('/uploads/', '');
     return `/api/v1/media/files/${filename}`;
@@ -28,23 +28,20 @@ function normaliseUrl(url: string): string {
   return url;
 }
 
-// Upload goes through Next.js rewrite (/api → gateway) — no CORS, no absolute URLs needed
 async function uploadFile(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch('/api/v1/media/upload/local', {
-    method: 'POST',
-    credentials: 'include',
-    body: formData,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Upload failed (${res.status}): ${text}`);
+  try {
+    const res = await mediaService.uploadLocal(file);
+    const data = res.data;
+    if (!data?.success) throw new Error(data?.message || 'Upload failed');
+    return data.fileUrl;
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const status = err.response?.status ?? 'network';
+      const message = err.response?.data?.message || err.message || 'Upload failed';
+      throw new Error(`Upload failed (${status}): ${message}`);
+    }
+    throw err;
   }
-  const data = await res.json();
-  if (!data.success) throw new Error(data.message || 'Upload failed');
-  // Keep relative path — served via Next.js /uploads rewrite
-  return data.fileUrl.startsWith('/uploads') ? data.fileUrl : data.fileUrl;
 }
 
 /* ─── Single file upload (image or video) ─────────────────────────────────── */
