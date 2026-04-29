@@ -244,7 +244,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: media
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v4
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/media-service:v5
           ports: [{ containerPort: 4005 }]
           envFrom:
             - configMapRef: { name: savidhi-config }

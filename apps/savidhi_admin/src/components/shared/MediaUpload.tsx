@@ -26,30 +26,51 @@ function normaliseUrl(url: string): string {
   return url;
 }
 
-// Same-origin upload via Next.js /api rewrite. Same-origin keeps the
-// .savidhi.in cookie attached (no CORS preflight, no withCredentials
-// vs Allow-Origin:* mismatch).
+/**
+ * Two-step upload: ask media-service for a V4 signed URL, then PUT the
+ * file straight to storage.googleapis.com. The browser → GCS hop bypasses
+ * Cloud Run / GKE Ingress / multer body-size limits, so videos and other
+ * large files upload without further infra tuning.
+ *
+ * Step 1 (small JSON request, same-origin via Next.js /api rewrite — cookie
+ * carries auth) → server returns { uploadUrl, fileUrl }.
+ * Step 2 (PUT direct to GCS, cross-origin — bucket has CORS allowing PUT
+ * from admin.savidhi.in).
+ */
 async function uploadFile(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch('/api/v1/media/upload/local', {
+  const presignRes = await fetch('/api/v1/media/upload/presigned-url', {
     method: 'POST',
     credentials: 'include',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      folder: 'uploads',
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+    }),
   });
-  if (!res.ok) {
-    let message = res.statusText;
+  if (!presignRes.ok) {
+    let message = presignRes.statusText;
     try {
-      const j = await res.json();
+      const j = await presignRes.json();
       if (j?.message) message = j.message;
-    } catch {
-      try { message = await res.text(); } catch { /* keep statusText */ }
-    }
-    throw new Error(`Upload failed (${res.status}): ${message}`);
+    } catch { /* keep statusText */ }
+    throw new Error(`Could not get upload URL (${presignRes.status}): ${message}`);
   }
-  const data = await res.json();
-  if (!data?.success) throw new Error(data?.message || 'Upload failed');
-  return data.fileUrl;
+  const { uploadUrl, fileUrl, success, message } = await presignRes.json();
+  if (success === false || !uploadUrl || !fileUrl) {
+    throw new Error(message || 'Could not get upload URL');
+  }
+
+  const putRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!putRes.ok) {
+    throw new Error(`Upload failed (${putRes.status}): ${putRes.statusText}`);
+  }
+
+  return fileUrl;
 }
 
 /* ─── Single file upload (image or video) ─────────────────────────────────── */

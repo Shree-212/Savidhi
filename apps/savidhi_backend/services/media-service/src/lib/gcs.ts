@@ -30,16 +30,23 @@ export async function getGcsClient(): Promise<any | null> {
   return gcsClient;
 }
 
-/** Generate a V4 signed URL for direct browser upload to the private bucket. */
+/**
+ * Generate a V4 signed URL for direct browser upload to the public media bucket.
+ *
+ * The admin browser PUTs the file straight to storage.googleapis.com via this
+ * URL — bypassing the gateway/Cloud Run/multer body-size limits entirely.
+ * Bucket policy already grants allUsers `storage.objectViewer` so the resulting
+ * `publicUrl` is web-readable without a finalize step.
+ */
 export async function getGcsUploadSignedUrl(opts: {
   key: string;
   contentType: string;
   expiresInSeconds?: number;
 }): Promise<{ uploadUrl: string; publicUrl: string } | null> {
   const client = await getGcsClient();
-  if (!client || !GCS_UPLOAD_BUCKET || !GCS_MEDIA_BUCKET) return null;
+  if (!client || !GCS_MEDIA_BUCKET) return null;
 
-  const file = client.bucket(GCS_UPLOAD_BUCKET).file(opts.key);
+  const file = client.bucket(GCS_MEDIA_BUCKET).file(opts.key);
   const [uploadUrl] = await file.getSignedUrl({
     version: 'v4',
     action: 'write',
@@ -47,8 +54,6 @@ export async function getGcsUploadSignedUrl(opts: {
     contentType: opts.contentType,
   });
 
-  // After upload, the asset is moved/copied to the public media bucket via a
-  // separate finalize step. For now return the public-bucket URL it will end up at.
   const publicUrl = `https://storage.googleapis.com/${GCS_MEDIA_BUCKET}/${opts.key}`;
   return { uploadUrl, publicUrl };
 }
