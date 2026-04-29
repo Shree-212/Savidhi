@@ -227,11 +227,14 @@ spec:
   metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
 ---
 # ─── media-service (4005) ────────────────────────────────────────────────────
+# Pinned to 1 replica until uploads move to GCS. emptyDir is per-pod, so
+# replicas > 1 means a write on pod A is invisible to pod B's static-file
+# server — uploaded image GETs 404 on the wrong-pod hop.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: media-service, namespace: savidhi }
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: { app: media-service }
   template:
@@ -269,8 +272,9 @@ kind: HorizontalPodAutoscaler
 metadata: { name: media-service-hpa, namespace: savidhi }
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: media-service }
-  minReplicas: 2
-  maxReplicas: 6
+  # Capped at 1 replica — see Deployment comment above.
+  minReplicas: 1
+  maxReplicas: 1
   metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
 ---
 # ─── notification-service (4006) ─────────────────────────────────────────────
