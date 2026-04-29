@@ -3,8 +3,6 @@
 import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { Upload, X, Film, ImageIcon, Loader2 } from 'lucide-react';
-import { mediaService } from '@/lib/services';
-import axios from 'axios';
 
 /** Normalise any uploaded-media URL so it's served via the /api rewrite (already active).
  *  - /api/v1/media/files/... → kept as-is (correct new format)
@@ -28,20 +26,30 @@ function normaliseUrl(url: string): string {
   return url;
 }
 
+// Same-origin upload via Next.js /api rewrite. Same-origin keeps the
+// .savidhi.in cookie attached (no CORS preflight, no withCredentials
+// vs Allow-Origin:* mismatch).
 async function uploadFile(file: File): Promise<string> {
-  try {
-    const res = await mediaService.uploadLocal(file);
-    const data = res.data;
-    if (!data?.success) throw new Error(data?.message || 'Upload failed');
-    return data.fileUrl;
-  } catch (err) {
-    if (axios.isAxiosError(err)) {
-      const status = err.response?.status ?? 'network';
-      const message = err.response?.data?.message || err.message || 'Upload failed';
-      throw new Error(`Upload failed (${status}): ${message}`);
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch('/api/v1/media/upload/local', {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const j = await res.json();
+      if (j?.message) message = j.message;
+    } catch {
+      try { message = await res.text(); } catch { /* keep statusText */ }
     }
-    throw err;
+    throw new Error(`Upload failed (${res.status}): ${message}`);
   }
+  const data = await res.json();
+  if (!data?.success) throw new Error(data?.message || 'Upload failed');
+  return data.fileUrl;
 }
 
 /* ─── Single file upload (image or video) ─────────────────────────────────── */
