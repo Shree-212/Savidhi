@@ -18,7 +18,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: gateway
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/gateway-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/gateway-service:v2
           ports: [{ containerPort: 4000 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
@@ -79,7 +79,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: auth
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/auth-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/auth-service:v3
           ports: [{ containerPort: 4001 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
@@ -127,7 +127,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: user
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/user-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/user-service:v3
           ports: [{ containerPort: 4002 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
@@ -165,7 +165,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: catalog
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/catalog-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/catalog-service:v4
           ports: [{ containerPort: 4003 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
@@ -203,7 +203,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: booking
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v3
           ports: [{ containerPort: 4004 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
@@ -288,7 +288,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: notification
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/notification-service:v1
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/notification-service:v2
           ports: [{ containerPort: 4006 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
