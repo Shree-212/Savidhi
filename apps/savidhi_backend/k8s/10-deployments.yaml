@@ -203,7 +203,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: booking
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v3
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v4
           ports: [{ containerPort: 4004 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
