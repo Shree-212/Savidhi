@@ -162,7 +162,12 @@ export interface PujaStatusStep {
   subtitle?: string;
   details?: string[];
   completed: boolean;
+  /** Image thumbnail (e.g. preview of a live-stream link). Renders as an
+   *  Image with a Play overlay that opens the source URL in a new tab. */
   videoThumbnail?: string;
+  /** Direct video file URL (e.g. GCS short/sankalp video). Renders as an
+   *  inline HTML5 <video> player. */
+  videoSrc?: string;
 }
 
 export interface PujaStatusDetail {

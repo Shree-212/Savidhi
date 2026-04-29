@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { ArrowLeft, Phone, Share2, Play, Loader2 } from 'lucide-react';
 import { pujaBookingService } from '@/lib/services';
 import { normaliseMediaUrl } from '@/lib/utils';
+import { VideoPlayer } from '@/components/shared/VideoPlayer';
 import type { PujaStatusDetail, PujaStatusStep } from '@/data/models';
 
 const STAGE_ORDER = ['YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'];
@@ -28,13 +29,13 @@ function buildSteps(booking: any): PujaStatusStep[] {
       label: 'Puja Video',
       subtitle: booking.short_video_url ? 'Short puja video available' : 'Video will be shared after puja',
       completed: stageIdx >= STAGE_ORDER.indexOf('SHORT_VIDEO_ADDED'),
-      videoThumbnail: booking.short_video_url ?? '',
+      videoSrc: booking.short_video_url ?? '',
     },
     {
       label: 'Sankalp Video',
       subtitle: booking.sankalp_video_url ? 'Your sankalp video is ready' : 'Personalized sankalp video',
       completed: stageIdx >= STAGE_ORDER.indexOf('SANKALP_VIDEO_ADDED'),
-      videoThumbnail: booking.sankalp_video_url ?? '',
+      videoSrc: booking.sankalp_video_url ?? '',
     },
     {
       label: 'Prasad Dispatched',
@@ -121,7 +122,14 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
                     ))}
                   </div>
                 )}
-                {step.videoThumbnail && (
+                {step.videoSrc ? (
+                  <div className="mt-2 w-48 sm:w-64">
+                    <VideoPlayer
+                      src={normaliseMediaUrl(step.videoSrc)}
+                      className="relative h-28 sm:h-36 rounded-lg overflow-hidden bg-black ring-1 ring-black/10"
+                    />
+                  </div>
+                ) : step.videoThumbnail && (
                   <div className="mt-2 relative w-48 h-28 rounded-lg overflow-hidden group cursor-pointer">
                     <Image src={normaliseMediaUrl(step.videoThumbnail)} alt="Video" fill className="object-cover" unoptimized />
                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition">

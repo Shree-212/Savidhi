@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { ArrowLeft, Calendar, Gift, MapPin, Package, Phone, Share2, Loader2, Users } from 'lucide-react';
 import { chadhavaBookingService } from '@/lib/services';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { VideoPlayer } from '@/components/shared/VideoPlayer';
+import { normaliseMediaUrl } from '@/lib/utils';
 import type { ChadhavaBookingStatus } from '@/data/models';
 
 const STATUS_ORDER = [
@@ -197,6 +199,33 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
                 {d.gotra && <span className="text-xs text-text-muted">Gotra: {d.gotra}</span>}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Videos */}
+      {(booking.short_video_url || booking.sankalp_video_url) && (
+        <div className="bg-white border border-orange-100 rounded-xl p-4 mb-5 shadow-sm">
+          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Your Videos</h3>
+          <div className="space-y-4">
+            {booking.short_video_url && (
+              <div>
+                <p className="text-xs font-semibold text-text-primary mb-2">Short Puja Video</p>
+                <VideoPlayer
+                  src={normaliseMediaUrl(booking.short_video_url)}
+                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden bg-black ring-1 ring-black/10"
+                />
+              </div>
+            )}
+            {booking.sankalp_video_url && (
+              <div>
+                <p className="text-xs font-semibold text-text-primary mb-2">Sankalp Video</p>
+                <VideoPlayer
+                  src={normaliseMediaUrl(booking.sankalp_video_url)}
+                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden bg-black ring-1 ring-black/10"
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

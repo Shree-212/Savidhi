@@ -2,10 +2,11 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Share2, Play, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Share2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
+import { VideoPlayer } from '@/components/shared/VideoPlayer';
 import { pujaService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
 import type { Puja } from '@/data/models';
@@ -150,16 +151,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
             {puja.videoThumbnail && (
               <div className="mt-6">
                 <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-2.5">Video You Will Receive</h3>
-                <a
-                  href={puja.videoThumbnail}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden flex items-center justify-center bg-gradient-to-br from-black to-zinc-800 group block ring-1 ring-black/10"
-                >
-                  <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
-                    <Play className="w-6 h-6 text-primary-500 ml-0.5 fill-primary-500" />
-                  </div>
-                </a>
+                <VideoPlayer src={puja.videoThumbnail} />
               </div>
             )}
 

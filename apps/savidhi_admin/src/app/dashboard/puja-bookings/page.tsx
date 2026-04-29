@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { TimelineView } from '@/components/shared/TimelineView';
 import { Modal } from '@/components/shared/Modal';
 import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton, ViewButton } from '@/components/shared/ActionButtons';
+import { MediaUploadSingle } from '@/components/shared/MediaUpload';
 import type { PujaEvent, PujaBooking, PujaEventStage, TimelineEvent } from '@/types';
 
 /* ── helpers ──────────────────────────────────────────────── */
@@ -534,19 +535,15 @@ export default function PujaBookingsPage() {
       {/* ── Add Short Video Modal ───────────────────────── */}
       <Modal open={showVideoModal} onClose={() => setShowVideoModal(false)} title="Add Puja Short Video" onBack={() => setShowVideoModal(false)}>
         <div className="space-y-4">
-          <input
+          <MediaUploadSingle
             value={shortVideoUrl}
-            onChange={(e) => setShortVideoUrl(e.target.value)}
-            placeholder="Paste You Tube Private Link"
-            className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            onChange={setShortVideoUrl}
+            accept="video/*"
+            type="video"
+            label="Short Video File"
           />
-          {shortVideoUrl && (
-            <div className="bg-accent rounded-lg h-40 flex items-center justify-center text-muted-foreground text-xs border border-border">
-              ▶ Video Preview
-            </div>
-          )}
           <PrimaryButton className="w-full" onClick={async () => {
-            if (!shortVideoUrl.trim()) return alert('Please enter a video link');
+            if (!shortVideoUrl.trim()) return alert('Please upload a video');
             if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { short_video_url: shortVideoUrl });
             setShortVideoUrl('');
             setShowVideoModal(false);
@@ -557,17 +554,13 @@ export default function PujaBookingsPage() {
       {/* ── Add Sankalp Video Modal ─────────────────────── */}
       <Modal open={showSankalpModal} onClose={() => setShowSankalpModal(false)} title="Add Sankalp Video" onBack={() => setShowSankalpModal(false)}>
         <div className="space-y-4">
-          <input
+          <MediaUploadSingle
             value={sankalpVideoUrl}
-            onChange={(e) => setSankalpVideoUrl(e.target.value)}
-            placeholder="Paste You Tube Private Link"
-            className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            onChange={setSankalpVideoUrl}
+            accept="video/*"
+            type="video"
+            label="Sankalp Video File"
           />
-          {sankalpVideoUrl && (
-            <div className="bg-accent rounded-lg h-40 flex items-center justify-center text-muted-foreground text-xs border border-border">
-              ▶ Video Preview
-            </div>
-          )}
           <h4 className="text-[10px] font-bold uppercase tracking-wider">Time Stamp of Devotee Names</h4>
           {allDevotees.map((d: any, i: number) => (
             <div key={i} className="flex items-center gap-3">
@@ -577,7 +570,7 @@ export default function PujaBookingsPage() {
             </div>
           ))}
           <PrimaryButton className="w-full" onClick={async () => {
-            if (!sankalpVideoUrl.trim()) return alert('Please enter a video link');
+            if (!sankalpVideoUrl.trim()) return alert('Please upload a video');
             if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
             setSankalpVideoUrl('');
             setShowSankalpModal(false);

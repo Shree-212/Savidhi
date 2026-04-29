@@ -3,9 +3,10 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, MapPin, Play, User, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, User, Loader2 } from 'lucide-react';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
+import { VideoPlayer } from '@/components/shared/VideoPlayer';
 import { templeService } from '@/lib/services';
 import { mapTemple } from '@/lib/mappers';
 import type { Temple } from '@/data/models';
@@ -120,16 +121,7 @@ export default function TempleDetailPage({ params }: { params: Promise<{ id: str
             {temple.videoThumbnail && (
               <div className="mt-6">
                 <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-2.5">Our Past Puja Video Here</h3>
-                <a
-                  href={temple.videoThumbnail}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden flex items-center justify-center bg-gradient-to-br from-black to-zinc-800 group block ring-1 ring-black/10"
-                >
-                  <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
-                    <Play className="w-6 h-6 text-primary-500 ml-0.5 fill-primary-500" />
-                  </div>
-                </a>
+                <VideoPlayer src={temple.videoThumbnail} />
               </div>
             )}
 
