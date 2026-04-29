@@ -9,8 +9,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=https://api.savidhi.in
 ARG NEXT_PUBLIC_ADMIN_URL=https://admin.savidhi.in
+# Server-side rewrite target. Baked at build time because next.config.ts
+# evaluates rewrites() during `next build` for output:'standalone'.
+ARG INTERNAL_GATEWAY_URL=https://api.savidhi.in
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_ADMIN_URL=$NEXT_PUBLIC_ADMIN_URL
+ENV INTERNAL_GATEWAY_URL=$INTERNAL_GATEWAY_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
