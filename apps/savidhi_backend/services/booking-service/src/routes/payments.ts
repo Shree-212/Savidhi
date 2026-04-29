@@ -156,7 +156,10 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
   try {
     const { payment_id, gateway_order_id, gateway_payment_id, gateway_signature } = req.body;
 
+    console.log('[payments.verify] called', { payment_id, gateway_order_id, gateway_payment_id });
+
     if (!payment_id || !gateway_payment_id) {
+      console.warn('[payments.verify] missing required fields', { payment_id, gateway_payment_id });
       return res.status(400).json({ success: false, message: 'payment_id and gateway_payment_id are required' });
     }
 
@@ -169,9 +172,20 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
     }
 
     const payment = paymentResult.rows[0];
+
+    // Idempotent: if the webhook already captured this payment, return success
+    // so the client navigates to the confirmation screen instead of showing a
+    // bogus "Payment verification failed" toast.
+    if (payment.status === 'CAPTURED') {
+      await client.query('ROLLBACK');
+      console.log('[payments.verify] already CAPTURED, returning success', { payment_id });
+      return res.json({ success: true, data: payment, alreadyCaptured: true });
+    }
+
     if (payment.status !== 'CREATED') {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: `Payment is already "${payment.status}"` });
+      console.warn('[payments.verify] payment not in CREATED state', { payment_id, status: payment.status });
+      return res.status(400).json({ success: false, message: `Payment is in "${payment.status}" state — cannot verify` });
     }
 
     // Stub orders (`order_stub_…`) bypass signature validation. They occur when
@@ -186,6 +200,7 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
       }
       if (gateway_order_id !== payment.gateway_order_id) {
         await client.query('ROLLBACK');
+        console.warn('[payments.verify] order id mismatch', { payment_id, expected: payment.gateway_order_id, got: gateway_order_id });
         return res.status(400).json({ success: false, message: 'Order id mismatch' });
       }
       const expected = crypto
@@ -194,6 +209,7 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
         .digest('hex');
       if (expected !== gateway_signature) {
         await client.query('ROLLBACK');
+        console.warn('[payments.verify] signature mismatch', { payment_id, gateway_order_id, gateway_payment_id });
         return res.status(400).json({ success: false, message: 'Signature mismatch' });
       }
     }
@@ -217,9 +233,11 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
 
     await client.query('COMMIT');
 
+    console.log('[payments.verify] CAPTURED', { payment_id, booking_type: payment.booking_type, booking_id: payment.booking_id });
     res.json({ success: true, data: rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[payments.verify] error', err);
     next(err);
   } finally {
     client.release();
@@ -254,8 +272,11 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     if (secret && raw && signature) {
       const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
       if (expected !== signature) {
+        console.warn('[razorpay webhook] invalid signature');
         return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
       }
+    } else if (secret && !signature) {
+      console.warn('[razorpay webhook] received without x-razorpay-signature header');
     }
 
     const body = req.body as any;
@@ -264,12 +285,17 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     const orderId = paymentEntity?.order_id as string | undefined;
     const rzpPaymentId = paymentEntity?.id as string | undefined;
 
+    console.log('[razorpay webhook] received', { event, orderId, rzpPaymentId });
+
     if (!event || !orderId) {
       return res.status(200).json({ success: true, ignored: true });
     }
 
     const pay = (await pool.query(`SELECT * FROM payments WHERE gateway_order_id = $1`, [orderId])).rows[0];
-    if (!pay) return res.status(200).json({ success: true, ignored: true, reason: 'unknown order' });
+    if (!pay) {
+      console.warn('[razorpay webhook] unknown order', { orderId, event });
+      return res.status(200).json({ success: true, ignored: true, reason: 'unknown order' });
+    }
 
     if (event === 'payment.captured' || event === 'order.paid') {
       if (pay.status !== 'CAPTURED') {
@@ -286,15 +312,19 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
             [pay.id, pay.booking_id],
           );
           await client.query('COMMIT');
+          console.log('[razorpay webhook] CAPTURED via webhook', { payment_id: pay.id, booking_type: pay.booking_type, booking_id: pay.booking_id });
         } catch (e) {
           await client.query('ROLLBACK');
           throw e;
         } finally {
           client.release();
         }
+      } else {
+        console.log('[razorpay webhook] already CAPTURED, no-op', { payment_id: pay.id });
       }
     } else if (event === 'payment.failed') {
       await pool.query(`UPDATE payments SET status='FAILED', updated_at = NOW() WHERE id = $1`, [pay.id]);
+      console.log('[razorpay webhook] FAILED', { payment_id: pay.id });
     }
 
     res.json({ success: true, processed: event });

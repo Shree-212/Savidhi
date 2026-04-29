@@ -162,6 +162,14 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
       offeringDetails.push({ offering_id: off.offering_id, quantity: qty, unit_price: unitPrice });
     }
 
+    if (!Number.isFinite(totalCost) || totalCost <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Total cost is zero — please select at least one offering with a price.',
+      });
+    }
+
     const bookingResult = await client.query(
       `INSERT INTO chadhava_bookings (chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
@@ -207,9 +215,11 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
     );
     booking.offerings = offRows.rows;
 
+    console.log('[chadhava-bookings.create]', { id: booking.id, devotee_id: userId, cost: totalCost, offering_count: offeringDetails.length });
     res.status(201).json({ success: true, data: booking });
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[chadhava-bookings.create] error', err);
     next(err);
   } finally {
     client.release();

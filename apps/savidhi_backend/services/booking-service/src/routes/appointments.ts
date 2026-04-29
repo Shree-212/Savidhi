@@ -116,12 +116,20 @@ appointmentsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
       '2hour': 'price_2hour',
     };
     const cost = Number(astResult.rows[0][priceMap[duration]]);
+    if (!Number.isFinite(cost) || cost <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Astrologer has no valid price configured for ${duration}. Please contact support.`,
+      });
+    }
 
     const { rows } = await pool.query(
       `INSERT INTO appointments (astrologer_id, devotee_id, duration, scheduled_at, cost, devotee_name, devotee_gotra)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [astrologer_id, userId, duration, scheduled_at, cost, devotee_name ?? null, devotee_gotra ?? null],
     );
+
+    console.log('[appointments.create]', { id: rows[0].id, astrologer_id, devotee_id: userId, duration, cost });
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) { next(err); }

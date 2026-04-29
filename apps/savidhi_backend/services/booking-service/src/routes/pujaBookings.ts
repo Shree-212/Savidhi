@@ -149,6 +149,14 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
     else if (dc <= 4) cost = Number(event.price_for_4);
     else cost = Number(event.price_for_6);
 
+    if (!Number.isFinite(cost) || cost <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'This puja has no price configured for the selected number of devotees. Please contact support.',
+      });
+    }
+
     const bookingResult = await client.query(
       `INSERT INTO puja_bookings (puja_event_id, devotee_id, devotee_count, cost, sankalp, prasad_delivery_address)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -176,9 +184,11 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
     );
     booking.devotees = devRows.rows;
 
+    console.log('[puja-bookings.create]', { id: booking.id, devotee_id: userId, devotee_count: dc, cost });
     res.status(201).json({ success: true, data: booking });
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[puja-bookings.create] error', err);
     next(err);
   } finally {
     client.release();
