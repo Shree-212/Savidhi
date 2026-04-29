@@ -3,7 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Phone, Share2, Play, Loader2 } from 'lucide-react';
+import { ArrowLeft, Phone, Share2, Play, Loader2, Users } from 'lucide-react';
 import { pujaBookingService } from '@/lib/services';
 import { normaliseMediaUrl } from '@/lib/utils';
 import { VideoPlayer } from '@/components/shared/VideoPlayer';
@@ -64,6 +64,9 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
             pujaName: b.puja_name ?? 'Puja',
             templeName: b.temple_name ?? '',
             pujaId: b.puja_event_id ?? '',
+            devotees: Array.isArray(b.devotees)
+              ? b.devotees.map((d: any) => ({ name: d.name, gotra: d.gotra, relation: d.relation }))
+              : [],
             steps: buildSteps(b),
           });
         }
@@ -102,6 +105,26 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
         <p className="text-sm text-text-secondary mt-1">{status.templeName}</p>
         <p className="text-xs text-text-muted mt-2">Booking ID: {status.bookingId.slice(0, 8)}</p>
       </div>
+
+      {status.devotees && status.devotees.length > 0 && (
+        <div className="bg-white border border-orange-100 rounded-xl p-4 mb-6 shadow-sm">
+          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5" />
+            Devotees ({status.devotees.length})
+          </h3>
+          <div className="space-y-1.5">
+            {status.devotees.map((d, i) => (
+              <div key={i} className="flex items-center justify-between text-sm">
+                <span className="text-text-primary">
+                  {d.name}
+                  {d.relation && <span className="text-xs text-text-muted ml-2">({d.relation})</span>}
+                </span>
+                {d.gotra && <span className="text-xs text-text-muted">Gotra: {d.gotra}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="relative pl-8">
         {status.steps.map((step, idx) => {

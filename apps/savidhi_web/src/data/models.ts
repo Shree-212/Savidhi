@@ -170,11 +170,18 @@ export interface PujaStatusStep {
   videoSrc?: string;
 }
 
+export interface PujaStatusDevotee {
+  name: string;
+  gotra?: string;
+  relation?: string;
+}
+
 export interface PujaStatusDetail {
   bookingId: string;
   pujaName: string;
   templeName: string;
   pujaId: string;
+  devotees?: PujaStatusDevotee[];
   steps: PujaStatusStep[];
 }
 
