@@ -50,7 +50,7 @@ astrologersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Requ
       profile_pic, slider_images, start_date,
       aadhar_number, pan_number, aadhar_pic, pan_pic,
       price_15min, price_30min, price_1hour, price_2hour,
-      bank_name, ifsc, account_number,
+      bank_name, ifsc, account_number, rating,
     } = req.body;
 
     const result = await pool.query(
@@ -58,13 +58,14 @@ astrologersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Requ
          profile_pic, slider_images, start_date,
          aadhar_number, pan_number, aadhar_pic, pan_pic,
          price_15min, price_30min, price_1hour, price_2hour,
-         bank_name, ifsc, account_number)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+         bank_name, ifsc, account_number, rating)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
       [name, slug || null, designation, languages || [], expertise || null, about || null,
         profile_pic || null, slider_images || [], start_date || null,
         aadhar_number || null, pan_number || null, aadhar_pic || null, pan_pic || null,
         price_15min || 0, price_30min || 0, price_1hour || 0, price_2hour || 0,
-        bank_name || null, ifsc || null, account_number || null],
+        bank_name || null, ifsc || null, account_number || null,
+        rating != null ? Number(rating) : 0],
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Astrologer created' });
   } catch (err) { next(err); }

@@ -31,6 +31,9 @@ interface ApiAstrologer {
   pan_number?: string;
   aadhar_pic?: string;
   pan_pic?: string;
+  bank_name?: string;
+  ifsc?: string;
+  account_number?: string;
 }
 
 interface ApiLedgerEntry {
@@ -73,6 +76,10 @@ export default function AstrologersPage() {
   const [formPanNumber, setFormPanNumber] = useState('');
   const [formAadharPic, setFormAadharPic] = useState('');
   const [formPanPic, setFormPanPic] = useState('');
+  const [formBankName, setFormBankName] = useState('');
+  const [formIfsc, setFormIfsc] = useState('');
+  const [formAccountNumber, setFormAccountNumber] = useState('');
+  const [formRating, setFormRating] = useState('');
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
@@ -108,6 +115,9 @@ export default function AstrologersPage() {
             panNumber: a.pan_number,
             aadharPic: a.aadhar_pic,
             panPic: a.pan_pic,
+            bankName: a.bank_name,
+            ifsc: a.ifsc,
+            accountNumber: a.account_number,
             prices: {
               for15min: a.price_15min,
               for30min: a.price_30min,
@@ -181,6 +191,10 @@ export default function AstrologersPage() {
     setFormPanNumber(astrologer.panNumber ?? '');
     setFormAadharPic(astrologer.aadharPic ?? '');
     setFormPanPic(astrologer.panPic ?? '');
+    setFormBankName(astrologer.bankName ?? '');
+    setFormIfsc(astrologer.ifsc ?? '');
+    setFormAccountNumber(astrologer.accountNumber ?? '');
+    setFormRating(astrologer.rating != null ? String(astrologer.rating) : '');
   };
 
   const openCreate = () => {
@@ -208,6 +222,10 @@ export default function AstrologersPage() {
     setFormPanNumber('');
     setFormAadharPic('');
     setFormPanPic('');
+    setFormBankName('');
+    setFormIfsc('');
+    setFormAccountNumber('');
+    setFormRating('');
   };
 
   const handleSave = async () => {
@@ -231,6 +249,10 @@ export default function AstrologersPage() {
         pan_number: formPanNumber || undefined,
         aadhar_pic: formAadharPic || undefined,
         pan_pic: formPanPic || undefined,
+        bank_name: formBankName || undefined,
+        ifsc: formIfsc || undefined,
+        account_number: formAccountNumber || undefined,
+        rating: formRating !== '' ? Number(formRating) : undefined,
       };
 
       if (isNew) {
@@ -320,22 +342,19 @@ export default function AstrologersPage() {
         {editing && (
           <div className="space-y-4">
             <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
-            <div className="grid grid-cols-2 gap-3">
-              <select value={formDesignation} onChange={(e) => setFormDesignation(e.target.value)} className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
-                <option value="">Designation</option>
-                <option value="Vedic Astrologer">Vedic Astrologer</option>
-                <option value="Numerologist">Numerologist</option>
-                <option value="Tarot Reader">Tarot Reader</option>
-                <option value="Shastri">Shastri</option>
-                <option value="Prashna Astrology">Prashna Astrology</option>
-                <option value="KP Astrology">KP Astrology</option>
-                <option value="Vastu Shastra">Vastu Shastra</option>
-                <option value="Mystic Healer">Mystic Healer</option>
-                <option value="Past Life Reader">Past Life Reader</option>
-                <option value="Kundli Visheshajya">Kundli Visheshajya</option>
-              </select>
-              <input type="date" value={formStartDate} onChange={(e) => setFormStartDate(e.target.value)} placeholder="Start Date" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
-            </div>
+            <select value={formDesignation} onChange={(e) => setFormDesignation(e.target.value)} className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
+              <option value="">Designation</option>
+              <option value="Vedic Astrologer">Vedic Astrologer</option>
+              <option value="Numerologist">Numerologist</option>
+              <option value="Tarot Reader">Tarot Reader</option>
+              <option value="Shastri">Shastri</option>
+              <option value="Prashna Astrology">Prashna Astrology</option>
+              <option value="KP Astrology">KP Astrology</option>
+              <option value="Vastu Shastra">Vastu Shastra</option>
+              <option value="Mystic Healer">Mystic Healer</option>
+              <option value="Past Life Reader">Past Life Reader</option>
+              <option value="Kundli Visheshajya">Kundli Visheshajya</option>
+            </select>
             <input value={formLanguages} onChange={(e) => setFormLanguages(e.target.value)} placeholder="Languages (comma separated)" className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground" />
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Expertise</h4>
@@ -376,12 +395,21 @@ export default function AstrologersPage() {
               <input value={formPrice2h} onChange={(e) => setFormPrice2h(e.target.value)} placeholder="For 2 Hour" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
 
+            <h4 className="text-[10px] font-bold uppercase tracking-wider">Rating</h4>
+            <input
+              type="number" min="0" max="5" step="0.01"
+              value={formRating}
+              onChange={(e) => setFormRating(e.target.value)}
+              placeholder="0 to 5 (e.g. 4.50)"
+              className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+            />
+
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Bank Account Details</h4>
             <div className="grid grid-cols-2 gap-3">
-              <select className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground"><option>Select Bank</option></select>
-              <input placeholder="IFSC" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formBankName} onChange={(e) => setFormBankName(e.target.value)} placeholder="Bank Name" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formIfsc} onChange={(e) => setFormIfsc(e.target.value)} placeholder="IFSC" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
-            <input placeholder="Account Number" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+            <input value={formAccountNumber} onChange={(e) => setFormAccountNumber(e.target.value)} placeholder="Account Number" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
 
             {editing && !isNew && editing.offDays && editing.offDays.length > 0 && (
               <p className="text-[11px] text-status-not-started">

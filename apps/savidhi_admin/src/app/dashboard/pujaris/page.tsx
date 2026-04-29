@@ -23,6 +23,9 @@ interface ApiPujari {
   pan_number?: string;
   aadhar_pic?: string;
   pan_pic?: string;
+  bank_name?: string;
+  ifsc?: string;
+  account_number?: string;
 }
 
 interface ApiLedgerEntry {
@@ -57,6 +60,10 @@ export default function PujarisPage() {
   const [formPanNumber, setFormPanNumber] = useState('');
   const [formAadharPic, setFormAadharPic] = useState('');
   const [formPanPic, setFormPanPic] = useState('');
+  const [formBankName, setFormBankName] = useState('');
+  const [formIfsc, setFormIfsc] = useState('');
+  const [formAccountNumber, setFormAccountNumber] = useState('');
+  const [formRating, setFormRating] = useState('');
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
@@ -105,6 +112,9 @@ export default function PujarisPage() {
             panNumber: p.pan_number,
             aadharPic: p.aadhar_pic,
             panPic: p.pan_pic,
+            bankName: p.bank_name,
+            ifsc: p.ifsc,
+            accountNumber: p.account_number,
             rating: p.rating,
             unsettled,
           };
@@ -166,6 +176,10 @@ export default function PujarisPage() {
     setFormPanNumber(pujari.panNumber ?? '');
     setFormAadharPic(pujari.aadharPic ?? '');
     setFormPanPic(pujari.panPic ?? '');
+    setFormBankName(pujari.bankName ?? '');
+    setFormIfsc(pujari.ifsc ?? '');
+    setFormAccountNumber(pujari.accountNumber ?? '');
+    setFormRating(pujari.rating != null ? String(pujari.rating) : '');
   };
 
   const openCreate = () => {
@@ -186,6 +200,10 @@ export default function PujarisPage() {
     setFormPanNumber('');
     setFormAadharPic('');
     setFormPanPic('');
+    setFormBankName('');
+    setFormIfsc('');
+    setFormAccountNumber('');
+    setFormRating('');
   };
 
   const handleSave = async () => {
@@ -201,6 +219,10 @@ export default function PujarisPage() {
         pan_number: formPanNumber || undefined,
         aadhar_pic: formAadharPic || undefined,
         pan_pic: formPanPic || undefined,
+        bank_name: formBankName || undefined,
+        ifsc: formIfsc || undefined,
+        account_number: formAccountNumber || undefined,
+        rating: formRating !== '' ? Number(formRating) : undefined,
       };
       if (formTempleId) payload.temple_id = formTempleId;
 
@@ -276,15 +298,12 @@ export default function PujarisPage() {
         {editing && (
           <div className="space-y-4">
             <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
-            <div className="grid grid-cols-2 gap-3">
-              <select value={formDesignation} onChange={(e) => setFormDesignation(e.target.value)} className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
-                <option value="">Designation</option>
-                <option value="Head Pujari">Head Pujari</option>
-                <option value="Senior Pujari">Senior Pujari</option>
-                <option value="Pujari">Pujari</option>
-              </select>
-              <input type="date" value={formStartDate} onChange={(e) => setFormStartDate(e.target.value)} placeholder="Start Date" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
-            </div>
+            <select value={formDesignation} onChange={(e) => setFormDesignation(e.target.value)} className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
+              <option value="">Designation</option>
+              <option value="Head Pujari">Head Pujari</option>
+              <option value="Senior Pujari">Senior Pujari</option>
+              <option value="Pujari">Pujari</option>
+            </select>
             <select value={formTempleId} onChange={(e) => setFormTempleId(e.target.value)} className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
               <option value="">Temple</option>
               {Object.entries(templeMap).map(([id, name]) => (
@@ -311,12 +330,21 @@ export default function PujarisPage() {
               <MediaUploadSingle label="Pan Pic"    type="image" accept="image/*" value={formPanPic}    onChange={setFormPanPic} />
             </div>
 
+            <h4 className="text-[10px] font-bold uppercase tracking-wider">Rating</h4>
+            <input
+              type="number" min="0" max="5" step="0.01"
+              value={formRating}
+              onChange={(e) => setFormRating(e.target.value)}
+              placeholder="0 to 5 (e.g. 4.50)"
+              className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+            />
+
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Bank Account Details</h4>
             <div className="grid grid-cols-2 gap-3">
-              <select className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground"><option>Select Bank</option></select>
-              <input placeholder="IFSC" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formBankName} onChange={(e) => setFormBankName(e.target.value)} placeholder="Bank Name" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input value={formIfsc} onChange={(e) => setFormIfsc(e.target.value)} placeholder="IFSC" className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
-            <input placeholder="Account Number" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+            <input value={formAccountNumber} onChange={(e) => setFormAccountNumber(e.target.value)} placeholder="Account Number" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
 
             <div className="flex gap-3 mt-4">
               <OutlineButton className="flex-1" onClick={() => setEditing(null)}>Cancel</OutlineButton>

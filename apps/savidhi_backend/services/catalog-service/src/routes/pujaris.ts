@@ -49,17 +49,18 @@ pujarisRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), a
     const {
       name, designation, profile_pic, temple_id, start_date,
       aadhar_number, pan_number, aadhar_pic, pan_pic,
-      bank_name, ifsc, account_number,
+      bank_name, ifsc, account_number, rating,
     } = req.body;
 
     const result = await pool.query(
       `INSERT INTO pujaris (name, designation, profile_pic, temple_id, start_date,
          aadhar_number, pan_number, aadhar_pic, pan_pic,
-         bank_name, ifsc, account_number)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+         bank_name, ifsc, account_number, rating)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [name, designation, profile_pic, temple_id, start_date || null,
         aadhar_number || null, pan_number || null, aadhar_pic || null, pan_pic || null,
-        bank_name || null, ifsc || null, account_number || null],
+        bank_name || null, ifsc || null, account_number || null,
+        rating != null ? Number(rating) : 0],
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Pujari created' });
   } catch (err) { next(err); }
