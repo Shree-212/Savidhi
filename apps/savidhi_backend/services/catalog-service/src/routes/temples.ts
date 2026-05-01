@@ -1,11 +1,29 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { translateToHindi } from '../lib/translate';
+import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
 
 export const templesRouter = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v: string) => UUID_RE.test(v);
+
+const TEMPLE_TX = ['name', 'address', 'about', 'history_and_significance'] as const;
+
+async function translateAndUpdateTemple(client: { query: typeof pool.query }, id: string, body: Record<string, unknown>) {
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  for (const f of TEMPLE_TX) {
+    if (body[f] === undefined) continue;
+    const hi = await translateToHindi(body[f] as string | null);
+    updates.push(`${f}_hi = $${idx}`); values.push(hi); idx++;
+  }
+  if (updates.length === 0) return;
+  values.push(id);
+  await client.query(`UPDATE temples SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+}
 
 templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -38,7 +56,13 @@ templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
       temple.pujas_count = parseInt(pujaCount.rows[0].count);
     }
 
-    res.json({ success: true, data: result.rows, total, page, limit, message: 'Temples fetched' });
+    const locale = parseLocale(req.query.locale);
+    res.json({
+      success: true,
+      data: applyLocaleArray(result.rows, locale, [...TEMPLE_TX]),
+      total, page, limit,
+      message: 'Temples fetched',
+    });
   } catch (err) { next(err); }
 });
 
@@ -51,28 +75,48 @@ templesRouter.get('/:identifier', async (req: Request, res: Response, next: Next
     const id = temple.rows[0].id;
 
     const pujaris = await pool.query('SELECT id, name, designation, profile_pic, rating FROM pujaris WHERE temple_id = $1 AND is_active = true', [id]);
-    const pujas = await pool.query('SELECT id, name, price_for_1, schedule_day, schedule_time, slider_images FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
-    const chadhavas = await pool.query('SELECT id, name, schedule_day, schedule_time, slider_images FROM chadhavas WHERE temple_id = $1 AND is_active = true', [id]);
-    const deities = await pool.query('SELECT d.id, d.name, d.image_url FROM deities d JOIN temple_deities td ON d.id = td.deity_id WHERE td.temple_id = $1', [id]);
+    const pujas = await pool.query('SELECT id, name, name_hi, price_for_1, schedule_day, schedule_time, slider_images FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
+    const chadhavas = await pool.query('SELECT id, name, name_hi, schedule_day, schedule_time, slider_images FROM chadhavas WHERE temple_id = $1 AND is_active = true', [id]);
+    const deities = await pool.query('SELECT d.id, d.name, d.name_hi, d.image_url FROM deities d JOIN temple_deities td ON d.id = td.deity_id WHERE td.temple_id = $1', [id]);
 
+    const locale = parseLocale(req.query.locale);
     res.json({
       success: true,
-      data: { ...temple.rows[0], pujaris: pujaris.rows, pujas_offered: pujas.rows, chadhavas_offered: chadhavas.rows, deities: deities.rows },
+      data: {
+        ...applyLocale(temple.rows[0], locale, [...TEMPLE_TX]),
+        pujaris: pujaris.rows,
+        pujas_offered: applyLocaleArray(pujas.rows, locale, ['name']),
+        chadhavas_offered: applyLocaleArray(chadhavas.rows, locale, ['name']),
+        deities: applyLocaleArray(deities.rows, locale, ['name']),
+      },
       message: 'Temple details',
     });
   } catch (err) { next(err); }
 });
 
 templesRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
   try {
     const { name, slug, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images } = req.body;
-    const result = await pool.query(
+    await client.query('BEGIN');
+    const result = await client.query(
       `INSERT INTO temples (name, slug, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [name, slug || null, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images || []]
     );
-    res.status(201).json({ success: true, data: result.rows[0], message: 'Temple created' });
-  } catch (err) { next(err); }
+    const created = result.rows[0];
+    await translateAndUpdateTemple(client, created.id, req.body).catch((e) =>
+      console.error('[temples] translate-on-create failed:', e),
+    );
+    await client.query('COMMIT');
+    const fresh = await pool.query('SELECT * FROM temples WHERE id = $1', [created.id]);
+    res.status(201).json({ success: true, data: fresh.rows[0], message: 'Temple created' });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
@@ -124,6 +168,11 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
       }
     }
 
+    // Re-translate any English fields touched in this PATCH.
+    await translateAndUpdateTemple(client, id, req.body).catch((e) =>
+      console.error('[temples] translate-on-update failed:', e),
+    );
+
     const finalResult = await client.query(`SELECT * FROM temples WHERE id = $1`, [id]);
     await client.query('COMMIT');
 
@@ -139,20 +188,31 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
 templesRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    // PDF page 19: temple cannot be deleted while active dependencies exist.
-    const pujariCount = await pool.query('SELECT COUNT(*)::int AS n FROM pujaris WHERE temple_id = $1 AND is_active = true', [id]);
-    if (pujariCount.rows[0].n > 0) {
-      res.status(409).json({ success: false, message: 'Temple has active pujaris; deactivate them first' });
-      return;
-    }
-    const pujaCount = await pool.query('SELECT COUNT(*)::int AS n FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
-    if (pujaCount.rows[0].n > 0) {
-      res.status(409).json({ success: false, message: 'Temple has active pujas; deactivate them first' });
-      return;
-    }
-    const chadhavaCount = await pool.query('SELECT COUNT(*)::int AS n FROM chadhavas WHERE temple_id = $1 AND is_active = true', [id]);
-    if (chadhavaCount.rows[0].n > 0) {
-      res.status(409).json({ success: false, message: 'Temple has active chadhavas; deactivate them first' });
+    // Block delete if ANY pujari/puja/chadhava references this temple — including
+    // soft-deleted ones, since their FK is still live and Postgres will reject
+    // the DELETE with code 23503. Counting only `is_active = true` previously
+    // let inactive references slip through and surface as a 500 in the UI.
+    const [pujariCount, pujaCount, chadhavaCount] = await Promise.all([
+      pool.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM pujaris  WHERE temple_id = $1', [id]),
+      pool.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM pujas    WHERE temple_id = $1', [id]),
+      pool.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM chadhavas WHERE temple_id = $1', [id]),
+    ]);
+    const blockers: string[] = [];
+    const fmt = (label: string, row: { n: number; active: number }) => {
+      const inactive = row.n - row.active;
+      const bits: string[] = [];
+      if (row.active > 0)  bits.push(`${row.active} active`);
+      if (inactive > 0)    bits.push(`${inactive} archived`);
+      blockers.push(`${row.n} ${label} (${bits.join(', ')})`);
+    };
+    if (pujariCount.rows[0].n  > 0) fmt('pujari(s)',   pujariCount.rows[0]);
+    if (pujaCount.rows[0].n    > 0) fmt('puja(s)',     pujaCount.rows[0]);
+    if (chadhavaCount.rows[0].n > 0) fmt('chadhava(s)', chadhavaCount.rows[0]);
+    if (blockers.length > 0) {
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete temple — still referenced by ${blockers.join(', ')}. Remove or reassign these first.`,
+      });
       return;
     }
     // No dependents — hard delete (PDF: temples cannot be disabled, only deleted).

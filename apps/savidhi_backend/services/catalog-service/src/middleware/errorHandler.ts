@@ -13,6 +13,18 @@ export function createError(message: string, statusCode: number): AppError {
 }
 
 export function errorHandler(err: AppError, _req: Request, res: Response, _next: NextFunction): void {
+  // Postgres foreign-key violation → translate to 409. Without this, a missed
+  // dependency check in a delete handler surfaces as an opaque 500 in the UI.
+  const pgCode = (err as unknown as { code?: string }).code;
+  if (pgCode === '23503') {
+    console.error('[errorHandler] FK violation:', err);
+    res.status(409).json({
+      success: false,
+      message: 'Cannot delete: this record is still referenced by other data. Remove or reassign the dependents first.',
+    });
+    return;
+  }
+
   const statusCode = err.statusCode ?? 500;
   const message = err.isOperational ? err.message : 'Internal server error';
   console.error('[errorHandler]', err);

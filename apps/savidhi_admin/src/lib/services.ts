@@ -38,27 +38,31 @@ export const deityService = {
 };
 
 export const pujaService = {
-  list: (params?: { page?: number; limit?: number; search?: string }) =>
+  list: (params?: { page?: number; limit?: number; search?: string; temple_id?: string }) =>
     apiClient.get('/catalog/pujas', { params }),
   getById: (id: string) => apiClient.get(`/catalog/pujas/${id}`),
   create: (data: any) => apiClient.post('/catalog/pujas', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/pujas/${id}`, data),
   delete: (id: string) => apiClient.delete(`/catalog/pujas/${id}`),
+  generateEvents: (id: string, days = 60) =>
+    apiClient.post(`/catalog/pujas/${id}/generate-events?days=${days}`),
 };
 
 export const chadhavaService = {
-  list: (params?: { page?: number; limit?: number; search?: string }) =>
+  list: (params?: { page?: number; limit?: number; search?: string; temple_id?: string }) =>
     apiClient.get('/catalog/chadhavas', { params }),
   getById: (id: string) => apiClient.get(`/catalog/chadhavas/${id}`),
   create: (data: any) => apiClient.post('/catalog/chadhavas', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/chadhavas/${id}`, data),
   delete: (id: string) => apiClient.delete(`/catalog/chadhavas/${id}`),
+  generateEvents: (id: string, days = 60) =>
+    apiClient.post(`/catalog/chadhavas/${id}/generate-events?days=${days}`),
 };
 
 export const pujariService = {
-  list: (params?: { page?: number; limit?: number; search?: string }) =>
+  list: (params?: { page?: number; limit?: number; search?: string; temple_id?: string }) =>
     apiClient.get('/catalog/pujaris', { params }),
   getById: (id: string) => apiClient.get(`/catalog/pujaris/${id}`),
   create: (data: any) => apiClient.post('/catalog/pujaris', data),

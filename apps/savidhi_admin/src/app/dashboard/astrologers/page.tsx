@@ -272,9 +272,12 @@ export default function AstrologersPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this astrologer?')) return;
     try {
-      await astrologerService.delete(id);
+      const res = await astrologerService.delete(id);
+      alert(res.data?.message ?? 'Astrologer deleted');
       fetchAstrologers();
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete astrologer';
+      alert(msg);
       console.error('Failed to delete astrologer:', err);
     }
   };

@@ -243,9 +243,12 @@ export default function PujarisPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this pujari?')) return;
     try {
-      await pujariService.delete(id);
+      const res = await pujariService.delete(id);
+      alert(res.data?.message ?? 'Pujari deleted');
       fetchPujaris();
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete pujari';
+      alert(msg);
       console.error('Failed to delete pujari:', err);
     }
   };

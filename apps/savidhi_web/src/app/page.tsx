@@ -21,33 +21,14 @@ import { TempleCard } from '@/components/shared/TempleCard';
 import { templeService, pujaService, chadhavaService } from '@/lib/services';
 import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
+import { useT } from '@/lib/i18n';
 
 const HOW_TO_STEPS = [
-  {
-    num: 1,
-    title: 'Select A Puja As Per Your Need',
-    desc: 'Browse 100+ sacred pujas across renowned temples',
-    icon: BookOpen,
-  },
-  {
-    num: 2,
-    title: 'Provide Name, Gotra & Sankalp Details',
-    desc: 'Personalise your puja with family details',
-    icon: Users,
-  },
-  {
-    num: 3,
-    title: 'Receive Prasad & Hamper At Home',
-    desc: 'Sacred prasad delivered to your doorstep',
-    icon: Gift,
-  },
-  {
-    num: 4,
-    title: 'Get Blessings For Family From Home',
-    desc: 'Watch the live puja stream and receive divine blessings',
-    icon: Landmark,
-  },
-];
+  { num: 1, titleKey: 'home.howToBook.step1.title', descKey: 'home.howToBook.step1.desc', icon: BookOpen },
+  { num: 2, titleKey: 'home.howToBook.step2.title', descKey: 'home.howToBook.step2.desc', icon: Users },
+  { num: 3, titleKey: 'home.howToBook.step3.title', descKey: 'home.howToBook.step3.desc', icon: Gift },
+  { num: 4, titleKey: 'home.howToBook.step4.title', descKey: 'home.howToBook.step4.desc', icon: Landmark },
+] as const;
 
 const SERVICES = [
   {
@@ -179,6 +160,7 @@ function CarouselNav({ onLeft, onRight }: { onLeft: () => void; onRight: () => v
 }
 
 function HowToVideoThumbnail() {
+  const t = useT();
   return (
     <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-xl ring-1 ring-black/5 group cursor-pointer">
       <Image
@@ -193,10 +175,10 @@ function HowToVideoThumbnail() {
 
       <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-md px-2.5 py-1 shadow-md">
         <p className="text-[9px] font-semibold text-text-muted uppercase tracking-wide leading-none">
-          How to use
+          {t('home.howToBook.howToUse')}
         </p>
         <p className="text-xs font-bold text-primary-500 leading-tight mt-0.5">
-          Book Puja
+          {t('home.howToBook.bookPuja')}
         </p>
       </div>
 
@@ -211,10 +193,10 @@ function HowToVideoThumbnail() {
 
       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
         <p className="text-white text-sm font-bold leading-tight drop-shadow">
-          Booking made simple
+          {t('home.bookingMadeSimple')}
         </p>
         <span className="bg-primary-500 hover:bg-primary-600 text-white text-[11px] font-semibold rounded-full px-3 py-1 shadow-lg transition-colors flex-shrink-0">
-          Learn More
+          {t('home.learnMore')}
         </span>
       </div>
     </div>
@@ -222,6 +204,7 @@ function HowToVideoThumbnail() {
 }
 
 export default function HomePage() {
+  const t = useT();
   const pujaScroll = useHorizontalScroll();
   const chadhavaScroll = useHorizontalScroll();
   const templeScroll = useHorizontalScroll();
@@ -265,13 +248,13 @@ export default function HomePage() {
         {/* Text block — stacked above illustration */}
         <div className="px-5 pt-8 pb-5 text-center">
           <h1 className="[font-family:var(--font-cabin)] text-[1.625rem] font-bold text-[#502C06] tracking-[0.12em] uppercase leading-snug">
-            Puja & Consultation
+            {t('home.hero.title1')}
           </h1>
           <p className="[font-family:var(--font-cabin)] text-[1.625rem] font-bold text-primary-500 uppercase tracking-[0.12em] mt-5 leading-snug">
-            Made Easy
+            {t('home.hero.title2')}
           </p>
           <p className="[font-family:var(--font-cabin)] text-sm font-semibold text-[#6E6E6E] mt-2 tracking-wide">
-            Trusted By 50000+ Devotee
+            {t('home.hero.trusted')}
           </p>
 
           <div className="flex flex-col gap-3 mt-5">
@@ -279,10 +262,10 @@ export default function HomePage() {
               href="/puja"
               className="bg-primary-500 hover:bg-primary-600 text-[#FFF7F0] [font-family:var(--font-cabin)] font-semibold py-3 rounded-full text-base transition text-center"
             >
-              Book Puja
+              {t('home.hero.bookPuja')}
             </Link>
             <button className="flex items-center justify-center gap-2 border border-[#502C06] rounded-full py-3 text-base [font-family:var(--font-cabin)] font-normal text-[#502C06] hover:bg-[#502C06]/5 transition">
-              Download App
+              {t('home.hero.downloadApp')}
               <span className="flex items-center gap-1.5">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.52-1.28 1-1.5l10 10-10 10c-.48-.22-1-.67-1-1.5zm14.54-7.77L5.04 2.03l11.37 6.37 1.13.63zm1.97 1.1l-1.97-1.1-1.97 1.1 1.97 1.1 1.97-1.1zM5.04 21.97l12.5-10.7-1.13-.63-11.37 6.37z"/></svg>
@@ -320,13 +303,13 @@ export default function HomePage() {
           {/* Text content overlaid on top of the image */}
           <div className="absolute inset-0 flex flex-col items-center justify-start pt-8 lg:pt-12 xl:pt-16 px-4">
             <h1 className="[font-family:var(--font-cabin)] text-3xl md:text-4xl lg:text-[3rem] xl:text-[3.5rem] font-bold text-[#502C06] tracking-[0.12em] uppercase leading-tight text-center">
-              Puja & Consultation
+              {t('home.hero.title1')}
             </h1>
             <p className="[font-family:var(--font-cabin)] text-2xl md:text-3xl lg:text-[2.5rem] xl:text-[2.75rem] font-bold text-primary-500 uppercase tracking-[0.12em] mt-10 lg:mt-14 leading-tight text-center">
-              Made Easy
+              {t('home.hero.title2')}
             </p>
             <p className="text-sm lg:text-base text-text-muted mt-2 lg:mt-3 text-center tracking-wide">
-              Trusted By 50000+ Devotee
+              {t('home.hero.trusted')}
             </p>
 
             <div className="flex items-center justify-center gap-4 mt-5 lg:mt-7">
@@ -334,10 +317,10 @@ export default function HomePage() {
                 href="/puja"
                 className="bg-primary-500 hover:bg-primary-600 text-white font-semibold px-10 py-3 rounded-full text-sm lg:text-base transition"
               >
-                Book Puja
+                {t('home.hero.bookPuja')}
               </Link>
               <button className="flex items-center gap-2 border border-text-primary rounded-full px-8 py-3 text-sm lg:text-base font-medium text-text-primary hover:bg-gray-50/80 transition bg-white/60 backdrop-blur-sm">
-                Download App
+                {t('home.hero.downloadApp')}
                 <span className="flex items-center gap-1.5 ml-1">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.52-1.28 1-1.5l10 10-10 10c-.48-.22-1-.67-1-1.5zm14.54-7.77L5.04 2.03l11.37 6.37 1.13.63zm1.97 1.1l-1.97-1.1-1.97 1.1 1.97 1.1 1.97-1.1zM5.04 21.97l12.5-10.7-1.13-.63-11.37 6.37z"/></svg>
@@ -351,7 +334,7 @@ export default function HomePage() {
       {/* ═══════════ UPCOMING PUJAS CAROUSEL ═══════════ */}
       <section className="section-container py-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-bold text-text-primary">Upcoming Pujas</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingPujas')}</h2>
           <CarouselNav
             onLeft={() => pujaScroll.scroll('left')}
             onRight={() => pujaScroll.scroll('right')}
@@ -380,11 +363,11 @@ export default function HomePage() {
             {/* Left: heading + steps */}
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-text-primary leading-tight mb-1.5">
-                How To Book Puja{' '}
-                <span className="text-primary-500">With Savidhi?</span>
+                {t('home.howToBook.title')}{' '}
+                <span className="text-primary-500">{t('home.howToBook.titleAccent')}</span>
               </h2>
               <p className="text-text-secondary text-xs sm:text-sm mb-6">
-                Book sacred pujas from your home in a few simple steps.
+                {t('home.howToBook.subtitle')}
               </p>
 
               <ol className="relative">
@@ -408,10 +391,10 @@ export default function HomePage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-text-primary leading-snug">
-                            {step.title}
+                            {t(step.titleKey)}
                           </p>
                           <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
-                            {step.desc}
+                            {t(step.descKey)}
                           </p>
                         </div>
                       </div>
@@ -430,7 +413,7 @@ export default function HomePage() {
       {/* ═══════════ DAILY CHADHAVA CAROUSEL ═══════════ */}
       <section className="section-container py-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-bold text-text-primary">Daily Chadhava</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingChadhavas')}</h2>
           <CarouselNav
             onLeft={() => chadhavaScroll.scroll('left')}
             onRight={() => chadhavaScroll.scroll('right')}
@@ -477,7 +460,7 @@ export default function HomePage() {
       <section className="section-container py-8 pb-12">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg sm:text-xl font-bold text-text-primary">
-            Explore Our Exclusive Partnered Temples
+            {t('home.featuredTemples')}
           </h2>
           <CarouselNav
             onLeft={() => templeScroll.scroll('left')}

@@ -11,12 +11,24 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach access token to every outgoing request.
+// Attach access token to every outgoing request, plus the active locale on
+// catalog endpoints so puja/chadhava/temple content comes back translated.
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem(ACCESS_KEY);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    // Read locale cookie inline (cheap, avoids importing the React context
+    // here — interceptor runs outside React).
+    const m = document.cookie.match(/(?:^|;\s*)locale=(en|hi)/);
+    const locale = m?.[1] ?? 'en';
+    if (locale !== 'en') {
+      const url = config.url ?? '';
+      // Only annotate read paths under /catalog where the backend honours it.
+      if (url.startsWith('/catalog/')) {
+        config.params = { ...(config.params ?? {}), locale };
+      }
     }
   }
   return config;

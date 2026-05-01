@@ -74,9 +74,12 @@ export default function HampersPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this hamper?')) return;
     try {
-      await hamperService.delete(id);
+      const res = await hamperService.delete(id);
+      alert(res.data?.message ?? 'Hamper deleted');
       await loadData();
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete hamper';
+      alert(msg);
       console.error('Failed to delete hamper', err);
     }
   };

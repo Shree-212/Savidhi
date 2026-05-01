@@ -1,138 +1,502 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import {
+  nextEventDates,
+  parseTimeOfDayIST,
+  combineDateAndISTTime,
+  type RepeatDuration,
+} from '../lib/tithiCalendar';
+import { translateToHindi, translateArrayToHindi } from '../lib/translate';
+import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+
+const CHADHAVA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included'] as const;
+const CHADHAVA_TX_ARRAYS  = ['items_used', 'how_will_it_happen'] as const;
+const CHADHAVA_LOCALE_FIELDS = [...CHADHAVA_TX_SCALARS, ...CHADHAVA_TX_ARRAYS];
+const OFFERING_LOCALE_FIELDS = ['item_name', 'benefit'];
+
+async function translateAndUpdateChadhava(client: { query: typeof pool.query }, id: string, body: Record<string, unknown>) {
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  for (const f of CHADHAVA_TX_SCALARS) {
+    if (body[f] === undefined) continue;
+    const hi = await translateToHindi(body[f] as string | null);
+    updates.push(`${f}_hi = $${idx}`); values.push(hi); idx++;
+  }
+  for (const f of CHADHAVA_TX_ARRAYS) {
+    if (body[f] === undefined) continue;
+    const hi = await translateArrayToHindi(body[f] as string[] | null);
+    updates.push(`${f}_hi = $${idx}`); values.push(hi); idx++;
+  }
+  if (updates.length === 0) return;
+  values.push(id);
+  await client.query(`UPDATE chadhavas SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+}
+
+async function translateAllOfferingsForChadhava(client: { query: typeof pool.query }, chadhavaId: string) {
+  const rows = await client.query(
+    `SELECT id, item_name, benefit FROM chadhava_offerings WHERE chadhava_id = $1`,
+    [chadhavaId],
+  );
+  for (const r of rows.rows) {
+    const [nameHi, benefitHi] = await Promise.all([
+      translateToHindi(r.item_name),
+      translateToHindi(r.benefit),
+    ]);
+    await client.query(
+      `UPDATE chadhava_offerings SET item_name_hi = $1, benefit_hi = $2 WHERE id = $3`,
+      [nameHi, benefitHi, r.id],
+    );
+  }
+}
 
 export const chadhavasRouter = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v: string) => UUID_RE.test(v);
 
-/* ── Chadhavas CRUD ── */
+const nullIfEmpty = (v: unknown) => (v === '' || v === undefined ? null : v);
 
+const REPEAT_DURATIONS = new Set(['LUNAR_PHASE', 'MONTH_DATE', 'WEEK_DAYS']);
+const BOOKING_MODES = new Set(['ONE_TIME', 'SUBSCRIPTION', 'BOTH']);
+
+// All scalar columns the admin form is allowed to write.
+// Note: chadhavas keep `max_bookings_per_event` (not renamed in 009 like pujas).
+const CHADHAVA_FIELDS = [
+  'name',
+  'slug',
+  'temple_id',
+  'deity_id',
+  'default_pujari_id',
+  'description',
+  'schedule_day',
+  'schedule_time',
+  'lunar_phase',
+  'event_repeats',
+  'repeat_duration',
+  'repeats_on',
+  'start_date',
+  'start_end_times',
+  'max_bookings_per_event',
+  'booking_mode',
+  'duration_minutes',
+  'sample_video_url',
+  'slider_images',
+  'benefits',
+  'rituals_included',
+  'items_used',
+  'how_will_it_happen',
+  'hamper_id',
+  'send_hamper',
+] as const;
+
+type ChadhavaField = (typeof CHADHAVA_FIELDS)[number];
+
+const NULLABLE_FK_FIELDS: ChadhavaField[] = ['deity_id', 'default_pujari_id', 'hamper_id'];
+
+interface OfferingInput {
+  item_name?: string;
+  benefit?: string;
+  price?: number | string;
+  image_url?: string;
+}
+
+function validateChadhavaPayload(body: Record<string, unknown>, isCreate: boolean): string | null {
+  if (isCreate) {
+    if (!body.name || String(body.name).trim() === '') return 'name is required';
+    if (!body.temple_id) return 'temple_id is required';
+  }
+  if (body.repeat_duration && !REPEAT_DURATIONS.has(String(body.repeat_duration))) {
+    return `repeat_duration must be one of LUNAR_PHASE, MONTH_DATE, WEEK_DAYS`;
+  }
+  if (body.booking_mode && !BOOKING_MODES.has(String(body.booking_mode))) {
+    return `booking_mode must be one of ONE_TIME, SUBSCRIPTION, BOTH`;
+  }
+  if (body.event_repeats === true) {
+    if (!body.repeat_duration) return 'repeat_duration is required when event_repeats=true';
+    if (!Array.isArray(body.repeats_on) || body.repeats_on.length === 0) {
+      return 'repeats_on must be a non-empty array when event_repeats=true';
+    }
+  }
+  if (body.offerings !== undefined && !Array.isArray(body.offerings)) {
+    return 'offerings must be an array';
+  }
+  return null;
+}
+
+async function insertOfferings(client: { query: typeof pool.query }, chadhavaId: string, offerings: OfferingInput[]) {
+  let order = 0;
+  for (const o of offerings) {
+    if (!o.item_name) continue;
+    await client.query(
+      `INSERT INTO chadhava_offerings (chadhava_id, item_name, benefit, price, images, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        chadhavaId,
+        o.item_name,
+        o.benefit ?? '',
+        Number(o.price) || 0,
+        o.image_url ? [o.image_url] : [],
+        order++,
+      ],
+    );
+  }
+}
+
+// ── List ──────────────────────────────────────────────────────────────────────
 chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const offset = (page - 1) * limit;
     const templeId = req.query.temple_id as string;
+    const search = req.query.search as string;
 
-    const where = templeId ? 'AND c.temple_id = $1' : '';
-    const params: any[] = templeId ? [templeId] : [];
+    const conds: string[] = ['c.is_active = true'];
+    const params: unknown[] = [];
+    if (templeId) {
+      params.push(templeId);
+      conds.push(`c.temple_id = $${params.length}`);
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      conds.push(`c.name ILIKE $${params.length}`);
+    }
+    const whereClause = `WHERE ${conds.join(' AND ')}`;
 
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM chadhavas c WHERE c.is_active = true ${where}`,
+      `SELECT COUNT(*) FROM chadhavas c ${whereClause}`,
       params,
     );
     const total = parseInt(countResult.rows[0].count);
 
     const dataParams = [...params, limit, offset];
     const result = await pool.query(
-      `SELECT c.*, t.name AS temple_name, t.address AS temple_address,
+      `SELECT c.*, t.name AS temple_name, t.name_hi AS temple_name_hi,
+              t.address AS temple_address, t.address_hi AS temple_address_hi,
               (SELECT MIN(co.price) FROM chadhava_offerings co WHERE co.chadhava_id = c.id) AS min_price
        FROM chadhavas c
        LEFT JOIN temples t ON c.temple_id = t.id
-       WHERE c.is_active = true ${where}
+       ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       dataParams,
     );
-    res.json({ success: true, data: result.rows, total, page, limit, message: 'Chadhavas fetched' });
+    const locale = parseLocale(req.query.locale);
+    res.json({
+      success: true,
+      data: applyLocaleArray(result.rows, locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address']),
+      total, page, limit,
+      message: 'Chadhavas fetched',
+    });
   } catch (err) { next(err); }
 });
 
+// ── Get one ──────────────────────────────────────────────────────────────────
 chadhavasRouter.get('/:identifier', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { identifier } = req.params;
     const where = isUuid(identifier) ? 'c.id = $1' : 'c.slug = $1';
     const chadhava = await pool.query(
-      `SELECT c.*, t.name AS temple_name, t.address AS temple_address
+      `SELECT c.*, t.name AS temple_name, t.name_hi AS temple_name_hi,
+              t.address AS temple_address, t.address_hi AS temple_address_hi
        FROM chadhavas c LEFT JOIN temples t ON c.temple_id = t.id
        WHERE ${where} AND c.is_active = true`,
-      [identifier]
+      [identifier],
     );
     if (chadhava.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
 
     const offerings = await pool.query(
-      'SELECT * FROM chadhava_offerings WHERE chadhava_id = $1 ORDER BY created_at',
-      [chadhava.rows[0].id]
+      'SELECT * FROM chadhava_offerings WHERE chadhava_id = $1 ORDER BY sort_order, created_at',
+      [chadhava.rows[0].id],
     );
+
+    const locale = parseLocale(req.query.locale);
+    const localizedChadhava = applyLocale(chadhava.rows[0], locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address']);
+    const localizedOfferings = applyLocaleArray(offerings.rows, locale, OFFERING_LOCALE_FIELDS);
 
     res.json({
       success: true,
-      data: { ...chadhava.rows[0], offerings: offerings.rows },
+      data: { ...localizedChadhava, offerings: localizedOfferings },
       message: 'Chadhava details',
     });
   } catch (err) { next(err); }
 });
 
+// ── Create (with inline offerings transaction) ──────────────────────────────
 chadhavasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
   try {
-    const { name, slug, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images } = req.body;
-    const result = await pool.query(
-      `INSERT INTO chadhavas (name, slug, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [name, slug || null, temple_id, description, schedule_day, schedule_time, sample_video_url, slider_images || []]
-    );
-    res.status(201).json({ success: true, data: result.rows[0], message: 'Chadhava created' });
-  } catch (err) { next(err); }
-});
+    const validationErr = validateChadhavaPayload(req.body, /*isCreate*/ true);
+    if (validationErr) { res.status(400).json({ success: false, message: validationErr }); return; }
 
-chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { id } = req.params;
-    const fields = ['name', 'slug', 'temple_id', 'description', 'schedule_day', 'schedule_time', 'sample_video_url', 'slider_images'];
-    const updates: string[] = [];
-    const values: any[] = [];
-    let idx = 1;
+    await client.query('BEGIN');
 
-    for (const field of fields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = $${idx}`);
-        values.push(req.body[field]);
-        idx++;
-      }
+    const cols: string[] = [];
+    const placeholders: string[] = [];
+    const values: unknown[] = [];
+
+    for (const f of CHADHAVA_FIELDS) {
+      let v = req.body[f];
+      if (v === undefined) continue;
+      if (NULLABLE_FK_FIELDS.includes(f)) v = nullIfEmpty(v);
+      if (f === 'slug' && (v === '' || v === undefined)) v = null;
+      cols.push(f);
+      placeholders.push(`$${cols.length}`);
+      values.push(v);
     }
 
-    if (updates.length === 0) { res.status(400).json({ success: false, message: 'No fields to update' }); return; }
-
-    updates.push(`updated_at = NOW()`);
-    values.push(id);
-
-    const result = await pool.query(
-      `UPDATE chadhavas SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
-      values
+    const insert = await client.query(
+      `INSERT INTO chadhavas (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
+      values,
     );
+    const created = insert.rows[0];
 
-    if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Chadhava updated' });
-  } catch (err) { next(err); }
+    const offerings = (req.body.offerings as OfferingInput[]) || [];
+    if (offerings.length > 0) {
+      await insertOfferings(client, created.id, offerings);
+    }
+
+    // Translate-on-write — best-effort.
+    await translateAndUpdateChadhava(client, created.id, req.body).catch((e) =>
+      console.error('[chadhavas] translate-on-create failed:', e),
+    );
+    if (offerings.length > 0) {
+      await translateAllOfferingsForChadhava(client, created.id).catch((e) =>
+        console.error('[chadhavas] offerings translate failed:', e),
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // Re-fetch with offerings for the response
+    const fresh = await pool.query('SELECT * FROM chadhavas WHERE id = $1', [created.id]);
+    const offeringsRows = await pool.query(
+      'SELECT * FROM chadhava_offerings WHERE chadhava_id = $1 ORDER BY sort_order',
+      [created.id],
+    );
+    res.status(201).json({
+      success: true,
+      data: { ...fresh.rows[0], offerings: offeringsRows.rows },
+      message: 'Chadhava created',
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
-chadhavasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+// ── Update (offerings: delete-and-reinsert if present) ───────────────────────
+chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    const inUse = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM chadhava_events
-       WHERE chadhava_id = $1 AND status IN ('NOT_STARTED', 'INPROGRESS') AND start_time >= NOW()`,
+    const validationErr = validateChadhavaPayload(req.body, /*isCreate*/ false);
+    if (validationErr) { res.status(400).json({ success: false, message: validationErr }); return; }
+
+    await client.query('BEGIN');
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+    for (const f of CHADHAVA_FIELDS) {
+      if (req.body[f] === undefined) continue;
+      let v = req.body[f];
+      if (NULLABLE_FK_FIELDS.includes(f)) v = nullIfEmpty(v);
+      if (f === 'slug' && v === '') v = null;
+      updates.push(`${f} = $${idx}`);
+      values.push(v);
+      idx++;
+    }
+
+    let updatedRow: Record<string, unknown> | null = null;
+    if (updates.length > 0) {
+      updates.push(`updated_at = NOW()`);
+      values.push(id);
+      const result = await client.query(
+        `UPDATE chadhavas SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+        values,
+      );
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ success: false, message: 'Chadhava not found' });
+        return;
+      }
+      updatedRow = result.rows[0];
+    } else {
+      // No scalar updates — verify the chadhava exists for the offerings update
+      const exists = await client.query('SELECT * FROM chadhavas WHERE id = $1 AND is_active = true', [id]);
+      if (exists.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ success: false, message: 'Chadhava not found' });
+        return;
+      }
+      updatedRow = exists.rows[0];
+    }
+
+    if (Array.isArray(req.body.offerings)) {
+      await client.query('DELETE FROM chadhava_offerings WHERE chadhava_id = $1', [id]);
+      await insertOfferings(client, id, req.body.offerings as OfferingInput[]);
+    }
+
+    // Translate any updated English fields + (re)translate offerings if they changed.
+    await translateAndUpdateChadhava(client, id, req.body).catch((e) =>
+      console.error('[chadhavas] translate-on-update failed:', e),
+    );
+    if (Array.isArray(req.body.offerings)) {
+      await translateAllOfferingsForChadhava(client, id).catch((e) =>
+        console.error('[chadhavas] offerings translate failed:', e),
+      );
+    }
+
+    await client.query('COMMIT');
+
+    const fresh = await pool.query('SELECT * FROM chadhavas WHERE id = $1', [id]);
+    const offeringsRows = await pool.query(
+      'SELECT * FROM chadhava_offerings WHERE chadhava_id = $1 ORDER BY sort_order',
       [id],
     );
-    if (inUse.rows[0].n > 0) {
-      res.status(409).json({ success: false, message: 'Chadhava has upcoming events; cancel them first' });
+    res.json({
+      success: true,
+      data: { ...fresh.rows[0], offerings: offeringsRows.rows },
+      message: 'Chadhava updated',
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ── Delete ───────────────────────────────────────────────────────────────────
+// Same shape as the puja delete: clear future events with no bookings, block
+// when a future event has bookings.
+chadhavasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    await client.query('BEGIN');
+
+    const blocked = await client.query(
+      `SELECT ce.id, ce.start_time, COUNT(cb.id)::int AS bookings
+         FROM chadhava_events ce
+         JOIN chadhava_bookings cb ON cb.chadhava_event_id = ce.id
+        WHERE ce.chadhava_id = $1
+          AND ce.status IN ('NOT_STARTED', 'INPROGRESS')
+          AND ce.start_time >= NOW()
+        GROUP BY ce.id`,
+      [id],
+    );
+    if (blocked.rows.length > 0) {
+      await client.query('ROLLBACK');
+      const totalBookings = blocked.rows.reduce((s, r) => s + r.bookings, 0);
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete: ${blocked.rows.length} upcoming event(s) have ${totalBookings} active booking(s). Cancel/refund the bookings first.`,
+      });
       return;
     }
-    const result = await pool.query('UPDATE chadhavas SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
-    res.json({ success: true, message: 'Chadhava deleted' });
+
+    const cleared = await client.query(
+      `DELETE FROM chadhava_events
+        WHERE chadhava_id = $1
+          AND status IN ('NOT_STARTED', 'INPROGRESS')
+          AND start_time >= NOW()
+        RETURNING id`,
+      [id],
+    );
+
+    const result = await client.query(
+      'UPDATE chadhavas SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [id],
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ success: false, message: 'Chadhava not found' });
+      return;
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: `Chadhava deleted${cleared.rows.length > 0 ? ` (${cleared.rows.length} upcoming event(s) cleaned up)` : ''}`,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ── Generate upcoming events from repeat config ─────────────────────────────
+chadhavasRouter.post('/:id/generate-events', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const days = Math.max(1, Math.min(365, Number(req.query.days) || 60));
+
+    const chRes = await pool.query('SELECT * FROM chadhavas WHERE id = $1 AND is_active = true', [id]);
+    if (chRes.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
+    const ch = chRes.rows[0];
+
+    if (!ch.event_repeats) {
+      res.status(400).json({ success: false, message: 'Chadhava is not set to repeat (event_repeats=false)' });
+      return;
+    }
+    if (!REPEAT_DURATIONS.has(ch.repeat_duration)) {
+      res.status(400).json({ success: false, message: 'Chadhava has no valid repeat_duration' });
+      return;
+    }
+    if (!Array.isArray(ch.repeats_on) || ch.repeats_on.length === 0) {
+      res.status(400).json({ success: false, message: 'Chadhava has empty repeats_on' });
+      return;
+    }
+
+    const startDate = ch.start_date ? new Date(ch.start_date) : new Date();
+    const fromDate = startDate.getTime() < Date.now() ? new Date() : startDate;
+
+    const dates = await nextEventDates(
+      ch.repeat_duration as RepeatDuration,
+      ch.repeats_on as string[],
+      fromDate,
+      days,
+    );
+
+    const { h, m } = parseTimeOfDayIST(ch.schedule_time);
+    const maxBookings = Number(ch.max_bookings_per_event) || 100;
+    const pujariId = ch.default_pujari_id || null;
+
+    let generated = 0;
+    let skipped = 0;
+    for (const d of dates) {
+      const startTime = combineDateAndISTTime(d, h, m);
+      const result = await pool.query(
+        `INSERT INTO chadhava_events (chadhava_id, pujari_id, start_time, max_bookings, status, stage)
+         VALUES ($1, $2, $3, $4, 'NOT_STARTED', 'YET_TO_START')
+         ON CONFLICT (chadhava_id, start_time) DO NOTHING
+         RETURNING id`,
+        [id, pujariId, startTime, maxBookings],
+      );
+      if (result.rows.length > 0) generated++;
+      else skipped++;
+    }
+
+    res.json({
+      success: true,
+      data: { generated, skipped, total_dates: dates.length, days },
+      message: `Generated ${generated} events (${skipped} already existed)`,
+    });
   } catch (err) { next(err); }
 });
 
-/* ── Offerings sub-resource ── */
-
+// ── Offerings sub-resource (kept for granular updates) ───────────────────────
 chadhavasRouter.post('/:id/offerings', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const chadhavaId = req.params.id;
-
-    // Verify chadhava exists
     const chadhava = await pool.query('SELECT id FROM chadhavas WHERE id = $1 AND is_active = true', [chadhavaId]);
     if (chadhava.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
 
@@ -140,7 +504,7 @@ chadhavasRouter.post('/:id/offerings', requireAuth, requireAdmin('ADMIN', 'BOOKI
     const result = await pool.query(
       `INSERT INTO chadhava_offerings (chadhava_id, item_name, price, benefit, images)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [chadhavaId, name, price, description, image_url ? [image_url] : []]
+      [chadhavaId, name, price, description, image_url ? [image_url] : []],
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Offering added' });
   } catch (err) { next(err); }
@@ -156,7 +520,7 @@ chadhavasRouter.patch('/:chadhavaId/offerings/:offeringId', requireAuth, require
        SET item_name = COALESCE($1, item_name), price = COALESCE($2, price),
            benefit = COALESCE($3, benefit), images = COALESCE($4, images)
        WHERE id = $5 AND chadhava_id = $6 RETURNING *`,
-      [name, price, description, image_url ? [image_url] : null, offeringId, chadhavaId]
+      [name, price, description, image_url ? [image_url] : null, offeringId, chadhavaId],
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Offering not found' }); return; }
@@ -169,7 +533,7 @@ chadhavasRouter.delete('/:chadhavaId/offerings/:offeringId', requireAuth, requir
     const { chadhavaId, offeringId } = req.params;
     const result = await pool.query(
       'DELETE FROM chadhava_offerings WHERE id = $1 AND chadhava_id = $2 RETURNING id',
-      [offeringId, chadhavaId]
+      [offeringId, chadhavaId],
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Offering not found' }); return; }
     res.json({ success: true, message: 'Offering deleted' });

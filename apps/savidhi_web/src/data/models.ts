@@ -1,4 +1,7 @@
 /* ── Puja ─────────────────────────────────────────────── */
+export type RepeatDuration = 'WEEK_DAYS' | 'MONTH_DATE' | 'LUNAR_PHASE';
+export type BookingMode = 'ONE_TIME' | 'SUBSCRIPTION' | 'BOTH';
+
 export interface Puja {
   id: string;
   slug: string;
@@ -10,15 +13,24 @@ export interface Puja {
   date: string;
   time: string;
   countdown: string;
+  description?: string;
   benefits: string[];
   ritualsIncluded: string[];
+  itemsUsed?: string[];
   howToDo: string[];
   videoThumbnail: string;
   parcelContents: string[];
   pricePerDevotee: number;
+  durationMinutes?: number;
   isWeekly?: boolean;
   isMonthly?: boolean;
   templeId: string;
+  // Repeat + booking metadata (used for "Repeats every Mon, Fri" labels and for
+  // gating the booking-mode UI: ONE_TIME / SUBSCRIPTION / BOTH).
+  eventRepeats?: boolean;
+  repeatDuration?: RepeatDuration;
+  repeatsOn?: string[];
+  bookingMode?: BookingMode;
 }
 
 /* ── Chadhava ─────────────────────────────────────────── */
@@ -41,15 +53,22 @@ export interface Chadhava {
   date: string;
   time: string;
   countdown: string;
+  description?: string;
   benefits: string[];
   ritualsIncluded: string[];
+  itemsUsed?: string[];
   howToOffer: string[];
   videoThumbnail: string;
   parcelContents: string[];
   offerings: ChadhavaOffering[];
   templeId: string;
+  durationMinutes?: number;
   isWeekly?: boolean;
   startingPrice: number;
+  eventRepeats?: boolean;
+  repeatDuration?: RepeatDuration;
+  repeatsOn?: string[];
+  bookingMode?: BookingMode;
 }
 
 /* ── Temple ────────────────────────────────────────────── */

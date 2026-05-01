@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Share2, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Loader2, Clock, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
@@ -10,13 +10,17 @@ import { VideoPlayer } from '@/components/shared/VideoPlayer';
 import { pujaService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
 import type { Puja } from '@/data/models';
+import { useT, useLocale } from '@/lib/i18n';
 
 export default function PujaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const t = useT();
+  const { locale } = useLocale();
   const [puja, setPuja] = useState<Puja | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     pujaService.getById(id)
       .then((res) => {
         const raw = res.data?.data ?? res.data;
@@ -24,7 +28,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, locale]);
 
   if (loading) {
     return (
@@ -37,7 +41,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
   if (!puja) {
     return (
       <div className="section-container py-20 text-center text-text-secondary">
-        Puja not found. <Link href="/puja" className="text-primary-500 underline">Go back</Link>
+        {t('puja.detail.notFound')} <Link href="/puja" className="text-primary-500 underline">{t('puja.detail.goBack')}</Link>
       </div>
     );
   }
@@ -54,14 +58,8 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
             <span className="w-8 h-8 rounded-full bg-white border border-border-DEFAULT flex items-center justify-center group-hover:border-primary-300 group-hover:bg-primary-50 transition">
               <ArrowLeft className="w-4 h-4" />
             </span>
-            <span className="hidden sm:inline">Back to Pujas</span>
+            <span className="hidden sm:inline">{t('puja.detail.back')}</span>
           </Link>
-          <button
-            className="w-9 h-9 rounded-full bg-white border border-border-DEFAULT flex items-center justify-center text-text-secondary hover:border-primary-300 hover:bg-primary-50 hover:text-primary-500 transition"
-            aria-label="Share"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Two-column layout (lg+): gallery+CTA left (sticky), content right */}
@@ -82,16 +80,16 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
               )}
               {puja.pricePerDevotee && (
                 <div className="mb-4">
-                  <span className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Starting from</span>
+                  <span className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">{t('puja.detail.startingFrom')}</span>
                   <p className="text-3xl font-bold text-primary-600 leading-none mt-0.5">
                     ₹{puja.pricePerDevotee}
-                    <span className="text-sm text-text-muted font-medium ml-1.5">per devotee</span>
+                    <span className="text-sm text-text-muted font-medium ml-1.5">{t('puja.detail.perDevotee')}</span>
                   </p>
                 </div>
               )}
               <Link href={`/puja/${puja.slug || puja.id}/book`}>
                 <Button className="w-full" size="lg">
-                  Select Puja
+                  {t('puja.detail.selectPuja')}
                 </Button>
               </Link>
             </div>
@@ -117,32 +115,56 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
                   <span>{puja.date}{puja.time ? `, ${puja.time}` : ''}</span>
                 </span>
               )}
+              {puja.durationMinutes ? (
+                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
+                  <Clock className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <span>{t('puja.detail.duration', { n: puja.durationMinutes })}</span>
+                </span>
+              ) : null}
+              {puja.eventRepeats && puja.repeatsOn && puja.repeatsOn.length > 0 ? (
+                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
+                  <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <span>{t('puja.detail.repeats', { days: puja.repeatsOn.join(', ') })}</span>
+                </span>
+              ) : null}
               <span className="inline-flex lg:hidden items-center bg-primary-100 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
                 {puja.countdown}
               </span>
             </div>
 
+            {puja.description ? (
+              <p className="text-sm text-text-secondary leading-relaxed mb-5 whitespace-pre-line">
+                {puja.description}
+              </p>
+            ) : null}
+
             <div className="space-y-3">
               {puja.benefits.length > 0 && (
-                <ExpandableSection title="Benefits Of Puja" initiallyExpanded>
+                <ExpandableSection title={t('puja.detail.benefits')} initiallyExpanded>
                   {puja.benefits.map((b, i) => <p key={i}>• {b}</p>)}
                 </ExpandableSection>
               )}
 
               {puja.ritualsIncluded.length > 0 && (
-                <ExpandableSection title="Rituals Included">
+                <ExpandableSection title={t('puja.detail.rituals')}>
                   {puja.ritualsIncluded.map((r, i) => <p key={i}>• {r}</p>)}
                 </ExpandableSection>
               )}
 
+              {puja.itemsUsed && puja.itemsUsed.length > 0 && (
+                <ExpandableSection title={t('puja.detail.itemsUsed')}>
+                  {puja.itemsUsed.map((it, i) => <p key={i}>• {it}</p>)}
+                </ExpandableSection>
+              )}
+
               {puja.howToDo.length > 0 && (
-                <ExpandableSection title="How To Do Puja">
+                <ExpandableSection title={t('puja.detail.howItWillHappen')}>
                   {puja.howToDo.map((h, i) => <p key={i}>{i + 1}. {h}</p>)}
                 </ExpandableSection>
               )}
 
               {puja.parcelContents.length > 0 && (
-                <ExpandableSection title="What's Inside Your Parcel">
+                <ExpandableSection title={t('puja.detail.parcelContents')}>
                   {puja.parcelContents.map((p, i) => <p key={i}>• {p}</p>)}
                 </ExpandableSection>
               )}
@@ -150,7 +172,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
 
             {puja.videoThumbnail && (
               <div className="mt-6">
-                <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-2.5">Video You Will Receive</h3>
+                <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-2.5">{t('puja.detail.video')}</h3>
                 <VideoPlayer src={puja.videoThumbnail} />
               </div>
             )}
@@ -161,7 +183,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
                 className="flex items-center justify-between gap-3 bg-white border border-orange-100 rounded-xl px-4 sm:px-5 py-3.5 mt-6 hover:border-primary-300 hover:bg-orange-50/50 transition-all shadow-[0_1px_2px_rgba(232,129,58,0.04)] hover:shadow-md"
               >
                 <span className="flex-1 min-w-0 text-sm sm:text-[15px] font-semibold text-text-primary leading-snug break-words">
-                  Importance Of {puja.templeName}
+                  {t('puja.detail.importanceOf', { name: puja.templeName })}
                 </span>
                 <span className="text-primary-500 text-lg leading-none flex-shrink-0">→</span>
               </Link>
@@ -175,14 +197,14 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
         <div className="section-container max-w-2xl flex items-center gap-3 py-3">
           {puja.pricePerDevotee && (
             <div className="flex flex-col leading-tight flex-shrink-0">
-              <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wider">From</span>
+              <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wider">{t('puja.detail.from')}</span>
               <span className="text-xl font-bold text-primary-600 leading-none mt-0.5 tabular-nums">
                 ₹{puja.pricePerDevotee.toLocaleString()}
               </span>
             </div>
           )}
           <Link href={`/puja/${puja.slug || puja.id}/book`} className="flex-1">
-            <Button className="w-full" size="lg">Select Puja</Button>
+            <Button className="w-full" size="lg">{t('puja.detail.selectPuja')}</Button>
           </Link>
         </div>
       </div>

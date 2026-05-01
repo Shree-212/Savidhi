@@ -94,9 +94,12 @@ export default function TemplesPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this temple?')) return;
     try {
-      await templeService.delete(id);
+      const res = await templeService.delete(id);
+      alert(res.data?.message ?? 'Temple deleted');
       await loadData();
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete temple';
+      alert(msg);
       console.error('Failed to delete temple', err);
     }
   };

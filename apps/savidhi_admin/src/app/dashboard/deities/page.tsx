@@ -71,9 +71,12 @@ export default function DeitiesPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this deity?')) return;
     try {
-      await deityService.delete(id);
+      const res = await deityService.delete(id);
+      alert(res.data?.message ?? 'Deity deleted');
       await loadData();
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete deity';
+      alert(msg);
       console.error('Failed to delete deity', err);
     }
   };

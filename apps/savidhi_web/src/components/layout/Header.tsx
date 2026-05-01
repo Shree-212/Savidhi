@@ -3,24 +3,41 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
-import { Menu, X, User, ChevronDown, Globe } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Menu, X, User, ChevronDown, Globe, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import svlogo from '@/assets/svlogo.png';
+import { useLocale, useT, type Locale } from '@/lib/i18n';
 
-const NAV_LINKS = [
-  { label: 'Home', href: '/' },
-  { label: 'Puja', href: '/puja' },
-  { label: 'Chadhava', href: '/chadhava' },
-  { label: 'Temples', href: '/temples' },
-  { label: 'Consult', href: '/consult' },
-  { label: 'Panchang', href: '/panchang' },
-  { label: 'Points', href: '/points' },
+const NAV_KEYS: { key: string; href: string }[] = [
+  { key: 'nav.home',     href: '/' },
+  { key: 'nav.puja',     href: '/puja' },
+  { key: 'nav.chadhava', href: '/chadhava' },
+  { key: 'nav.temples',  href: '/temples' },
+  { key: 'nav.consult',  href: '/consult' },
+  { key: 'nav.panchang', href: '/panchang' },
+  { key: 'nav.points',   href: '/points' },
 ];
 
 export function Header() {
   const pathname = usePathname();
+  const t = useT();
+  const { locale, setLocale } = useLocale();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const langRef = useRef<HTMLDivElement>(null);
+
+  // Close lang dropdown on outside click
+  useEffect(() => {
+    if (!langOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [langOpen]);
+
+  const pickLocale = (l: Locale) => { setLocale(l); setLangOpen(false); };
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -38,7 +55,7 @@ export function Header() {
 
           {/* Desktop Nav */}
           <nav className="hidden lg:flex items-center gap-1.5">
-            {NAV_LINKS.map((link) => (
+            {NAV_KEYS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -49,18 +66,40 @@ export function Header() {
                     : 'text-text-secondary hover:text-text-primary hover:bg-primary-50'
                 )}
               >
-                {link.label}
+                {t(link.key)}
               </Link>
             ))}
           </nav>
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            <button className="hidden sm:flex items-center gap-1.5 text-[15px] text-text-secondary hover:text-text-primary transition-colors">
-              <Globe className="w-[18px] h-[18px]" />
-              <span>En</span>
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
+            <div ref={langRef} className="relative hidden sm:block">
+              <button
+                onClick={() => setLangOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={langOpen}
+                className="flex items-center gap-1.5 text-[15px] text-text-secondary hover:text-text-primary transition-colors"
+              >
+                <Globe className="w-[18px] h-[18px]" />
+                <span>{locale === 'hi' ? t('lang.short.hi') : t('lang.short.en')}</span>
+                <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', langOpen && 'rotate-180')} />
+              </button>
+              {langOpen && (
+                <ul role="menu" className="absolute right-0 mt-2 w-40 bg-white border border-border-light rounded-xl shadow-lg overflow-hidden z-50">
+                  {(['en', 'hi'] as const).map((l) => (
+                    <li key={l}>
+                      <button
+                        onClick={() => pickLocale(l)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-text-primary hover:bg-primary-50 transition-colors"
+                      >
+                        <span>{l === 'en' ? t('lang.english') : t('lang.hindi')}</span>
+                        {locale === l && <Check className="w-4 h-4 text-primary-500" />}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <Link
               href="/profile"
               className="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center hover:bg-primary-100 transition-colors"
@@ -88,7 +127,7 @@ export function Header() {
       {mobileMenuOpen && (
         <div className="lg:hidden border-t border-border-light bg-white">
           <nav className="section-container py-4 flex flex-col gap-1">
-            {NAV_LINKS.map((link) => (
+            {NAV_KEYS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -100,9 +139,27 @@ export function Header() {
                     : 'text-text-secondary hover:bg-primary-50'
                 )}
               >
-                {link.label}
+                {t(link.key)}
               </Link>
             ))}
+            {/* Mobile language picker */}
+            <div className="mt-2 border-t border-border-light pt-3 px-1">
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">{t('lang.english')} / {t('lang.hindi')}</p>
+              <div className="flex gap-2">
+                {(['en', 'hi'] as const).map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => { setLocale(l); setMobileMenuOpen(false); }}
+                    className={cn(
+                      'flex-1 px-3 py-2 rounded-xl text-sm font-medium border transition-colors',
+                      locale === l ? 'bg-primary-500 text-white border-primary-500' : 'border-border-light text-text-secondary',
+                    )}
+                  >
+                    {l === 'en' ? t('lang.english') : t('lang.hindi')}
+                  </button>
+                ))}
+              </div>
+            </div>
           </nav>
         </div>
       )}

@@ -40,6 +40,10 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
   const [step, setStep] = useState(0);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [devoteeCount, setDevoteeCount] = useState<number>(1);
+  // Booking type: defaults flow from the puja's booking_mode.
+  // ONE_TIME-only puja → forced to ONE_TIME; SUBSCRIPTION-only → forced to SUBSCRIPTION;
+  // BOTH → user picks via the toggle on Step 0.
+  const [bookingType, setBookingType] = useState<'ONE_TIME' | 'SUBSCRIPTION'>('ONE_TIME');
 
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string; relation: string }>>([
     { name: '', gotra: '', relation: 'Self' },
@@ -70,7 +74,13 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
         ]);
         if (cancelled) return;
         const pujaRaw = pujaRes.data?.data ?? pujaRes.data;
-        if (pujaRaw) setPuja({ mapped: mapPuja(pujaRaw), raw: pujaRaw });
+        if (pujaRaw) {
+          setPuja({ mapped: mapPuja(pujaRaw), raw: pujaRaw });
+          // Honour the puja's booking_mode: lock the booking type when the
+          // admin restricted it to one option, otherwise let the user choose.
+          if (pujaRaw.booking_mode === 'SUBSCRIPTION') setBookingType('SUBSCRIPTION');
+          else if (pujaRaw.booking_mode === 'ONE_TIME') setBookingType('ONE_TIME');
+        }
         setEvents(eventsRes.data?.data ?? []);
       } catch (err: any) {
         if (!cancelled) setError(err.response?.data?.message || err.message || 'Failed to load');
@@ -147,6 +157,7 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
           gotra: d.gotra.trim(),
           relation: d.relation.trim() || undefined,
         })),
+        booking_type: bookingType,
       };
       const bookingRes = await pujaBookingService.create(payload);
       const booking = bookingRes.data?.data;
@@ -308,6 +319,43 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Select an upcoming event</h2>
                 <p className="text-sm text-text-secondary mb-5">Choose a date and pujari to book this puja.</p>
+
+                {/* Booking type picker: only when the admin allowed BOTH modes */}
+                {puja.raw.booking_mode === 'BOTH' && (
+                  <div className="mb-5">
+                    <p className="text-[11px] uppercase tracking-wider font-semibold text-text-muted mb-2">Booking Type</p>
+                    <div className="flex gap-2">
+                      {(['ONE_TIME', 'SUBSCRIPTION'] as const).map((opt) => {
+                        const active = bookingType === opt;
+                        return (
+                          <button
+                            key={opt}
+                            onClick={() => setBookingType(opt)}
+                            className={`flex-1 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                              active
+                                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                                : 'border-orange-100 bg-white text-text-secondary hover:border-primary-300'
+                            }`}
+                          >
+                            {opt === 'ONE_TIME' ? 'One Time' : 'Subscription (Auto-recurring)'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {bookingType === 'SUBSCRIPTION' && (
+                      <p className="text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2 mt-2">
+                        You&apos;ll be auto-billed for every upcoming event in this puja&apos;s schedule. You can stop auto-renewal anytime from your bookings page.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Subscription-only banner */}
+                {puja.raw.booking_mode === 'SUBSCRIPTION' && (
+                  <div className="mb-5 text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2">
+                    This puja is offered as a subscription only — you&apos;ll be auto-billed for every upcoming event. You can stop auto-renewal anytime.
+                  </div>
+                )}
 
                 {events.length === 0 ? (
                   <div className="border border-orange-100 bg-white rounded-xl p-8 text-center text-text-secondary">

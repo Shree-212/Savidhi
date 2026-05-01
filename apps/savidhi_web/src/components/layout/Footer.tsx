@@ -1,29 +1,33 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
 import { Phone, Mail, MapPin } from 'lucide-react';
 import svlogo from '@/assets/svlogo.png';
+import { useT } from '@/lib/i18n';
 
-const QUICK_LINKS = [
-  { label: 'Book A Puja', href: '/puja' },
-  { label: 'Offer Chadhava', href: '/chadhava' },
-  { label: 'Explore Temples', href: '/temples' },
-  { label: 'Consult Astrologer', href: '/consult' },
-  { label: "Today's Panchang", href: '/panchang' },
-  { label: 'My Bookings', href: '/bookings' },
+const QUICK_KEYS = [
+  { key: 'home.howToBook.bookPuja', href: '/puja' },
+  { key: 'nav.chadhava', href: '/chadhava' },
+  { key: 'nav.temples', href: '/temples' },
+  { key: 'nav.consult', href: '/consult' },
+  { key: 'nav.panchang', href: '/panchang' },
+  { key: 'profile.myBookings', href: '/bookings' },
 ];
 
-const POLICY_LINKS = [
-  { label: 'Terms of Use', href: '/terms' },
-  { label: 'Privacy & Cookie Policy', href: '/privacy' },
-  { label: 'Refund & Cancellation', href: '/refund' },
-  { label: 'Vendor Terms', href: '/vendor-terms' },
+const POLICY_KEYS = [
+  { key: 'footer.legal.terms',   href: '/terms' },
+  { key: 'footer.legal.privacy', href: '/privacy' },
+  { key: 'footer.legal.refund',  href: '/refund' },
+  { key: 'footer.legal.vendor',  href: '/vendor-terms' },
 ];
 
 export function Footer() {
+  const t = useT();
   return (
     <footer className="bg-text-primary text-white">
       <div className="section-container py-10 sm:py-12">
-        {/* Top: brand block — full width on mobile, narrows on desktop */}
+        {/* Top: brand block */}
         <div className="space-y-4 max-w-md mb-8 sm:mb-10">
           <Image
             src={svlogo}
@@ -33,7 +37,7 @@ export function Footer() {
             className="h-10 w-auto brightness-0 invert"
           />
           <p className="text-sm text-gray-400 leading-relaxed">
-            Your trusted platform for online puja booking, chadhava offerings, and spiritual consultations.
+            {t('footer.tagline')}
           </p>
           <div className="flex gap-3 flex-wrap">
             <div className="h-10 px-3 bg-gray-800 rounded-lg flex items-center gap-2 text-xs">
@@ -53,21 +57,20 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Mid: link columns + contact. 2-col on mobile (Quick + Legal),
-            3-col on desktop with Contact taking the third slot. */}
+        {/* Mid: link columns + contact */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-8 pb-8 border-b border-gray-800">
           <div>
             <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4 text-gray-200">
-              Quick Links
+              {t('footer.product.title')}
             </h3>
             <ul className="space-y-2">
-              {QUICK_LINKS.map((link) => (
+              {QUICK_KEYS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
                     className="text-sm text-gray-400 hover:text-primary-300 transition-colors"
                   >
-                    {link.label}
+                    {t(link.key)}
                   </Link>
                 </li>
               ))}
@@ -76,26 +79,26 @@ export function Footer() {
 
           <div>
             <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4 text-gray-200">
-              Legal
+              {t('footer.legal.title')}
             </h3>
             <ul className="space-y-2">
-              {POLICY_LINKS.map((link) => (
+              {POLICY_KEYS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
                     className="text-sm text-gray-400 hover:text-primary-300 transition-colors"
                   >
-                    {link.label}
+                    {t(link.key)}
                   </Link>
                 </li>
               ))}
             </ul>
           </div>
 
-          {/* Company & Contact — full row on mobile (col-span-2), single col on md+ */}
+          {/* Company & Contact */}
           <div className="col-span-2 md:col-span-1">
             <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4 text-gray-200">
-              Company &amp; Contact
+              {t('footer.contact.title')}
             </h3>
             <ul className="space-y-3 text-sm text-gray-400">
               <li className="flex items-start gap-2.5">
@@ -103,7 +106,7 @@ export function Footer() {
                 <p className="leading-relaxed">
                   <span className="text-gray-200 font-semibold">VAIDIK VIKHYAT ASTRO PRIVATE LIMITED</span>
                   <br />
-                  Registered office: Kolkata, India
+                  {t('footer.address')}
                 </p>
               </li>
               <li className="flex items-start gap-2.5">
@@ -127,13 +130,9 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Bottom: copyright only — policy links live in the Legal column above. */}
+        {/* Bottom: copyright */}
         <p className="text-xs text-gray-500 text-center pt-6 leading-relaxed">
-          &copy; {new Date().getFullYear()} VAIDIK VIKHYAT ASTRO PRIVATE LIMITED.
-          <span className="hidden sm:inline"> All rights reserved.</span>
-          <span className="sm:hidden">
-            <br />All rights reserved.
-          </span>
+          {t('footer.copyright', { year: new Date().getFullYear() })}
         </p>
       </div>
     </footer>

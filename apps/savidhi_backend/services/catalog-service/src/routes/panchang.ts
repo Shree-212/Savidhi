@@ -1,37 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { fetchPanchangRaw } from '../lib/tithiCalendar';
 
 export const panchangRouter = Router();
 
-const TOKEN_URL = 'https://api.prokerala.com/token';
-const PANCHANG_URL = 'https://api.prokerala.com/v2/astrology/panchang';
-
-const CLIENT_ID = process.env.PROKERALA_CLIENT_ID ?? '';
-const CLIENT_SECRET = process.env.PROKERALA_CLIENT_SECRET ?? '';
-
-// ── Token cache ───────────────────────────────────────────────────────────────
-let _token: string | null = null;
-let _tokenExpiry = 0;
-
-async function getToken(): Promise<string> {
-  if (_token && Date.now() < _tokenExpiry) return _token;
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-  });
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-  if (!res.ok) throw new Error(`Prokerala token error ${res.status}: ${await res.text()}`);
-  const data = await res.json() as { access_token: string; expires_in: number };
-  _token = data.access_token;
-  _tokenExpiry = Date.now() + (data.expires_in - 120) * 1000; // 2 min buffer
-  return _token;
-}
-
-// ── Panchang response cache (keyed by date+lat+lng, 24 h TTL) ────────────────
+// ── Formatted-response cache (keyed by date+lat+lng, 24 h TTL) ──────────────
+// Note: the raw Prokerala response is cached inside tithiCalendar.ts; this
+// cache stores the formatted payload sent to the client.
 const _cache = new Map<string, { data: unknown; expiry: number }>();
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
@@ -163,30 +137,17 @@ panchangRouter.get('/', async (req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    if (!CLIENT_ID || !CLIENT_SECRET) {
-      res.status(503).json({ success: false, message: 'Panchang API credentials not configured' });
-      return;
+    let d: Record<string, unknown>;
+    try {
+      d = await fetchPanchangRaw(date, lat, lng);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg.includes('PROKERALA_CLIENT_ID')) {
+        res.status(503).json({ success: false, message: 'Panchang API credentials not configured' });
+        return;
+      }
+      throw e;
     }
-
-    const token = await getToken();
-
-    // Build Prokerala request
-    const url = new URL(PANCHANG_URL);
-    url.searchParams.set('ayanamsa', '1');           // Lahiri
-    url.searchParams.set('coordinates', `${lat},${lng}`);
-    url.searchParams.set('datetime', `${date}T00:00:00+05:30`);
-
-    const apiRes = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!apiRes.ok) {
-      const errText = await apiRes.text();
-      throw new Error(`Prokerala panchang ${apiRes.status}: ${errText}`);
-    }
-
-    const apiJson = await apiRes.json() as { status: string; data: Record<string, unknown> };
-    const d = apiJson.data;
 
     // Extract core fields
     const tithiArr  = (Array.isArray(d.tithi)    ? d.tithi    : [d.tithi])    as Record<string, string | number>[];

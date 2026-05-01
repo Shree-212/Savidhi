@@ -1,4 +1,4 @@
-import type { Puja, Chadhava, Temple, Astrologer } from '@/data/models';
+import type { Puja, Chadhava, Temple, Astrologer, RepeatDuration, BookingMode } from '@/data/models';
 
 /**
  * Maps API snake_case puja response to frontend Puja model.
@@ -15,14 +15,22 @@ export function mapPuja(raw: any): Puja {
     date: raw.schedule_day ?? raw.date ?? '',
     time: raw.schedule_time ?? raw.time ?? '',
     countdown: raw.countdown ?? '',
+    description: raw.description ?? '',
     benefits: parseCsvOrArray(raw.benefits),
     ritualsIncluded: parseCsvOrArray(raw.rituals_included ?? raw.ritualsIncluded),
-    howToDo: raw.howToDo ?? [],
+    itemsUsed: parseCsvOrArray(raw.items_used ?? raw.itemsUsed),
+    // Prefer the structured how_will_it_happen array; fall back to legacy howToDo.
+    howToDo: parseCsvOrArray(raw.how_will_it_happen ?? raw.howToDo),
     videoThumbnail: raw.sample_video_url ?? raw.videoThumbnail ?? '',
     parcelContents: raw.parcelContents ?? [],
     pricePerDevotee: Number(raw.price_for_1 ?? raw.pricePerDevotee ?? 0),
+    durationMinutes: raw.duration_minutes != null ? Number(raw.duration_minutes) : undefined,
     isWeekly: raw.event_repeats ?? raw.isWeekly ?? false,
     templeId: raw.temple_id ?? raw.templeId ?? '',
+    eventRepeats: !!raw.event_repeats,
+    repeatDuration: (raw.repeat_duration ?? undefined) as RepeatDuration | undefined,
+    repeatsOn: Array.isArray(raw.repeats_on) ? raw.repeats_on : [],
+    bookingMode: (raw.booking_mode ?? undefined) as BookingMode | undefined,
   };
 }
 
@@ -48,15 +56,22 @@ export function mapChadhava(raw: any): Chadhava {
     date: raw.schedule_day ?? raw.date ?? '',
     time: raw.schedule_time ?? raw.time ?? '',
     countdown: raw.countdown ?? '',
+    description: raw.description ?? '',
     benefits: parseCsvOrArray(raw.benefits),
     ritualsIncluded: parseCsvOrArray(raw.rituals_included ?? raw.ritualsIncluded),
-    howToOffer: raw.howToOffer ?? [],
+    itemsUsed: parseCsvOrArray(raw.items_used ?? raw.itemsUsed),
+    howToOffer: parseCsvOrArray(raw.how_will_it_happen ?? raw.howToOffer),
     videoThumbnail: raw.sample_video_url ?? raw.videoThumbnail ?? '',
     parcelContents: raw.parcelContents ?? [],
     offerings,
     templeId: raw.temple_id ?? raw.templeId ?? '',
+    durationMinutes: raw.duration_minutes != null ? Number(raw.duration_minutes) : undefined,
     isWeekly: raw.booking_mode === 'SUBSCRIPTION' || raw.isWeekly,
     startingPrice: Number(raw.min_price ?? (offerings.length > 0 ? Math.min(...offerings.map((o: any) => o.price)) : 0)),
+    eventRepeats: !!raw.event_repeats,
+    repeatDuration: (raw.repeat_duration ?? undefined) as RepeatDuration | undefined,
+    repeatsOn: Array.isArray(raw.repeats_on) ? raw.repeats_on : [],
+    bookingMode: (raw.booking_mode ?? undefined) as BookingMode | undefined,
   };
 }
 

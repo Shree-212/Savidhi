@@ -83,16 +83,36 @@ hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
 hampersRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const pujaUse = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM pujas WHERE hamper_id = $1 AND send_hamper = true AND is_active = true`,
-      [id],
-    );
-    const chadhavaUse = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM chadhavas WHERE hamper_id = $1 AND send_hamper = true AND is_active = true`,
-      [id],
-    );
-    if (pujaUse.rows[0].n + chadhavaUse.rows[0].n > 0) {
-      res.status(409).json({ success: false, message: 'Hamper is referenced by active pujas/chadhavas; remove those references first' });
+    // Any puja/chadhava (active OR soft-deleted, send_hamper or not) holding
+    // hamper_id holds the FK; ignoring them caused the hard-delete to surface
+    // a Postgres FK violation as a 500.
+    const [pujaUse, chadhavaUse] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active
+           FROM pujas WHERE hamper_id = $1`,
+        [id],
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active
+           FROM chadhavas WHERE hamper_id = $1`,
+        [id],
+      ),
+    ]);
+    const blockers: string[] = [];
+    const fmt = (label: string, row: { n: number; active: number }) => {
+      const inactive = row.n - row.active;
+      const bits: string[] = [];
+      if (row.active > 0)  bits.push(`${row.active} active`);
+      if (inactive > 0)    bits.push(`${inactive} archived`);
+      blockers.push(`${row.n} ${label} (${bits.join(', ')})`);
+    };
+    if (pujaUse.rows[0].n     > 0) fmt('puja(s)',     pujaUse.rows[0]);
+    if (chadhavaUse.rows[0].n > 0) fmt('chadhava(s)', chadhavaUse.rows[0]);
+    if (blockers.length > 0) {
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete hamper — still referenced by ${blockers.join(', ')}. Remove or reassign these first.`,
+      });
       return;
     }
     const result = await pool.query('DELETE FROM hampers WHERE id = $1 RETURNING id', [id]);

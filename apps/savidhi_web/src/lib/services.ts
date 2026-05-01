@@ -72,6 +72,7 @@ export const pujaBookingService = {
     sankalp?: string;
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; relation?: string; gotra: string }>;
+    booking_type?: 'ONE_TIME' | 'SUBSCRIPTION';
   }) => api.post('/bookings/puja-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/puja-bookings/${id}/cancel`),
 };
