@@ -186,39 +186,110 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
 });
 
 templesRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  const force = req.query.force === 'true';
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    // Block delete if ANY pujari/puja/chadhava references this temple — including
-    // soft-deleted ones, since their FK is still live and Postgres will reject
-    // the DELETE with code 23503. Counting only `is_active = true` previously
-    // let inactive references slip through and surface as a 500 in the UI.
+
+    // Active dependents always block, regardless of `force` — these are real,
+    // currently-visible records the operator hasn't disabled yet.
     const [pujariCount, pujaCount, chadhavaCount] = await Promise.all([
-      pool.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM pujaris  WHERE temple_id = $1', [id]),
-      pool.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM pujas    WHERE temple_id = $1', [id]),
-      pool.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM chadhavas WHERE temple_id = $1', [id]),
+      client.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM pujaris   WHERE temple_id = $1', [id]),
+      client.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM pujas     WHERE temple_id = $1', [id]),
+      client.query('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM chadhavas WHERE temple_id = $1', [id]),
     ]);
-    const blockers: string[] = [];
-    const fmt = (label: string, row: { n: number; active: number }) => {
-      const inactive = row.n - row.active;
-      const bits: string[] = [];
-      if (row.active > 0)  bits.push(`${row.active} active`);
-      if (inactive > 0)    bits.push(`${inactive} archived`);
-      blockers.push(`${row.n} ${label} (${bits.join(', ')})`);
-    };
-    if (pujariCount.rows[0].n  > 0) fmt('pujari(s)',   pujariCount.rows[0]);
-    if (pujaCount.rows[0].n    > 0) fmt('puja(s)',     pujaCount.rows[0]);
-    if (chadhavaCount.rows[0].n > 0) fmt('chadhava(s)', chadhavaCount.rows[0]);
-    if (blockers.length > 0) {
+    const activeBlockers: string[] = [];
+    if (pujariCount.rows[0].active   > 0) activeBlockers.push(`${pujariCount.rows[0].active} active pujari(s)`);
+    if (pujaCount.rows[0].active     > 0) activeBlockers.push(`${pujaCount.rows[0].active} active puja(s)`);
+    if (chadhavaCount.rows[0].active > 0) activeBlockers.push(`${chadhavaCount.rows[0].active} active chadhava(s)`);
+    if (activeBlockers.length > 0) {
       res.status(409).json({
         success: false,
-        message: `Cannot delete temple — still referenced by ${blockers.join(', ')}. Remove or reassign these first.`,
+        message: `Cannot delete temple — still referenced by ${activeBlockers.join(', ')}. Disable or reassign these first.`,
+        canForce: false,
       });
       return;
     }
-    // No dependents — hard delete (PDF: temples cannot be disabled, only deleted).
-    await pool.query('DELETE FROM temple_deities WHERE temple_id = $1', [id]);
-    const result = await pool.query('DELETE FROM temples WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
-    res.json({ success: true, message: 'Temple deleted' });
-  } catch (err) { next(err); }
+
+    // No-force path: count any leftover archived dependents and block with `canForce: true`
+    // so the admin UI can offer a second-confirm "force delete" button.
+    if (!force) {
+      const archivedBlockers: string[] = [];
+      if (pujariCount.rows[0].n   > 0) archivedBlockers.push(`${pujariCount.rows[0].n} archived pujari(s)`);
+      if (pujaCount.rows[0].n     > 0) archivedBlockers.push(`${pujaCount.rows[0].n} archived puja(s)`);
+      if (chadhavaCount.rows[0].n > 0) archivedBlockers.push(`${chadhavaCount.rows[0].n} archived chadhava(s)`);
+      if (archivedBlockers.length > 0) {
+        res.status(409).json({
+          success: false,
+          message: `Cannot delete temple — still referenced by ${archivedBlockers.join(', ')}. Pass force=true to hard-clean archived dependents.`,
+          canForce: true,
+        });
+        return;
+      }
+    }
+
+    // Force path (or nothing-archived path): cascade-clean inside a single tx.
+    await client.query('BEGIN');
+
+    // Pujaris are referenced from puja_events, chadhava_events, and pujas via
+    // nullable FKs — null them out, then the pujari hard-delete is unblocked.
+    if (pujariCount.rows[0].n > 0) {
+      await client.query(
+        `UPDATE puja_events SET pujari_id = NULL
+           WHERE pujari_id IN (SELECT id FROM pujaris WHERE temple_id = $1)`, [id]);
+      await client.query(
+        `UPDATE chadhava_events SET pujari_id = NULL
+           WHERE pujari_id IN (SELECT id FROM pujaris WHERE temple_id = $1)`, [id]);
+      await client.query(
+        `UPDATE pujas SET default_pujari_id = NULL
+           WHERE default_pujari_id IN (SELECT id FROM pujaris WHERE temple_id = $1)`, [id]);
+      await client.query(`DELETE FROM pujaris WHERE temple_id = $1`, [id]);
+    }
+
+    // Pujas/chadhavas: hard-delete if it doesn't FK-violate. If any still have
+    // events (i.e. real booking history), the next DELETE raises 23503 and the
+    // tx rolls back — the admin gets a clear message that booking history exists.
+    if (pujaCount.rows[0].n > 0) {
+      await client.query(`DELETE FROM pujas WHERE temple_id = $1`, [id]);
+    }
+    if (chadhavaCount.rows[0].n > 0) {
+      await client.query(`DELETE FROM chadhavas WHERE temple_id = $1`, [id]);
+    }
+
+    await client.query(`DELETE FROM temple_deities WHERE temple_id = $1`, [id]);
+    const result = await client.query('DELETE FROM temples WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ success: false, message: 'Temple not found' });
+      return;
+    }
+
+    await client.query('COMMIT');
+    const cleanedBits: string[] = [];
+    if (pujariCount.rows[0].n > 0)  cleanedBits.push(`${pujariCount.rows[0].n} pujari(s)`);
+    if (pujaCount.rows[0].n > 0)    cleanedBits.push(`${pujaCount.rows[0].n} puja(s)`);
+    if (chadhavaCount.rows[0].n > 0) cleanedBits.push(`${chadhavaCount.rows[0].n} chadhava(s)`);
+    res.json({
+      success: true,
+      message: cleanedBits.length > 0
+        ? `Temple deleted (force-cleaned ${cleanedBits.join(', ')})`
+        : 'Temple deleted',
+    });
+  } catch (err: unknown) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    // Translate FK violations during the cascade into a specific message —
+    // typically means an archived puja/chadhava still has events with bookings.
+    const code = (err as { code?: string }).code;
+    if (code === '23503') {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot force-delete temple — archived puja(s) or chadhava(s) still have booking history (events/bookings). Booking history must be preserved; this requires DB-level cleanup.',
+        canForce: false,
+      });
+      return;
+    }
+    next(err as Error);
+  } finally {
+    client.release();
+  }
 });

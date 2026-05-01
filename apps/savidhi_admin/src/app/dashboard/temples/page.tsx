@@ -93,13 +93,31 @@ export default function TemplesPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this temple?')) return;
+    const attempt = async (force: boolean) => templeService.delete(id, force ? { force: true } : undefined);
     try {
-      const res = await templeService.delete(id);
+      const res = await attempt(false);
       alert(res.data?.message ?? 'Temple deleted');
       await loadData();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to delete temple';
-      alert(msg);
+      const data = err?.response?.data;
+      // Backend signals "only archived dependents are blocking" with canForce=true.
+      // Surface a second, scarier confirm; if user accepts, retry with ?force=true.
+      if (data?.canForce) {
+        const proceed = confirm(
+          `${data.message}\n\nForce-delete will hard-clean the archived records linked to this temple. This cannot be undone. Proceed?`,
+        );
+        if (!proceed) return;
+        try {
+          const res2 = await attempt(true);
+          alert(res2.data?.message ?? 'Temple deleted (force)');
+          await loadData();
+        } catch (err2: any) {
+          alert(err2?.response?.data?.message || err2?.message || 'Force delete failed');
+          console.error('Force delete failed', err2);
+        }
+        return;
+      }
+      alert(data?.message || err?.message || 'Failed to delete temple');
       console.error('Failed to delete temple', err);
     }
   };

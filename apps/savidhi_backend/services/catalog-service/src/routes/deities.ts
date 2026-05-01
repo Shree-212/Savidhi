@@ -51,30 +51,55 @@ deitiesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
 });
 
 deitiesRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  const force = req.query.force === 'true';
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    // Count ALL pujas (active + soft-deleted) that point at this deity — both
-    // hold a live FK and would 500 the hard-delete with Postgres code 23503.
-    const pujaUse = await pool.query(
+    const pujaUse = await client.query(
       `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active
          FROM pujas WHERE deity_id = $1`,
       [id],
     );
-    if (pujaUse.rows[0].n > 0) {
-      const { n, active } = pujaUse.rows[0];
-      const inactive = n - active;
-      const bits: string[] = [];
-      if (active > 0)   bits.push(`${active} active`);
-      if (inactive > 0) bits.push(`${inactive} archived`);
+    const { n, active } = pujaUse.rows[0];
+
+    if (active > 0) {
       res.status(409).json({
         success: false,
-        message: `Cannot delete deity — referenced by ${n} puja(s) (${bits.join(', ')}). Remove or reassign these first.`,
+        message: `Cannot delete deity — referenced by ${active} active puja(s). Disable or reassign these first.`,
+        canForce: false,
       });
       return;
     }
-    await pool.query('DELETE FROM temple_deities WHERE deity_id = $1', [id]);
-    const result = await pool.query('DELETE FROM deities WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Deity not found' }); return; }
-    res.json({ success: true, message: 'Deity deleted' });
-  } catch (err) { next(err); }
+    if (!force && n > 0) {
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete deity — referenced by ${n} archived puja(s). Pass force=true to null these references and proceed.`,
+        canForce: true,
+      });
+      return;
+    }
+
+    await client.query('BEGIN');
+    // pujas.deity_id is nullable — preserve the (archived) puja and just clear the link.
+    if (n > 0) {
+      await client.query(`UPDATE pujas SET deity_id = NULL WHERE deity_id = $1`, [id]);
+    }
+    await client.query('DELETE FROM temple_deities WHERE deity_id = $1', [id]);
+    const result = await client.query('DELETE FROM deities WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ success: false, message: 'Deity not found' });
+      return;
+    }
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: n > 0 ? `Deity deleted (cleared link from ${n} archived puja(s))` : 'Deity deleted',
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    next(err);
+  } finally {
+    client.release();
+  }
 });

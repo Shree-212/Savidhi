@@ -70,13 +70,29 @@ export default function DeitiesPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this deity?')) return;
+    const attempt = async (force: boolean) => deityService.delete(id, force ? { force: true } : undefined);
     try {
-      const res = await deityService.delete(id);
+      const res = await attempt(false);
       alert(res.data?.message ?? 'Deity deleted');
       await loadData();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to delete deity';
-      alert(msg);
+      const data = err?.response?.data;
+      if (data?.canForce) {
+        const proceed = confirm(
+          `${data.message}\n\nForce-delete will null the deity link on archived pujas. This cannot be undone. Proceed?`,
+        );
+        if (!proceed) return;
+        try {
+          const res2 = await attempt(true);
+          alert(res2.data?.message ?? 'Deity deleted (force)');
+          await loadData();
+        } catch (err2: any) {
+          alert(err2?.response?.data?.message || err2?.message || 'Force delete failed');
+          console.error('Force delete failed', err2);
+        }
+        return;
+      }
+      alert(data?.message || err?.message || 'Failed to delete deity');
       console.error('Failed to delete deity', err);
     }
   };

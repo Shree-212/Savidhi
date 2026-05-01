@@ -73,13 +73,29 @@ export default function HampersPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this hamper?')) return;
+    const attempt = async (force: boolean) => hamperService.delete(id, force ? { force: true } : undefined);
     try {
-      const res = await hamperService.delete(id);
+      const res = await attempt(false);
       alert(res.data?.message ?? 'Hamper deleted');
       await loadData();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to delete hamper';
-      alert(msg);
+      const data = err?.response?.data;
+      if (data?.canForce) {
+        const proceed = confirm(
+          `${data.message}\n\nForce-delete will null the hamper link on archived pujas/chadhavas. This cannot be undone. Proceed?`,
+        );
+        if (!proceed) return;
+        try {
+          const res2 = await attempt(true);
+          alert(res2.data?.message ?? 'Hamper deleted (force)');
+          await loadData();
+        } catch (err2: any) {
+          alert(err2?.response?.data?.message || err2?.message || 'Force delete failed');
+          console.error('Force delete failed', err2);
+        }
+        return;
+      }
+      alert(data?.message || err?.message || 'Failed to delete hamper');
       console.error('Failed to delete hamper', err);
     }
   };

@@ -81,42 +81,78 @@ hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
 });
 
 hampersRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+  const force = req.query.force === 'true';
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    // Any puja/chadhava (active OR soft-deleted, send_hamper or not) holding
-    // hamper_id holds the FK; ignoring them caused the hard-delete to surface
-    // a Postgres FK violation as a 500.
     const [pujaUse, chadhavaUse] = await Promise.all([
-      pool.query(
+      client.query(
         `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active
            FROM pujas WHERE hamper_id = $1`,
         [id],
       ),
-      pool.query(
+      client.query(
         `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_active) ::int AS active
            FROM chadhavas WHERE hamper_id = $1`,
         [id],
       ),
     ]);
-    const blockers: string[] = [];
-    const fmt = (label: string, row: { n: number; active: number }) => {
-      const inactive = row.n - row.active;
-      const bits: string[] = [];
-      if (row.active > 0)  bits.push(`${row.active} active`);
-      if (inactive > 0)    bits.push(`${inactive} archived`);
-      blockers.push(`${row.n} ${label} (${bits.join(', ')})`);
-    };
-    if (pujaUse.rows[0].n     > 0) fmt('puja(s)',     pujaUse.rows[0]);
-    if (chadhavaUse.rows[0].n > 0) fmt('chadhava(s)', chadhavaUse.rows[0]);
-    if (blockers.length > 0) {
+
+    const activeBlockers: string[] = [];
+    if (pujaUse.rows[0].active     > 0) activeBlockers.push(`${pujaUse.rows[0].active} active puja(s)`);
+    if (chadhavaUse.rows[0].active > 0) activeBlockers.push(`${chadhavaUse.rows[0].active} active chadhava(s)`);
+    if (activeBlockers.length > 0) {
       res.status(409).json({
         success: false,
-        message: `Cannot delete hamper — still referenced by ${blockers.join(', ')}. Remove or reassign these first.`,
+        message: `Cannot delete hamper — still referenced by ${activeBlockers.join(', ')}. Disable or reassign these first.`,
+        canForce: false,
       });
       return;
     }
-    const result = await pool.query('DELETE FROM hampers WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Hamper not found' }); return; }
-    res.json({ success: true, message: 'Hamper deleted' });
-  } catch (err) { next(err); }
+
+    const archivedPujas     = pujaUse.rows[0].n;
+    const archivedChadhavas = chadhavaUse.rows[0].n;
+    if (!force && archivedPujas + archivedChadhavas > 0) {
+      const archivedBlockers: string[] = [];
+      if (archivedPujas     > 0) archivedBlockers.push(`${archivedPujas} archived puja(s)`);
+      if (archivedChadhavas > 0) archivedBlockers.push(`${archivedChadhavas} archived chadhava(s)`);
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete hamper — referenced by ${archivedBlockers.join(', ')}. Pass force=true to null these references and proceed.`,
+        canForce: true,
+      });
+      return;
+    }
+
+    await client.query('BEGIN');
+    // hamper_id and send_hamper are both nullable/optional — null them on archived rows
+    // to preserve the puja/chadhava history while breaking the FK link.
+    if (archivedPujas > 0) {
+      await client.query(`UPDATE pujas SET hamper_id = NULL, send_hamper = false WHERE hamper_id = $1`, [id]);
+    }
+    if (archivedChadhavas > 0) {
+      await client.query(`UPDATE chadhavas SET hamper_id = NULL, send_hamper = false WHERE hamper_id = $1`, [id]);
+    }
+    const result = await client.query('DELETE FROM hampers WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ success: false, message: 'Hamper not found' });
+      return;
+    }
+    await client.query('COMMIT');
+    const cleanedBits: string[] = [];
+    if (archivedPujas > 0)     cleanedBits.push(`${archivedPujas} archived puja(s)`);
+    if (archivedChadhavas > 0) cleanedBits.push(`${archivedChadhavas} archived chadhava(s)`);
+    res.json({
+      success: true,
+      message: cleanedBits.length > 0
+        ? `Hamper deleted (cleared link from ${cleanedBits.join(', ')})`
+        : 'Hamper deleted',
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    next(err);
+  } finally {
+    client.release();
+  }
 });

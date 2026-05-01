@@ -24,7 +24,8 @@ export const templeService = {
   create: (data: any) => apiClient.post('/catalog/temples', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/temples/${id}`, data),
-  delete: (id: string) => apiClient.delete(`/catalog/temples/${id}`),
+  delete: (id: string, opts?: { force?: boolean }) =>
+    apiClient.delete(`/catalog/temples/${id}`, { params: opts?.force ? { force: 'true' } : undefined }),
 };
 
 export const deityService = {
@@ -34,7 +35,8 @@ export const deityService = {
   create: (data: any) => apiClient.post('/catalog/deities', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/deities/${id}`, data),
-  delete: (id: string) => apiClient.delete(`/catalog/deities/${id}`),
+  delete: (id: string, opts?: { force?: boolean }) =>
+    apiClient.delete(`/catalog/deities/${id}`, { params: opts?.force ? { force: 'true' } : undefined }),
 };
 
 export const pujaService = {
@@ -92,7 +94,8 @@ export const hamperService = {
   create: (data: any) => apiClient.post('/catalog/hampers', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/hampers/${id}`, data),
-  delete: (id: string) => apiClient.delete(`/catalog/hampers/${id}`),
+  delete: (id: string, opts?: { force?: boolean }) =>
+    apiClient.delete(`/catalog/hampers/${id}`, { params: opts?.force ? { force: 'true' } : undefined }),
 };
 
 /* ══════════════════════════════════════════════════════════
