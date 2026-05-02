@@ -3,7 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, MapPin, Minus, Plus, Loader2, Clock, Repeat } from 'lucide-react';
+import { ArrowLeft, MapPin, Minus, Plus, Loader2, Clock, Repeat, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
@@ -12,6 +12,7 @@ import { mapChadhava } from '@/lib/mappers';
 import type { Chadhava } from '@/data/models';
 import { normaliseMediaUrl } from '@/lib/utils';
 import { useT, useLocale } from '@/lib/i18n';
+import { getRepeatLabel } from '@/lib/repeatLabel';
 
 export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -119,18 +120,27 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                   <span className="line-clamp-2">{chadhava.templeName}{chadhava.templeLocation ? `, ${chadhava.templeLocation}` : ''}</span>
                 </span>
               )}
+              {chadhava.deityName && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <span>{chadhava.deityName}</span>
+                </span>
+              )}
               {chadhava.durationMinutes ? (
                 <span className="inline-flex items-center gap-1.5">
                   <Clock className="w-4 h-4 text-primary-500 flex-shrink-0" />
                   <span>{chadhava.durationMinutes} min</span>
                 </span>
               ) : null}
-              {chadhava.eventRepeats && chadhava.repeatsOn && chadhava.repeatsOn.length > 0 ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
-                  <span>{t('puja.detail.repeats', { days: chadhava.repeatsOn.join(', ') })}</span>
-                </span>
-              ) : null}
+              {(() => {
+                const label = getRepeatLabel(t, chadhava);
+                return label ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                    <span>{label}</span>
+                  </span>
+                ) : null;
+              })()}
             </div>
 
             {chadhava.description ? (

@@ -1,14 +1,20 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
-import { MapPin, Clock } from 'lucide-react';
+import { MapPin, Clock, Sparkles } from 'lucide-react';
 import type { Puja } from '@/data/models';
 import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
+import { useT } from '@/lib/i18n';
+import { getRepeatLabel } from '@/lib/repeatLabel';
 
 interface PujaCardProps {
   puja: Puja;
 }
 
 export function PujaCard({ puja }: PujaCardProps) {
+  const t = useT();
+  const repeatLabel = getRepeatLabel(t, puja);
   return (
     <Link href={`/puja/${puja.slug || puja.id}`} className="group block">
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
@@ -28,9 +34,9 @@ export function PujaCard({ puja }: PujaCardProps) {
               {puja.countdown}
             </p>
           </div>
-          {puja.isWeekly && (
-            <span className="absolute top-3 left-3 bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              WEEKLY
+          {repeatLabel && (
+            <span className="absolute top-3 left-3 bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+              {repeatLabel}
             </span>
           )}
         </div>
@@ -42,6 +48,12 @@ export function PujaCard({ puja }: PujaCardProps) {
             <MapPin className="w-3 h-3" />
             {puja.templeName}, {puja.templeLocation}
           </p>
+          {puja.deityName && (
+            <p className="text-xs text-text-muted flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              {puja.deityName}
+            </p>
+          )}
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs text-text-secondary">{puja.date}</span>
             <span className="text-sm font-bold text-primary-500">

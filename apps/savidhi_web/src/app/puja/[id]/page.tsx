@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Loader2, Clock, Repeat } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Loader2, Clock, Repeat, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
@@ -11,6 +11,7 @@ import { pujaService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
 import type { Puja } from '@/data/models';
 import { useT, useLocale } from '@/lib/i18n';
+import { getRepeatLabel } from '@/lib/repeatLabel';
 
 export default function PujaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -109,6 +110,12 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
                   <span>{puja.templeName}{puja.templeLocation ? `, ${puja.templeLocation}` : ''}</span>
                 </span>
               )}
+              {puja.deityName && (
+                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
+                  <Sparkles className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <span>{puja.deityName}</span>
+                </span>
+              )}
               {puja.date && (
                 <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
                   <Calendar className="w-4 h-4 text-primary-500 flex-shrink-0" />
@@ -121,12 +128,15 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
                   <span>{t('puja.detail.duration', { n: puja.durationMinutes })}</span>
                 </span>
               ) : null}
-              {puja.eventRepeats && puja.repeatsOn && puja.repeatsOn.length > 0 ? (
-                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
-                  <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
-                  <span>{t('puja.detail.repeats', { days: puja.repeatsOn.join(', ') })}</span>
-                </span>
-              ) : null}
+              {(() => {
+                const label = getRepeatLabel(t, puja);
+                return label ? (
+                  <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
+                    <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                    <span>{label}</span>
+                  </span>
+                ) : null;
+              })()}
               <span className="inline-flex lg:hidden items-center bg-primary-100 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
                 {puja.countdown}
               </span>

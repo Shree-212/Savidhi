@@ -25,6 +25,7 @@ export interface Puja {
   isWeekly?: boolean;
   isMonthly?: boolean;
   templeId: string;
+  deityName?: string;
   // Repeat + booking metadata (used for "Repeats every Mon, Fri" labels and for
   // gating the booking-mode UI: ONE_TIME / SUBSCRIPTION / BOTH).
   eventRepeats?: boolean;
@@ -62,6 +63,7 @@ export interface Chadhava {
   parcelContents: string[];
   offerings: ChadhavaOffering[];
   templeId: string;
+  deityName?: string;
   durationMinutes?: number;
   isWeekly?: boolean;
   startingPrice: number;
