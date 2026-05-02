@@ -139,6 +139,9 @@ export interface PujaBooking {
   pujaOn: string;
   status: PujaBookingStatus;
   isWeekly?: boolean;
+  eventRepeats?: boolean;
+  repeatDuration?: RepeatDuration;
+  repeatsOn?: string[];
   bookingId: string;
 }
 

@@ -39,6 +39,9 @@ pujaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response, nex
     const { rows } = await pool.query(
       `SELECT pb.*,
               p.name   AS puja_name,
+              p.event_repeats,
+              p.repeat_duration,
+              p.repeats_on,
               t.name   AS temple_name,
               pe.start_time AS event_start_time,
               d.name   AS devotee_name,
@@ -67,7 +70,11 @@ pujaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Response, 
 
     const bookingResult = await pool.query(
       `SELECT pb.*,
-              p.name AS puja_name, t.name AS temple_name,
+              p.name AS puja_name,
+              p.event_repeats,
+              p.repeat_duration,
+              p.repeats_on,
+              t.name AS temple_name,
               pe.start_time AS event_start_time,
               pe.stage AS event_stage,
               pe.live_link AS event_live_link,

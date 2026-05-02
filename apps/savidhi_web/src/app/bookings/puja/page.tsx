@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingCard } from '@/components/shared/BookingCard';
 import { pujaBookingService } from '@/lib/services';
-import type { PujaBooking } from '@/data/models';
+import type { PujaBooking, RepeatDuration } from '@/data/models';
 
 const FILTERS = ['All', 'Ongoing', 'Upcoming', 'Completed', 'Cancelled'];
 
@@ -18,6 +18,9 @@ function mapPujaBooking(b: any): PujaBooking {
     bookedOn: b.created_at ? new Date(b.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
     pujaOn: b.event_start_time ? new Date(b.event_start_time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
     status: mapStatus(b.status),
+    eventRepeats: !!b.event_repeats,
+    repeatDuration: (b.repeat_duration ?? undefined) as RepeatDuration | undefined,
+    repeatsOn: Array.isArray(b.repeats_on) ? b.repeats_on : [],
   };
 }
 

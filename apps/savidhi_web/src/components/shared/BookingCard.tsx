@@ -1,13 +1,19 @@
+'use client';
+
 import Link from 'next/link';
 import { Calendar, MapPin } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { PujaBooking } from '@/data/models';
+import { useT } from '@/lib/i18n';
+import { getRepeatLabel } from '@/lib/repeatLabel';
 
 interface BookingCardProps {
   booking: PujaBooking;
 }
 
 export function BookingCard({ booking }: BookingCardProps) {
+  const t = useT();
+  const repeatLabel = getRepeatLabel(t, booking);
   return (
     <Link href={`/bookings/puja/${booking.bookingId}`} className="block">
       <div className="card hover:shadow-md transition-shadow space-y-3">
@@ -29,9 +35,9 @@ export function BookingCard({ booking }: BookingCardProps) {
         </div>
         <div className="flex items-center justify-between text-xs">
           <span className="text-text-muted">Puja On: {booking.pujaOn}</span>
-          {booking.isWeekly && (
+          {repeatLabel && (
             <span className="bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full text-[10px] font-bold">
-              WEEKLY
+              {repeatLabel}
             </span>
           )}
         </div>
