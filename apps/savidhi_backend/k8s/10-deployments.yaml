@@ -165,7 +165,7 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: catalog
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/catalog-service:v11
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/catalog-service:v12
           ports: [{ containerPort: 4003 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
