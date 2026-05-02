@@ -282,6 +282,7 @@ export default function ChadhavasPage() {
     { key: 'id', label: 'ID', render: (r: any) => (r.id ?? '').slice(0, 8) },
     { key: 'name', label: 'Chadhava Name' },
     { key: 'temple_name', label: 'Temple' },
+    { key: 'deity_name', label: 'Deity', render: (r: any) => r.deity_name ?? '—' },
     { key: 'schedule_day', label: 'Day' },
     { key: 'schedule_time', label: 'Time' },
     { key: 'max_bookings_per_event', label: 'Max' },

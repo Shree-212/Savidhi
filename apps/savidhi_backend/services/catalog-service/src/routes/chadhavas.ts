@@ -175,9 +175,11 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
     const result = await pool.query(
       `SELECT c.*, t.name AS temple_name, t.name_hi AS temple_name_hi,
               t.address AS temple_address, t.address_hi AS temple_address_hi,
+              d.name AS deity_name, d.name_hi AS deity_name_hi,
               (SELECT MIN(co.price) FROM chadhava_offerings co WHERE co.chadhava_id = c.id) AS min_price
        FROM chadhavas c
        LEFT JOIN temples t ON c.temple_id = t.id
+       LEFT JOIN deities d ON c.deity_id = d.id
        ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -186,7 +188,7 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
     const locale = parseLocale(req.query.locale);
     res.json({
       success: true,
-      data: applyLocaleArray(result.rows, locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address']),
+      data: applyLocaleArray(result.rows, locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address', 'deity_name']),
       total, page, limit,
       message: 'Chadhavas fetched',
     });
@@ -200,8 +202,11 @@ chadhavasRouter.get('/:identifier', async (req: Request, res: Response, next: Ne
     const where = isUuid(identifier) ? 'c.id = $1' : 'c.slug = $1';
     const chadhava = await pool.query(
       `SELECT c.*, t.name AS temple_name, t.name_hi AS temple_name_hi,
-              t.address AS temple_address, t.address_hi AS temple_address_hi
-       FROM chadhavas c LEFT JOIN temples t ON c.temple_id = t.id
+              t.address AS temple_address, t.address_hi AS temple_address_hi,
+              d.name AS deity_name, d.name_hi AS deity_name_hi
+       FROM chadhavas c
+       LEFT JOIN temples t ON c.temple_id = t.id
+       LEFT JOIN deities d ON c.deity_id = d.id
        WHERE ${where} AND c.is_active = true`,
       [identifier],
     );
@@ -213,7 +218,7 @@ chadhavasRouter.get('/:identifier', async (req: Request, res: Response, next: Ne
     );
 
     const locale = parseLocale(req.query.locale);
-    const localizedChadhava = applyLocale(chadhava.rows[0], locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address']);
+    const localizedChadhava = applyLocale(chadhava.rows[0], locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address', 'deity_name']);
     const localizedOfferings = applyLocaleArray(offerings.rows, locale, OFFERING_LOCALE_FIELDS);
 
     res.json({
