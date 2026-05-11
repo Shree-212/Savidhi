@@ -81,6 +81,8 @@ export default function AppointmentsPage() {
   const [selected,      setSelected]      = useState<(Appointment & { bookedAt: string; devoteeName: string; devoteeGotra: string }) | null>(null);
   const [showSetupMeet, setShowSetupMeet] = useState(false);
   const [meetLinkInput, setMeetLinkInput] = useState('');
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleAt, setRescheduleAt] = useState('');
 
   const [appointments,    setAppointments]    = useState<(Appointment & { bookedAt: string; devoteeName: string; devoteeGotra: string })[]>([]);
   const [timelineEvents,  setTimelineEvents]  = useState<TimelineEvent[]>([]);
@@ -255,6 +257,13 @@ export default function AppointmentsPage() {
               {selected.status !== 'CANCELLED' && selected.status !== 'COMPLETED' && (
                 <OutlineButton className="flex-1" onClick={() => handleCancel(selected.id)}>Cancel Booking</OutlineButton>
               )}
+              {selected.status !== 'CANCELLED' && selected.status !== 'COMPLETED' && (
+                <OutlineButton className="flex-1" onClick={() => {
+                  const sa = (selected as any).scheduled_at ?? (selected as any).scheduledAt;
+                  setRescheduleAt(sa ? new Date(sa).toISOString().slice(0, 16) : '');
+                  setShowReschedule(true);
+                }}>Reschedule</OutlineButton>
+              )}
               {selected.status === 'LINK_YET_TO_BE_GENERATED' && (
                 <PrimaryButton className="flex-1" onClick={() => setShowSetupMeet(true)}>Setup Meet</PrimaryButton>
               )}
@@ -267,6 +276,38 @@ export default function AppointmentsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ── Reschedule Modal ── */}
+      <Modal
+        open={showReschedule}
+        onClose={() => setShowReschedule(false)}
+        title="Reschedule Appointment"
+      >
+        <div className="space-y-3">
+          <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">New Date & Time</label>
+          <input
+            type="datetime-local"
+            value={rescheduleAt}
+            onChange={(e) => setRescheduleAt(e.target.value)}
+            className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs"
+          />
+          <div className="flex gap-3 mt-3">
+            <OutlineButton className="flex-1" onClick={() => setShowReschedule(false)}>Cancel</OutlineButton>
+            <PrimaryButton className="flex-1" onClick={async () => {
+              if (!selected || !rescheduleAt) return;
+              try {
+                await appointmentService.update(selected.id, { scheduled_at: new Date(rescheduleAt).toISOString() });
+                setShowReschedule(false);
+                await fetchAppointments();
+                const res = await appointmentService.getById(selected.id);
+                setSelected(mapAppointment(res.data?.data ?? res.data));
+              } catch (err: any) {
+                alert(err?.response?.data?.message || 'Reschedule failed');
+              }
+            }}>Save</PrimaryButton>
+          </div>
+        </div>
       </Modal>
 
       {/* ── Setup Meet Modal ── */}

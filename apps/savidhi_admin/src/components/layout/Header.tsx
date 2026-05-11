@@ -56,6 +56,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Insights',
     items: [
       { href: '/dashboard/reports', label: 'Reports' },
+      { href: '/dashboard/notifications', label: 'Notifications' },
     ],
   },
 ];

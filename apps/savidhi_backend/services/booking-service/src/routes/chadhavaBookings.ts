@@ -65,6 +65,11 @@ chadhavaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Respon
       `SELECT cb.*,
               c.name AS chadhava_name, t.name AS temple_name,
               ce.start_time AS event_start_time,
+              ce.stage AS event_stage,
+              ce.status AS event_status,
+              ce.live_link AS event_live_link,
+              ce.short_video_url AS event_short_video_url,
+              ce.sankalp_video_url AS event_sankalp_video_url,
               d.name AS devotee_name, d.phone AS devotee_phone
        FROM chadhava_bookings cb
        JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id

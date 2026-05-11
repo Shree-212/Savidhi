@@ -211,3 +211,37 @@ appointmentsRouter.patch('/:id/cancel', requireAuth, async (req: Request, res: R
     res.json({ success: true, data: rows[0] });
   } catch (err) { next(err); }
 });
+
+/** PATCH /:id – reschedule / reassign an appointment (admin only).
+ *  Allowed fields: scheduled_at, astrologer_id, duration_minutes. */
+appointmentsRouter.patch('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['scheduled_at', 'astrologer_id', 'duration_minutes'];
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) {
+        sets.push(`${field} = $${idx++}`);
+        params.push(req.body[field]);
+      }
+    }
+    if (sets.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid fields to update' });
+    }
+
+    sets.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const { rows } = await pool.query(
+      `UPDATE appointments SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+      params,
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { next(err); }
+});

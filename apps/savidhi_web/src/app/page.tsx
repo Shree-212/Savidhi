@@ -44,12 +44,6 @@ const SERVICES = [
     href: '/chadhava',
   },
   {
-    icon: Users,
-    title: 'Astrology Appointments',
-    description: 'Book Astro Nifebebf jebebvfjvv Ebe Bet Kasre Ashi Jon Ebe',
-    href: '/consult',
-  },
-  {
     icon: Landmark,
     title: 'Discover Temples',
     description: 'Discover Famous Temples Across India Which Have Mentioned In A History Like Which Have The...',

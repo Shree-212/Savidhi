@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { templeService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -23,6 +24,7 @@ interface Temple {
 }
 
 export default function TemplesPage() {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [temples, setTemples] = useState<Temple[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,8 +128,30 @@ export default function TemplesPage() {
     { key: 'id', label: 'ID', render: (r: Temple) => r.id.slice(0, 8) },
     { key: 'name', label: 'Temple Name' },
     { key: 'address', label: 'Address' },
-    { key: 'pujaris_count', label: 'Pujaris' },
-    { key: 'pujas_count', label: 'Pujas' },
+    {
+      key: 'pujaris_count', label: 'Pujaris',
+      render: (r: Temple) => (
+        <button
+          type="button"
+          onClick={() => router.push(`/dashboard/pujaris?temple_id=${r.id}`)}
+          className="text-xs px-2 py-0.5 border border-border rounded hover:bg-accent"
+        >
+          {r.pujaris_count ?? 0}
+        </button>
+      ),
+    },
+    {
+      key: 'pujas_count', label: 'Pujas',
+      render: (r: Temple) => (
+        <button
+          type="button"
+          onClick={() => router.push(`/dashboard/pujas?temple_id=${r.id}`)}
+          className="text-xs px-2 py-0.5 border border-border rounded hover:bg-accent"
+        >
+          {r.pujas_count ?? 0}
+        </button>
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: Temple) => (
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => { setIsNew(false); setEditing(r); }} title="Quick View (modal)" />

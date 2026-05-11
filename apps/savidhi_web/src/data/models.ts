@@ -14,6 +14,7 @@ export interface Puja {
   time: string;
   countdown: string;
   description?: string;
+  shlok?: string;
   benefits: string[];
   ritualsIncluded: string[];
   itemsUsed?: string[];
@@ -55,6 +56,7 @@ export interface Chadhava {
   time: string;
   countdown: string;
   description?: string;
+  shlok?: string;
   benefits: string[];
   ritualsIncluded: string[];
   itemsUsed?: string[];

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Phone, Mail, MapPin } from 'lucide-react';
+import { Phone, Mail } from 'lucide-react';
 import svlogo from '@/assets/svlogo.png';
 import { useT } from '@/lib/i18n';
 
@@ -10,7 +10,6 @@ const QUICK_KEYS = [
   { key: 'home.howToBook.bookPuja', href: '/puja' },
   { key: 'nav.chadhava', href: '/chadhava' },
   { key: 'nav.temples', href: '/temples' },
-  { key: 'nav.consult', href: '/consult' },
   { key: 'nav.panchang', href: '/panchang' },
   { key: 'profile.myBookings', href: '/bookings' },
 ];
@@ -26,49 +25,43 @@ export function Footer() {
   const t = useT();
   return (
     <footer className="bg-text-primary text-white">
-      <div className="section-container py-10 sm:py-12">
-        {/* Top: brand block */}
-        <div className="space-y-4 max-w-md mb-8 sm:mb-10">
-          <Image
-            src={svlogo}
-            alt="सविधि"
-            width={40}
-            height={40}
-            className="h-10 w-auto brightness-0 invert"
-          />
-          <p className="text-sm text-gray-400 leading-relaxed">
-            {t('footer.tagline')}
-          </p>
-          <div className="flex gap-3 flex-wrap">
-            <div className="h-10 px-3 bg-gray-800 rounded-lg flex items-center gap-2 text-xs">
-              <span>▶</span>
-              <div>
-                <div className="text-[9px] text-gray-400 leading-none">GET IT ON</div>
-                <div className="font-semibold leading-tight">Google Play</div>
+      <div className="section-container py-6 sm:py-8">
+        {/* Main row: brand + 3 link columns */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-6">
+          {/* Brand */}
+          <div className="col-span-2 sm:col-span-1 space-y-3">
+            <Image
+              src={svlogo}
+              alt="सविधि"
+              width={32}
+              height={32}
+              className="h-8 w-auto brightness-0 invert"
+            />
+            <p className="text-xs text-gray-400 leading-relaxed">
+              {t('footer.tagline')}
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              <div className="h-8 px-2.5 bg-gray-800 rounded-md flex items-center gap-1.5 text-[11px]">
+                <span>▶</span>
+                <span className="font-semibold leading-tight">Google Play</span>
               </div>
-            </div>
-            <div className="h-10 px-3 bg-gray-800 rounded-lg flex items-center gap-2 text-xs">
-              <span></span>
-              <div>
-                <div className="text-[9px] text-gray-400 leading-none">Download on the</div>
-                <div className="font-semibold leading-tight">App Store</div>
+              <div className="h-8 px-2.5 bg-gray-800 rounded-md flex items-center gap-1.5 text-[11px]">
+                <span className="font-semibold leading-tight">App Store</span>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Mid: link columns + contact */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-8 pb-8 border-b border-gray-800">
+          {/* Product */}
           <div>
-            <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4 text-gray-200">
+            <h3 className="font-semibold text-xs uppercase tracking-wider mb-2 text-gray-200">
               {t('footer.product.title')}
             </h3>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {QUICK_KEYS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-sm text-gray-400 hover:text-primary-300 transition-colors"
+                    className="text-xs text-gray-400 hover:text-primary-300 transition-colors"
                   >
                     {t(link.key)}
                   </Link>
@@ -77,16 +70,17 @@ export function Footer() {
             </ul>
           </div>
 
+          {/* Legal */}
           <div>
-            <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4 text-gray-200">
+            <h3 className="font-semibold text-xs uppercase tracking-wider mb-2 text-gray-200">
               {t('footer.legal.title')}
             </h3>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {POLICY_KEYS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-sm text-gray-400 hover:text-primary-300 transition-colors"
+                    className="text-xs text-gray-400 hover:text-primary-300 transition-colors"
                   >
                     {t(link.key)}
                   </Link>
@@ -95,33 +89,29 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Company & Contact */}
-          <div className="col-span-2 md:col-span-1">
-            <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4 text-gray-200">
+          {/* Contact (no address) */}
+          <div>
+            <h3 className="font-semibold text-xs uppercase tracking-wider mb-2 text-gray-200">
               {t('footer.contact.title')}
             </h3>
-            <ul className="space-y-3 text-sm text-gray-400">
-              <li className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
-                <p className="leading-relaxed">
-                  <span className="text-gray-200 font-semibold">VAIDIK VIKHYAT ASTRO PRIVATE LIMITED</span>
-                  <br />
-                  {t('footer.address')}
-                </p>
+            <ul className="space-y-1.5 text-xs text-gray-400">
+              <li className="text-gray-200 font-semibold text-[11px] tracking-wide">
+                VAIDIK VIKHYAT ASTRO PVT LTD
               </li>
-              <li className="flex items-start gap-2.5">
-                <Phone className="w-4 h-4 mt-0.5 shrink-0" />
-                <div className="leading-relaxed">
-                  <a href="tel:+919455567776" className="hover:text-primary-300 transition block">
-                    +91 9455567776
-                  </a>
-                  <a href="tel:+918234567890" className="hover:text-primary-300 transition block">
-                    +91 8234567890
-                  </a>
-                </div>
+              <li className="flex items-center gap-1.5">
+                <Phone className="w-3 h-3 shrink-0" />
+                <a href="tel:+919455567776" className="hover:text-primary-300 transition">
+                  +91 9455567776
+                </a>
               </li>
-              <li className="flex items-start gap-2.5">
-                <Mail className="w-4 h-4 mt-0.5 shrink-0" />
+              <li className="flex items-center gap-1.5">
+                <Phone className="w-3 h-3 shrink-0" />
+                <a href="tel:+918234567890" className="hover:text-primary-300 transition">
+                  +91 8234567890
+                </a>
+              </li>
+              <li className="flex items-center gap-1.5">
+                <Mail className="w-3 h-3 shrink-0" />
                 <a href="mailto:support@savidhi.com" className="hover:text-primary-300 transition">
                   support@savidhi.com
                 </a>
@@ -131,9 +121,11 @@ export function Footer() {
         </div>
 
         {/* Bottom: copyright */}
-        <p className="text-xs text-gray-500 text-center pt-6 leading-relaxed">
-          {t('footer.copyright', { year: new Date().getFullYear() })}
-        </p>
+        <div className="mt-6 pt-4 border-t border-gray-800">
+          <p className="text-[11px] text-gray-500 text-center">
+            {t('footer.copyright', { year: new Date().getFullYear() })}
+          </p>
+        </div>
       </div>
     </footer>
   );

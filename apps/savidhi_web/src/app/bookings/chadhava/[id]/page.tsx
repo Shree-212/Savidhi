@@ -38,7 +38,7 @@ interface Step {
 }
 
 function buildSteps(booking: any): Step[] {
-  const si = statusIndex(booking.status ?? 'PENDING');
+  const si = statusIndex(booking.event_stage ?? booking.status ?? 'PENDING');
   return [
     {
       label: 'Booking Confirmed',
@@ -107,8 +107,10 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
   }
 
   const steps = buildSteps(booking);
-  const displayStatus = mapDisplayStatus(booking.status ?? '');
-  const isCancelled = booking.status === 'CANCELLED';
+  const displayStatus = mapDisplayStatus(booking.event_stage ?? booking.status ?? '');
+  const isCancelled = booking.status === 'CANCELLED' || booking.event_status === 'CANCELLED';
+  const shortVideoUrl = booking.event_short_video_url ?? booking.short_video_url;
+  const sankalpVideoUrl = booking.event_sankalp_video_url ?? booking.sankalp_video_url;
 
   const offerings: any[] = booking.offerings ?? [];
   const devotees: any[] = booking.devotees ?? [];
@@ -204,24 +206,24 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
       )}
 
       {/* Videos */}
-      {(booking.short_video_url || booking.sankalp_video_url) && (
+      {(shortVideoUrl || sankalpVideoUrl) && (
         <div className="bg-white border border-orange-100 rounded-xl p-4 mb-5 shadow-sm">
           <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Your Videos</h3>
           <div className="space-y-4">
-            {booking.short_video_url && (
+            {shortVideoUrl && (
               <div>
                 <p className="text-xs font-semibold text-text-primary mb-2">Short Puja Video</p>
                 <VideoPlayer
-                  src={normaliseMediaUrl(booking.short_video_url)}
+                  src={normaliseMediaUrl(shortVideoUrl)}
                   className="relative h-48 sm:h-56 rounded-xl overflow-hidden bg-black ring-1 ring-black/10"
                 />
               </div>
             )}
-            {booking.sankalp_video_url && (
+            {sankalpVideoUrl && (
               <div>
                 <p className="text-xs font-semibold text-text-primary mb-2">Sankalp Video</p>
                 <VideoPlayer
-                  src={normaliseMediaUrl(booking.sankalp_video_url)}
+                  src={normaliseMediaUrl(sankalpVideoUrl)}
                   className="relative h-48 sm:h-56 rounded-xl overflow-hidden bg-black ring-1 ring-black/10"
                 />
               </div>

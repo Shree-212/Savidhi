@@ -49,6 +49,10 @@ export const pujaService = {
   delete: (id: string) => apiClient.delete(`/catalog/pujas/${id}`),
   generateEvents: (id: string, days = 60) =>
     apiClient.post(`/catalog/pujas/${id}/generate-events?days=${days}`),
+  bulkDeleteEvents: (id: string, params: { from: string; dry_run?: boolean }) =>
+    apiClient.delete(`/catalog/pujas/${id}/events`, {
+      params: { from: params.from, dry_run: params.dry_run ? 'true' : 'false' },
+    }),
 };
 
 export const chadhavaService = {
@@ -61,6 +65,10 @@ export const chadhavaService = {
   delete: (id: string) => apiClient.delete(`/catalog/chadhavas/${id}`),
   generateEvents: (id: string, days = 60) =>
     apiClient.post(`/catalog/chadhavas/${id}/generate-events?days=${days}`),
+  bulkDeleteEvents: (id: string, params: { from: string; dry_run?: boolean }) =>
+    apiClient.delete(`/catalog/chadhavas/${id}/events`, {
+      params: { from: params.from, dry_run: params.dry_run ? 'true' : 'false' },
+    }),
 };
 
 export const pujariService = {
@@ -73,6 +81,8 @@ export const pujariService = {
   delete: (id: string) => apiClient.delete(`/catalog/pujaris/${id}`),
   getLedger: (id: string, params?: { page?: number; limit?: number }) =>
     apiClient.get(`/catalog/pujaris/${id}/ledger`, { params }),
+  settleLedger: (id: string, data: { entry_ids: string[]; payment_ref?: string; note?: string }) =>
+    apiClient.post(`/catalog/pujaris/${id}/ledger/settle`, data),
 };
 
 export const astrologerService = {
@@ -85,6 +95,8 @@ export const astrologerService = {
   delete: (id: string) => apiClient.delete(`/catalog/astrologers/${id}`),
   getLedger: (id: string, params?: { page?: number; limit?: number }) =>
     apiClient.get(`/catalog/astrologers/${id}/ledger`, { params }),
+  settleLedger: (id: string, data: { entry_ids: string[]; payment_ref?: string; note?: string }) =>
+    apiClient.post(`/catalog/astrologers/${id}/ledger/settle`, data),
 };
 
 export const hamperService = {
@@ -112,9 +124,17 @@ export const pujaEventService = {
     to_date?: string;
     search?: string;
     view?: string;
+    puja_id?: string;
+    pujari_id?: string;
+    upcoming?: boolean;
   }) => apiClient.get('/bookings/puja-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/puja-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/puja-events', data),
+  update: (id: string, data: { pujari_id?: string | null; start_time?: string; max_bookings?: number }) =>
+    apiClient.patch(`/bookings/puja-events/${id}`, data),
+  delete: (id: string) => apiClient.delete(`/bookings/puja-events/${id}`),
+  cancelAllBookings: (id: string, data: { reason?: string; refund?: boolean }) =>
+    apiClient.post(`/bookings/puja-events/${id}/cancel-all-bookings`, data),
   advanceStage: (
     id: string,
     data: {
@@ -141,9 +161,17 @@ export const chadhavaEventService = {
     status?: string;
     from_date?: string;
     to_date?: string;
+    chadhava_id?: string;
+    pujari_id?: string;
+    upcoming?: boolean;
   }) => apiClient.get('/bookings/chadhava-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/chadhava-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/chadhava-events', data),
+  update: (id: string, data: { pujari_id?: string | null; start_time?: string; max_bookings?: number }) =>
+    apiClient.patch(`/bookings/chadhava-events/${id}`, data),
+  delete: (id: string) => apiClient.delete(`/bookings/chadhava-events/${id}`),
+  cancelAllBookings: (id: string, data: { reason?: string; refund?: boolean }) =>
+    apiClient.post(`/bookings/chadhava-events/${id}/cancel-all-bookings`, data),
   advanceStage: (
     id: string,
     data: {
@@ -181,6 +209,25 @@ export const appointmentService = {
     apiClient.patch(`/bookings/appointments/${id}/complete`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/appointments/${id}/cancel`),
+  update: (id: string, data: { scheduled_at?: string; astrologer_id?: string; duration_minutes?: number }) =>
+    apiClient.patch(`/bookings/appointments/${id}`, data),
+};
+
+/* ══════════════════════════════════════════════════════════
+   Notification Service (admin compose / broadcast)
+   ══════════════════════════════════════════════════════════ */
+
+export const notificationService = {
+  send: (data: {
+    audience: 'ALL' | 'ACTIVE_PUJA_BOOKING' | 'EVENT_DEVOTEES' | 'SPECIFIC';
+    devotee_ids?: string[];
+    puja_event_id?: string;
+    chadhava_event_id?: string;
+    channels: Array<'IN_APP' | 'SMS' | 'WHATSAPP'>;
+    title: string;
+    body: string;
+    deep_link_path?: string;
+  }) => apiClient.post('/users/notifications/admin/send', data),
 };
 
 /* ══════════════════════════════════════════════════════════

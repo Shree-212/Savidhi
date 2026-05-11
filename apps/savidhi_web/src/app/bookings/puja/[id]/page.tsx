@@ -12,7 +12,11 @@ import type { PujaStatusDetail, PujaStatusStep } from '@/data/models';
 const STAGE_ORDER = ['YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'];
 
 function buildSteps(booking: any): PujaStatusStep[] {
-  const stageIdx = STAGE_ORDER.indexOf(booking.stage ?? 'YET_TO_START');
+  const stage = booking.event_stage ?? booking.stage ?? 'YET_TO_START';
+  const stageIdx = STAGE_ORDER.indexOf(stage);
+  const liveLink = booking.event_live_link ?? booking.live_link;
+  const shortVideo = booking.event_short_video_url ?? booking.short_video_url;
+  const sankalpVideo = booking.event_sankalp_video_url ?? booking.sankalp_video_url;
   return [
     {
       label: 'Booking Confirmed',
@@ -21,21 +25,21 @@ function buildSteps(booking: any): PujaStatusStep[] {
     },
     {
       label: 'Live Puja Stream',
-      subtitle: booking.live_link ? `Watch live: ${booking.live_link}` : 'Live link will be shared before puja',
+      subtitle: liveLink ? `Watch live: ${liveLink}` : 'Live link will be shared before puja',
       completed: stageIdx >= STAGE_ORDER.indexOf('LIVE_ADDED'),
       videoThumbnail: booking.live_thumbnail ?? '',
     },
     {
       label: 'Puja Video',
-      subtitle: booking.short_video_url ? 'Short puja video available' : 'Video will be shared after puja',
+      subtitle: shortVideo ? 'Short puja video available' : 'Video will be shared after puja',
       completed: stageIdx >= STAGE_ORDER.indexOf('SHORT_VIDEO_ADDED'),
-      videoSrc: booking.short_video_url ?? '',
+      videoSrc: shortVideo ?? '',
     },
     {
       label: 'Sankalp Video',
-      subtitle: booking.sankalp_video_url ? 'Your sankalp video is ready' : 'Personalized sankalp video',
+      subtitle: sankalpVideo ? 'Your sankalp video is ready' : 'Personalized sankalp video',
       completed: stageIdx >= STAGE_ORDER.indexOf('SANKALP_VIDEO_ADDED'),
-      videoSrc: booking.sankalp_video_url ?? '',
+      videoSrc: sankalpVideo ?? '',
     },
     {
       label: 'Prasad Dispatched',
@@ -52,6 +56,7 @@ function buildSteps(booking: any): PujaStatusStep[] {
 export default function PujaStatusPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [status, setStatus] = useState<PujaStatusDetail | null>(null);
+  const [isCancelled, setIsCancelled] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,6 +64,9 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
       .then((res) => {
         const b = res.data?.data ?? res.data;
         if (b) {
+          // Either the booking row itself is CANCELLED, or its parent event is CANCELLED
+          // (the Cancel-All-and-Refund admin flow flips both).
+          setIsCancelled(b.status === 'CANCELLED' || b.event_status === 'CANCELLED');
           setStatus({
             bookingId: b.id,
             pujaName: b.puja_name ?? 'Puja',
@@ -126,7 +134,13 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
-      <div className="relative pl-8">
+      {isCancelled && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-sm text-red-600">
+          This booking has been cancelled. A refund (if applicable) will be processed.
+        </div>
+      )}
+
+      {!isCancelled && <div className="relative pl-8">
         {status.steps.map((step, idx) => {
           const isLast = idx === status.steps.length - 1;
           return (
@@ -166,7 +180,7 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
             </div>
           );
         })}
-      </div>
+      </div>}
 
       <div className="flex gap-3 mt-8">
         <button className="flex-1 btn-outline flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium">

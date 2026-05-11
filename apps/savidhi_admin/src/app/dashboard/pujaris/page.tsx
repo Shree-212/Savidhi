@@ -84,7 +84,10 @@ export default function PujarisPage() {
     setLoading(true);
     try {
       const temples = tMap || templeMap;
-      const res = await pujariService.list({ search: search || undefined });
+      const res = await pujariService.list({
+        search: search || undefined,
+        temple_id: (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('temple_id') : '') || undefined,
+      });
       const raw: ApiPujari[] = res.data?.data || res.data || [];
 
       // For each pujari, compute unsettled from ledger

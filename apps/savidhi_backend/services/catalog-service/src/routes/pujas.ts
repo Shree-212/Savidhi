@@ -9,11 +9,12 @@ import {
 } from '../lib/tithiCalendar';
 import { translateToHindi, translateArrayToHindi } from '../lib/translate';
 import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+import { scheduleBackfill } from '../lib/lazyTranslate';
 
 // Translatable English fields whose values get auto-mirrored into the
 // `<field>_hi` columns when the admin POSTs/PATCHes a puja, and which the
 // GET handlers swap based on `?locale=hi`.
-const PUJA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included'] as const;
+const PUJA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included', 'shlok'] as const;
 const PUJA_TX_ARRAYS  = ['items_used', 'how_will_it_happen'] as const;
 const PUJA_LOCALE_FIELDS = [...PUJA_TX_SCALARS, ...PUJA_TX_ARRAYS];
 
@@ -86,6 +87,7 @@ const PUJA_FIELDS = [
   'rituals_included',
   'items_used',
   'how_will_it_happen',
+  'shlok',
   'hamper_id',
   'send_hamper',
 ] as const;
@@ -129,7 +131,17 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
     const search = req.query.search as string;
     const templeId = req.query.temple_id as string;
 
-    let query = 'SELECT p.*, t.name AS temple_name FROM pujas p LEFT JOIN temples t ON p.temple_id = t.id WHERE p.is_active = true';
+    let query = `
+      SELECT p.*, t.name AS temple_name,
+             COALESCE(ec.upcoming_events_count, 0)::int AS upcoming_events_count
+      FROM pujas p
+      LEFT JOIN temples t ON p.temple_id = t.id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS upcoming_events_count
+        FROM puja_events pe
+        WHERE pe.puja_id = p.id AND pe.start_time >= NOW() AND pe.status != 'COMPLETED'
+      ) ec ON true
+      WHERE p.is_active = true`;
     const params: unknown[] = [];
 
     if (templeId) {
@@ -141,7 +153,11 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
       query += ` AND p.name ILIKE $${params.length}`;
     }
 
-    const countQuery = query.replace('SELECT p.*, t.name AS temple_name', 'SELECT COUNT(*)');
+    // Build a COUNT query that mirrors the WHERE clauses but skips the lateral join.
+    const countQuery = query
+      .replace(/SELECT[\s\S]*?FROM pujas p/, 'SELECT COUNT(*) FROM pujas p')
+      .replace(/LEFT JOIN LATERAL[\s\S]*?\) ec ON true/, '')
+      .replace(/LEFT JOIN temples t ON p\.temple_id = t\.id/, 'LEFT JOIN temples t ON p.temple_id = t.id');
     const countResult = await pool.query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
 
@@ -150,6 +166,8 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
 
     const result = await pool.query(query, params);
     const locale = parseLocale(req.query.locale);
+    // Fire-and-forget back-fill of any missing `_hi` so subsequent reads see Hindi.
+    scheduleBackfill('pujas', result.rows, { scalars: PUJA_TX_SCALARS, arrays: PUJA_TX_ARRAYS });
     res.json({
       success: true,
       data: applyLocaleArray(result.rows, locale, PUJA_LOCALE_FIELDS),
@@ -175,6 +193,7 @@ pujasRouter.get('/:identifier', async (req: Request, res: Response, next: NextFu
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Puja not found' }); return; }
     const locale = parseLocale(req.query.locale);
+    scheduleBackfill('pujas', result.rows, { scalars: PUJA_TX_SCALARS, arrays: PUJA_TX_ARRAYS });
     res.json({
       success: true,
       data: applyLocale(result.rows[0], locale, [...PUJA_LOCALE_FIELDS, 'temple_name', 'deity_name']),
@@ -409,6 +428,58 @@ pujasRouter.post('/:id/generate-events', requireAuth, requireAdmin('ADMIN', 'BOO
       success: true,
       data: { generated, skipped, total_dates: dates.length, days },
       message: `Generated ${generated} events (${skipped} already existed)`,
+    });
+  } catch (err) { next(err); }
+});
+
+// DELETE /:id/events?from=<ISO-date>&dry_run=true|false
+// Bulk-cleanup helper for orphaned future events (used after the admin edits a
+// puja's repeats_on config and wants to prune the now-mismatched generated
+// events). The check is conservative: any event with even one booking — past
+// or present, any status — is excluded from deletion.
+pujasRouter.delete('/:id/events', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const from = (req.query.from as string) || new Date().toISOString();
+    const dryRun = (req.query.dry_run as string) !== 'false'; // default to dry-run for safety
+
+    const candidates = await pool.query(
+      `SELECT pe.id, pe.start_time,
+              EXISTS (SELECT 1 FROM puja_bookings pb WHERE pb.puja_event_id = pe.id) AS has_bookings
+       FROM puja_events pe
+       WHERE pe.puja_id = $1 AND pe.start_time >= $2
+       ORDER BY pe.start_time`,
+      [id, from],
+    );
+
+    const toDelete = candidates.rows.filter((r) => !r.has_bookings).map((r) => r.id);
+    const keptIds = candidates.rows.filter((r) => r.has_bookings).map((r) => r.id);
+
+    if (dryRun) {
+      return res.json({
+        success: true,
+        data: {
+          would_delete: toDelete.length,
+          would_keep: keptIds.length,
+          kept_ids: keptIds,
+          from,
+        },
+      });
+    }
+
+    if (toDelete.length > 0) {
+      await pool.query(`DELETE FROM puja_events WHERE id = ANY($1::uuid[])`, [toDelete]);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        deleted: toDelete.length,
+        kept: keptIds.length,
+        kept_ids: keptIds,
+        from,
+      },
+      message: `Deleted ${toDelete.length} events (${keptIds.length} kept due to bookings)`,
     });
   } catch (err) { next(err); }
 });

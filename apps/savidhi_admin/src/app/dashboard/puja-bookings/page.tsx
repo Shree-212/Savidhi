@@ -1,6 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { pujaEventService, pujaBookingService, pujaService, pujariService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -90,6 +93,19 @@ const STAGE_ACTIONS: Record<string, { label: string; next?: string }> = {
 /* ══════════════════════════════════════════════════════════ */
 
 export default function PujaBookingsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading puja events…</div>}>
+      <PujaBookingsPageInner />
+    </Suspense>
+  );
+}
+
+function PujaBookingsPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const filterPujaId = searchParams.get('puja_id') ?? '';
+  const filterPujariId = searchParams.get('pujari_id') ?? '';
+
   const [tab, setTab] = useState('List');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -99,6 +115,10 @@ export default function PujaBookingsPage() {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
   const [showShipModal, setShowShipModal] = useState(false);
+  const [showEditEventModal, setShowEditEventModal] = useState(false);
+  const [editEventPujariId, setEditEventPujariId] = useState('');
+  const [editEventStartTime, setEditEventStartTime] = useState('');
+  const [editEventMaxBookings, setEditEventMaxBookings] = useState<number>(0);
 
   // Input state for modals
   const [liveLink, setLiveLink] = useState('');
@@ -127,7 +147,10 @@ export default function PujaBookingsPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await pujaEventService.list({ limit: 100 });
+      const params: any = { limit: 100 };
+      if (filterPujaId) params.puja_id = filterPujaId;
+      if (filterPujariId) params.pujari_id = filterPujariId;
+      const res = await pujaEventService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       setPujaEvents(raw.map(mapEvent));
       setTimelineEvents(raw.map(toTimelineEvent));
@@ -136,7 +159,7 @@ export default function PujaBookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterPujaId, filterPujariId]);
 
   // ── Fetch bookings for expanded event ────────────────────
   const fetchBookings = useCallback(async (eventId: string) => {
@@ -155,12 +178,17 @@ export default function PujaBookingsPage() {
       const res = await pujaEventService.getById(eventId);
       const data = res.data?.data ?? res.data;
       const mapped = mapEvent(data);
-      // Attach real booking/devotee data
       (mapped as any).bookingsData = (data.bookings ?? []).map((b: any) => ({
         ...b,
         devotees: b.devotees ?? [],
       }));
+      (mapped as any).pujari_id = data.pujari_id ?? '';
+      (mapped as any).max_bookings = data.max_bookings ?? 100;
       setSelectedEvent(mapped as any);
+      // Seed the edit-event form state
+      setEditEventPujariId(data.pujari_id ?? '');
+      setEditEventStartTime(data.start_time ? new Date(data.start_time).toISOString().slice(0, 16) : '');
+      setEditEventMaxBookings(data.max_bookings ?? 100);
     } catch {
       // Fallback to the event from the list
     }
@@ -253,6 +281,42 @@ export default function PujaBookingsPage() {
     }
   };
 
+  // ── Delete event handler (wired to real DELETE) ───────────
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm('Delete this event? This cannot be undone.')) return;
+    try {
+      await pujaEventService.delete(eventId);
+      await fetchEvents();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message
+        || (status === 409
+          ? 'Event has active bookings; cancel them first. (If only historical/cancelled bookings exist, the FK still prevents deletion — historical records are preserved.)'
+          : err?.message || 'Failed to delete event');
+      alert(msg);
+    }
+  };
+
+  // ── Cancel-all-bookings handler (with confirm-by-id) ─────
+  const handleCancelAllBookings = async (eventId: string) => {
+    const confirmId = prompt(`To cancel all bookings on this event and trigger refunds, type the event id (${eventId.slice(0, 8)}…) to confirm:`);
+    if (!confirmId || !eventId.startsWith(confirmId.trim())) {
+      alert('Confirmation did not match. Aborted.');
+      return;
+    }
+    try {
+      const res = await pujaEventService.cancelAllBookings(eventId, { reason: 'Admin bulk cancel', refund: true });
+      const data = res.data?.data ?? res.data;
+      alert(`Cancelled ${data?.cancelled_count ?? 0} bookings. Refund initiated for ${data?.refund_initiated_count ?? 0}.`);
+      await fetchEvents();
+      if (selectedEvent?.id === eventId) await fetchEventDetail(eventId);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Failed to cancel bookings');
+    }
+  };
+
+  const clearFilter = () => router.push('/dashboard/puja-bookings');
+
   // ── Column definitions ───────────────────────────────────
   const eventColumns = [
     { key: 'id', label: 'ID', render: (r: any) => <span className="text-[10px] font-mono">{r.id.slice(0, 8)}</span> },
@@ -271,14 +335,18 @@ export default function PujaBookingsPage() {
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => fetchEventDetail(r.id)} />
         <ExpandButton expanded={expandedId === r.id} onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} />
-        <DeleteButton onClick={() => alert('Puja events cannot be deleted once bookings exist')} />
+        <DeleteButton onClick={() => handleDeleteEvent(r.id)} />
       </div>
     )},
   ];
 
   const bookingColumns = [
     { key: 'id', label: 'ID', render: (r: any) => <span className="text-[10px] font-mono">{r.id.slice(0, 8)}</span> },
-    { key: 'bookedBy', label: 'Booked By' },
+    { key: 'bookedBy', label: 'Booked By', render: (r: PujaBooking & { devotee_id?: string }) => (
+      r.devotee_id
+        ? <button onClick={() => router.push(`/dashboard/devotees?id=${(r as any).devotee_id}`)} className="text-primary hover:underline">{r.bookedBy}</button>
+        : <span>{r.bookedBy}</span>
+    ) },
     { key: 'devoteeCount', label: 'Devotee' },
     { key: 'bookingTime', label: 'Booking Time' },
     { key: 'cost', label: 'Cost', render: (r: PujaBooking) => <span className="text-primary">₹{r.cost}</span> },
@@ -291,8 +359,20 @@ export default function PujaBookingsPage() {
     )},
   ];
 
+  // Filter banner shown when scoped by puja_id or pujari_id query
+  const filteredPuja = useMemo(
+    () => availablePujas.find((p) => p.id === filterPujaId),
+    [availablePujas, filterPujaId],
+  );
+  const filteredPujari = useMemo(
+    () => availablePujaris.find((p) => p.id === filterPujariId),
+    [availablePujaris, filterPujariId],
+  );
+
   // ── Derived state for event detail modal ─────────────────
   const eventStage = (selectedEvent as any)?.stage as PujaEventStage | undefined;
+  const eventStatus = (selectedEvent as any)?.status as string | undefined;
+  const isEventCancelled = eventStatus === 'CANCELLED';
   const stageAction = eventStage ? STAGE_ACTIONS[eventStage] : undefined;
   const allDevotees = ((selectedEvent as any)?.bookingsData ?? []).flatMap((b: any) =>
     (b.devotees ?? []).map((d: any) => ({ name: d.name, gotra: d.gotra, relation: d.relation }))
@@ -331,9 +411,37 @@ export default function PujaBookingsPage() {
         onAdd={openCreateModal}
       />
 
+      {(filterPujaId || filterPujariId) && (
+        <div className="bg-primary/10 border border-primary/30 rounded-md px-4 py-2 mb-3 flex items-center justify-between">
+          <div className="text-xs">
+            {filterPujaId && (
+              <>Showing events for <span className="font-semibold">{filteredPuja?.name ?? filterPujaId.slice(0, 8)}</span></>
+            )}
+            {filterPujariId && (
+              <>Showing events assigned to <span className="font-semibold">{filteredPujari?.name ?? filterPujariId.slice(0, 8)}</span></>
+            )}
+            <span className="ml-2 text-muted-foreground">· Total: {pujaEvents.length}</span>
+          </div>
+          <button onClick={clearFilter} className="text-xs text-primary hover:underline">Clear filter</button>
+        </div>
+      )}
+
+      {!filterPujaId && !filterPujariId && pujaEvents.length > 0 && (
+        <div className="text-xs text-muted-foreground mb-2">Total: {pujaEvents.length} events</div>
+      )}
+
       {tab === 'List' ? (
         <div>
-          <DataTable columns={eventColumns} data={pujaEvents} />
+          {pujaEvents.length === 0 ? (
+            <div className="border border-dashed border-border rounded-md p-8 text-center text-sm text-muted-foreground">
+              No events match these filters.
+              {(filterPujaId || filterPujariId) && (
+                <> <button onClick={clearFilter} className="text-primary hover:underline">Clear filters</button></>
+              )}
+            </div>
+          ) : (
+            <DataTable columns={eventColumns} data={pujaEvents} />
+          )}
 
           {/* Expanded booking rows */}
           {expandedId && (
@@ -486,29 +594,128 @@ export default function PujaBookingsPage() {
               <p className="text-[11px] text-muted-foreground">Rating: ⭐ 5 Star (99)</p>
             )}
 
-            {/* Stage-based action buttons */}
-            <div className="flex gap-3 mt-4">
-              {eventStage === 'YET_TO_START' && (
-                <>
-                  <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Cancel Booking</OutlineButton>
-                  <PrimaryButton className="flex-1" onClick={() => { setShowLiveModal(true); }}>Add Live Feed Link</PrimaryButton>
-                </>
-              )}
-              {eventStage === 'LIVE_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => { setShowVideoModal(true); }}>Add Short Video</PrimaryButton>
-              )}
-              {eventStage === 'SHORT_VIDEO_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => { setShowSankalpModal(true); }}>Add Sankalp Video</PrimaryButton>
-              )}
-              {eventStage === 'SANKALP_VIDEO_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Ready to Ship</PrimaryButton>
-              )}
-              {eventStage === 'TO_BE_SHIPPED' && (
-                <PrimaryButton className="flex-1" onClick={() => { setShowShipModal(true); }}>Ship Prashad</PrimaryButton>
-              )}
-              {eventStage === 'SHIPPED' && (
-                <PrimaryButton className="flex-1">Track Bulk Packages</PrimaryButton>
-              )}
+            {/* Stage-based action buttons (hidden when event is cancelled) */}
+            {isEventCancelled ? (
+              <div className="mt-4 p-3 rounded-md border border-red-200 bg-red-50 text-xs text-red-700">
+                This event is <strong>CANCELLED</strong>. Stage progression is locked.
+                Refunds for affected bookings have been queued (payment_status = PENDING_REFUND).
+              </div>
+            ) : (
+              <div className="flex gap-3 mt-4">
+                {eventStage === 'YET_TO_START' && (
+                  <>
+                    <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Close</OutlineButton>
+                    <PrimaryButton className="flex-1" onClick={() => { setShowLiveModal(true); }}>Add Live Feed Link</PrimaryButton>
+                  </>
+                )}
+                {eventStage === 'LIVE_ADDED' && (
+                  <PrimaryButton className="flex-1" onClick={() => { setShowVideoModal(true); }}>Add Short Video</PrimaryButton>
+                )}
+                {eventStage === 'SHORT_VIDEO_ADDED' && (
+                  <PrimaryButton className="flex-1" onClick={() => { setShowSankalpModal(true); }}>Add Sankalp Video</PrimaryButton>
+                )}
+                {eventStage === 'SANKALP_VIDEO_ADDED' && (
+                  <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Ready to Ship</PrimaryButton>
+                )}
+                {eventStage === 'TO_BE_SHIPPED' && (
+                  <PrimaryButton className="flex-1" onClick={() => { setShowShipModal(true); }}>Ship Prashad</PrimaryButton>
+                )}
+                {eventStage === 'SHIPPED' && (
+                  <PrimaryButton className="flex-1">Track Bulk Packages</PrimaryButton>
+                )}
+              </div>
+            )}
+
+            {/* Admin meta tools — only Edit Meta + Cancel-All remain when not cancelled */}
+            {!isEventCancelled && (
+              <div className="flex gap-3 mt-2 pt-3 border-t border-border">
+                <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(true)}>Edit Event Meta</OutlineButton>
+                <OutlineButton
+                  className="flex-1 text-red-500 border-red-300 hover:bg-red-50"
+                  onClick={() => handleCancelAllBookings(selectedEvent.id)}
+                >
+                  Cancel All & Refund
+                </OutlineButton>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Edit Event Meta Modal ────────────────────────── */}
+      <Modal
+        open={showEditEventModal}
+        onClose={() => setShowEditEventModal(false)}
+        title="Edit Event Metadata"
+      >
+        {selectedEvent && (
+          <div className="space-y-3">
+            <p className="text-[10px] text-muted-foreground">
+              Editing event {selectedEvent.id.slice(0, 8)}…
+            </p>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">Pujari</label>
+              <select
+                value={editEventPujariId}
+                onChange={(e) => setEditEventPujariId(e.target.value)}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs"
+              >
+                <option value="">Unassigned</option>
+                {availablePujaris.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">
+                Start Time
+                {(selectedEvent.bookingsData?.length ?? 0) > 0 && (
+                  <span className="ml-2 text-red-500 font-normal normal-case">— locked (event has bookings)</span>
+                )}
+              </label>
+              <input
+                type="datetime-local"
+                value={editEventStartTime}
+                onChange={(e) => setEditEventStartTime(e.target.value)}
+                disabled={(selectedEvent.bookingsData?.length ?? 0) > 0}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">Max Bookings</label>
+              <input
+                type="number"
+                min={1}
+                value={editEventMaxBookings}
+                onChange={(e) => setEditEventMaxBookings(Number(e.target.value))}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs"
+              />
+            </div>
+            <div className="flex gap-3 mt-3">
+              <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(false)}>Cancel</OutlineButton>
+              <PrimaryButton className="flex-1" onClick={async () => {
+                if (!selectedEvent) return;
+                const data: any = {};
+                if (editEventPujariId !== ((selectedEvent as any).pujari_id ?? '')) {
+                  data.pujari_id = editEventPujariId || null;
+                }
+                if (editEventStartTime && (selectedEvent.bookingsData?.length ?? 0) === 0) {
+                  data.start_time = new Date(editEventStartTime).toISOString();
+                }
+                if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
+                  data.max_bookings = editEventMaxBookings;
+                }
+                if (Object.keys(data).length === 0) {
+                  alert('No changes to save');
+                  return;
+                }
+                try {
+                  await pujaEventService.update(selectedEvent.id, data);
+                  setShowEditEventModal(false);
+                  await fetchEvents();
+                  await fetchEventDetail(selectedEvent.id);
+                } catch (err: any) {
+                  alert(err?.response?.data?.message || 'Save failed');
+                }
+              }}>Save</PrimaryButton>
             </div>
           </div>
         )}

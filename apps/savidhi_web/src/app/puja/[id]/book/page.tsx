@@ -48,7 +48,6 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string; relation: string }>>([
     { name: '', gotra: '', relation: 'Self' },
   ]);
-  const [sankalp, setSankalp] = useState('');
   const [address, setAddress] = useState('');
   const [pincode, setPincode] = useState('');
 
@@ -148,7 +147,6 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
       const payload = {
         puja_event_id: selectedEventId,
         devotee_count: devoteeCount,
-        sankalp: sankalp || undefined,
         prasad_delivery_address: sendHamper
           ? `${address}${pincode ? `, PIN: ${pincode}` : ''}`
           : undefined,
@@ -496,15 +494,15 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                   </>
                 )}
 
-                <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Sankalp <span className="text-sm font-normal text-text-muted">(optional)</span></h2>
-                <p className="text-sm text-text-secondary mb-3">Your intention for the puja.</p>
-                <textarea
-                  placeholder="e.g. For the health and prosperity of my family"
-                  value={sankalp}
-                  onChange={(e) => setSankalp(e.target.value)}
-                  rows={3}
-                  className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition resize-none"
-                />
+                {puja.raw.shlok && (
+                  <>
+                    <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Puja Shlok</h2>
+                    <p className="text-sm text-text-secondary mb-3">This shlok will be recited during your puja.</p>
+                    <div className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-orange-50 text-text-primary whitespace-pre-line leading-relaxed">
+                      {puja.raw.shlok}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

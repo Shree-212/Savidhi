@@ -14,7 +14,6 @@ const NAV_KEYS: { key: string; href: string }[] = [
   { key: 'nav.puja',     href: '/puja' },
   { key: 'nav.chadhava', href: '/chadhava' },
   { key: 'nav.temples',  href: '/temples' },
-  { key: 'nav.consult',  href: '/consult' },
   { key: 'nav.panchang', href: '/panchang' },
   { key: 'nav.points',   href: '/points' },
 ];

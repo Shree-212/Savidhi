@@ -92,7 +92,7 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
             <div className="hidden lg:block bg-white border border-orange-100 rounded-2xl p-5 shadow-[0_1px_2px_rgba(232,129,58,0.04)]">
               <div className="mb-4">
                 <span className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">
-                  {total > 0 ? t('chadhava.detail.yourOffering') : t('puja.detail.startingFrom')}
+                  {total > 0 ? t('chadhava.detail.yourOffering') : t('chadhava.detail.arpitKare')}
                 </span>
                 <p className="text-3xl font-bold text-primary-600 leading-none mt-0.5">
                   ₹{total || chadhava.startingPrice}
@@ -143,12 +143,6 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
               })()}
             </div>
 
-            {chadhava.description ? (
-              <p className="text-sm text-text-secondary leading-relaxed mb-5 whitespace-pre-line">
-                {chadhava.description}
-              </p>
-            ) : null}
-
             <div className="space-y-3">
               {chadhava.benefits.length > 0 && (
                 <ExpandableSection title={t('chadhava.detail.benefits')} initiallyExpanded>
@@ -165,12 +159,6 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
               {chadhava.itemsUsed && chadhava.itemsUsed.length > 0 && (
                 <ExpandableSection title={t('chadhava.detail.itemsUsed')}>
                   {chadhava.itemsUsed.map((it, i) => <p key={i}>• {it}</p>)}
-                </ExpandableSection>
-              )}
-
-              {chadhava.howToOffer.length > 0 && (
-                <ExpandableSection title={t('chadhava.detail.howItWillHappen')}>
-                  {chadhava.howToOffer.map((h, i) => <p key={i}>{i + 1}. {h}</p>)}
                 </ExpandableSection>
               )}
             </div>
@@ -248,7 +236,7 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
         <div className="section-container max-w-2xl flex items-center gap-3 py-3">
           <div className="flex flex-col leading-tight flex-shrink-0">
             <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wider">
-              {total > 0 ? t('chadhava.detail.total') : t('puja.detail.from')}
+              {total > 0 ? t('chadhava.detail.total') : t('chadhava.detail.arpitKare')}
             </span>
             <span className="text-xl font-bold text-primary-600 leading-none mt-0.5 tabular-nums">
               ₹{(total || chadhava.startingPrice).toLocaleString()}

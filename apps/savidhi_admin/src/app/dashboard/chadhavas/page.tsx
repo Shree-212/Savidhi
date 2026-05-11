@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { chadhavaService, templeService, deityService, hamperService, pujariService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -44,6 +45,7 @@ interface ChadhavaForm {
   rituals_included: string;
   items_used: string[];
   how_will_it_happen: string[];
+  shlok: string;
   offerings: Offering[];
   hamper_id: string;
   send_hamper: boolean;
@@ -58,6 +60,7 @@ const EMPTY_FORM: ChadhavaForm = {
   max_bookings_per_event: 100, booking_mode: 'BOTH', duration_minutes: 30,
   sample_video_url: '', slider_images: [],
   benefits: '', rituals_included: '', items_used: [], how_will_it_happen: [],
+  shlok: '',
   offerings: [],
   hamper_id: '', send_hamper: false,
 };
@@ -89,6 +92,11 @@ export default function ChadhavasPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
+  const [cleanupTarget, setCleanupTarget] = useState<{ id: string; name: string } | null>(null);
+  const [cleanupFrom, setCleanupFrom] = useState<string>('');
+  const [cleanupResult, setCleanupResult] = useState<{ would_delete?: number; would_keep?: number; deleted?: number; kept?: number } | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const router = useRouter();
 
   const loadData = async () => {
     try {
@@ -176,6 +184,7 @@ export default function ChadhavasPage() {
       rituals_included: c.rituals_included ?? '',
       items_used: Array.isArray(c.items_used) ? c.items_used : [],
       how_will_it_happen: Array.isArray(c.how_will_it_happen) ? c.how_will_it_happen : [],
+      shlok: c.shlok ?? '',
       offerings,
       hamper_id: c.hamper_id ?? '',
       send_hamper: !!c.send_hamper,
@@ -216,7 +225,6 @@ export default function ChadhavasPage() {
         temple_id: editing.temple_id,
         deity_id: editing.deity_id || null,
         default_pujari_id: editing.default_pujari_id || null,
-        description: editing.description,
         schedule_day: editing.schedule_day,
         schedule_time: editing.schedule_time,
         lunar_phase: editing.lunar_phase,
@@ -227,12 +235,11 @@ export default function ChadhavasPage() {
         max_bookings_per_event: Number(editing.max_bookings_per_event) || 100,
         booking_mode: editing.booking_mode,
         duration_minutes: Number(editing.duration_minutes) || 30,
-        sample_video_url: editing.sample_video_url,
         slider_images: editing.slider_images,
         benefits: editing.benefits,
         rituals_included: editing.rituals_included,
         items_used: editing.items_used,
-        how_will_it_happen: editing.how_will_it_happen,
+        shlok: editing.shlok,
         hamper_id: editing.hamper_id || null,
         send_hamper: editing.send_hamper,
         offerings,
@@ -271,10 +278,32 @@ export default function ChadhavasPage() {
       const r = await chadhavaService.generateEvents(id, 60);
       const d = r.data?.data;
       alert(`Generated ${d?.generated ?? 0} events; ${d?.skipped ?? 0} already existed.`);
+      await loadData();
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Failed to generate events');
     } finally {
       setGenerating(null);
+    }
+  };
+
+  const openCleanup = (c: any) => {
+    setCleanupTarget({ id: c.id, name: c.name });
+    setCleanupFrom(new Date().toISOString().slice(0, 10));
+    setCleanupResult(null);
+  };
+
+  const runCleanup = async (dryRun: boolean) => {
+    if (!cleanupTarget || !cleanupFrom) return;
+    try {
+      setCleanupBusy(true);
+      const fromIso = new Date(`${cleanupFrom}T00:00:00Z`).toISOString();
+      const r = await chadhavaService.bulkDeleteEvents(cleanupTarget.id, { from: fromIso, dry_run: dryRun });
+      setCleanupResult(r.data?.data ?? null);
+      if (!dryRun) await loadData();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Cleanup failed');
+    } finally {
+      setCleanupBusy(false);
     }
   };
 
@@ -288,6 +317,19 @@ export default function ChadhavasPage() {
     { key: 'max_bookings_per_event', label: 'Max' },
     { key: 'booking_mode', label: 'Booking Mode', render: (r: any) => <StatusBadge status={r.booking_mode} /> },
     { key: 'event_repeats', label: 'Repeat', render: (r: any) => r.event_repeats ? (r.repeat_duration || 'Yes') : 'No' },
+    {
+      key: 'upcoming_events_count',
+      label: 'Upcoming Events',
+      render: (r: any) => (
+        <button
+          type="button"
+          onClick={() => router.push(`/dashboard/chadhava-bookings?chadhava_id=${r.id}`)}
+          className="text-xs px-2 py-1 border border-border rounded hover:bg-accent"
+        >
+          {r.upcoming_events_count ?? 0}
+        </button>
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => handleEdit(r)} />
@@ -303,6 +345,14 @@ export default function ChadhavasPage() {
             {generating === r.id ? '…' : '⚡'}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => openCleanup(r)}
+          title="Cleanup future events"
+          className="text-xs px-2 py-1 border border-border rounded hover:bg-accent"
+        >
+          🧹
+        </button>
         <DeleteButton onClick={() => handleDelete(r.id)} />
       </div>
     )},
@@ -506,27 +556,10 @@ export default function ChadhavasPage() {
             ))}
             <button onClick={addOffering} className="text-xs text-primary hover:underline">+ Add Offering</button>
 
-            <div className="grid grid-cols-2 gap-3">
-              <MediaUploadSingle
-                label="Sample Chadhava Video"
-                type="video"
-                accept="video/*"
-                value={editing.sample_video_url}
-                onChange={(url) => update('sample_video_url', url)}
-              />
-              <MediaUploadMulti
-                label="Slider Images"
-                value={editing.slider_images}
-                onChange={(urls) => update('slider_images', urls)}
-              />
-            </div>
-
-            <h4 className="text-[10px] font-bold uppercase tracking-wider">Description</h4>
-            <textarea
-              value={editing.description}
-              onChange={(e) => update('description', e.target.value)}
-              placeholder="Long-form summary shown on the chadhava detail page"
-              className="w-full h-20 px-3 py-2 bg-accent border border-border rounded-md text-xs text-foreground resize-none"
+            <MediaUploadMulti
+              label="Slider Images"
+              value={editing.slider_images}
+              onChange={(urls) => update('slider_images', urls)}
             />
 
             <h4 className="text-[10px] font-bold uppercase tracking-wider">Benefits</h4>
@@ -551,11 +584,17 @@ export default function ChadhavasPage() {
               onChange={(v) => update('items_used', v)}
             />
 
-            <StepListInput
-              label="How It Will Happen"
-              value={editing.how_will_it_happen}
-              onChange={(v) => update('how_will_it_happen', v)}
-            />
+            {/* ── Chadhava Shlok (shown read-only on web booking flow) ── */}
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">Chadhava Shlok</label>
+              <textarea
+                rows={3}
+                value={editing.shlok}
+                onChange={(e) => update('shlok', e.target.value)}
+                placeholder="Sanskrit / Hindi shlok shown to devotees during booking"
+                className="w-full bg-accent border border-border rounded-md px-3 py-2 text-xs text-foreground"
+              />
+            </div>
 
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider">Send Hamper to Devotee</span>
@@ -581,6 +620,50 @@ export default function ChadhavasPage() {
               <OutlineButton className="flex-1" onClick={() => { setEditing(null); setIsNew(false); setError(null); }}>Cancel</OutlineButton>
               <PrimaryButton className="flex-1" onClick={handleSave} disabled={saving}>
                 {saving ? 'Saving…' : isNew ? 'Create' : 'Save'}
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Cleanup Future Events Modal ── */}
+      <Modal
+        open={!!cleanupTarget}
+        onClose={() => { setCleanupTarget(null); setCleanupResult(null); }}
+        title={`Cleanup Future Events — ${cleanupTarget?.name ?? ''}`}
+      >
+        {cleanupTarget && (
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Deletes all events with <strong>no bookings</strong> from the chosen date onward.
+              Events with any booking are kept.
+            </p>
+            <label className="text-[10px] font-bold uppercase tracking-wider">Delete events from</label>
+            <input
+              type="date"
+              value={cleanupFrom}
+              onChange={(e) => setCleanupFrom(e.target.value)}
+              className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+            />
+            {cleanupResult && (
+              <div className="text-xs bg-accent border border-border rounded-md p-3">
+                {cleanupResult.would_delete != null ? (
+                  <>Dry run: <strong>{cleanupResult.would_delete}</strong> would be deleted, <strong>{cleanupResult.would_keep}</strong> kept (have bookings).</>
+                ) : (
+                  <>Done: <strong>{cleanupResult.deleted}</strong> deleted, <strong>{cleanupResult.kept}</strong> kept.</>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3 mt-2">
+              <OutlineButton className="flex-1" onClick={() => runCleanup(true)} disabled={cleanupBusy}>
+                {cleanupBusy ? 'Checking…' : 'Dry Run'}
+              </OutlineButton>
+              <PrimaryButton
+                className="flex-1"
+                onClick={() => runCleanup(false)}
+                disabled={cleanupBusy || !cleanupResult?.would_delete}
+              >
+                Confirm Deletion
               </PrimaryButton>
             </div>
           </div>

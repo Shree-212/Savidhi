@@ -1,6 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { chadhavaEventService, chadhavaBookingService, chadhavaService, pujariService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -100,6 +103,19 @@ const STAGE_ACTIONS: Record<ChadhavaEventStage, { label: string }> = {
 /* ══════════════════════════════════════════════════════════ */
 
 export default function ChadhavaBookingsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading chadhava events…</div>}>
+      <ChadhavaBookingsPageInner />
+    </Suspense>
+  );
+}
+
+function ChadhavaBookingsPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const filterChadhavaId = searchParams.get('chadhava_id') ?? '';
+  const filterPujariId = searchParams.get('pujari_id') ?? '';
+
   const [tab,        setTab]        = useState('List');
   const [search,     setSearch]     = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -110,6 +126,10 @@ export default function ChadhavaBookingsPage() {
   const [showLiveModal,    setShowLiveModal]    = useState(false);
   const [showVideoModal,   setShowVideoModal]   = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
+  const [showEditEventModal, setShowEditEventModal] = useState(false);
+  const [editEventPujariId, setEditEventPujariId] = useState('');
+  const [editEventStartTime, setEditEventStartTime] = useState('');
+  const [editEventMaxBookings, setEditEventMaxBookings] = useState<number>(0);
 
   const [liveLink,       setLiveLink]       = useState('');
   const [shortVideoUrl,  setShortVideoUrl]  = useState('');
@@ -136,7 +156,10 @@ export default function ChadhavaBookingsPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await chadhavaEventService.list({ limit: 100 });
+      const params: any = { limit: 100 };
+      if (filterChadhavaId) params.chadhava_id = filterChadhavaId;
+      if (filterPujariId) params.pujari_id = filterPujariId;
+      const res = await chadhavaEventService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       setChadhavaEvents(raw.map(mapEvent));
       setTimelineEvents(raw.map(toTimelineEvent));
@@ -145,7 +168,42 @@ export default function ChadhavaBookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterChadhavaId, filterPujariId]);
+
+  /* ── Delete event (real DELETE) ── */
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm('Delete this event? This cannot be undone.')) return;
+    try {
+      await chadhavaEventService.delete(eventId);
+      await fetchEvents();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message
+        || (status === 409
+          ? 'Event has active bookings; cancel them first.'
+          : err?.message || 'Failed to delete event');
+      alert(msg);
+    }
+  };
+
+  /* ── Cancel-all-bookings (confirm by id) ── */
+  const handleCancelAllBookings = async (eventId: string) => {
+    const confirmId = prompt(`To cancel all bookings on this event, type the event id (${eventId.slice(0, 8)}…):`);
+    if (!confirmId || !eventId.startsWith(confirmId.trim())) {
+      alert('Confirmation did not match. Aborted.');
+      return;
+    }
+    try {
+      const res = await chadhavaEventService.cancelAllBookings(eventId, { reason: 'Admin bulk cancel', refund: true });
+      const data = res.data?.data ?? res.data;
+      alert(`Cancelled ${data?.cancelled_count ?? 0} bookings. Refund initiated for ${data?.refund_initiated_count ?? 0}.`);
+      await fetchEvents();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Failed to cancel bookings');
+    }
+  };
+
+  const clearFilter = () => router.push('/dashboard/chadhava-bookings');
 
   /* ── Fetch bookings for expanded event ── */
   const fetchBookings = useCallback(async (eventId: string) => {
@@ -169,7 +227,12 @@ export default function ChadhavaBookingsPage() {
         devotees:  b.devotees  ?? [],
         offerings: b.offerings ?? [],
       }));
+      mapped.pujari_id = data.pujari_id ?? '';
+      mapped.max_bookings = data.max_bookings ?? 100;
       setSelectedEvent(mapped);
+      setEditEventPujariId(data.pujari_id ?? '');
+      setEditEventStartTime(data.start_time ? new Date(data.start_time).toISOString().slice(0, 16) : '');
+      setEditEventMaxBookings(data.max_bookings ?? 100);
     } catch {
       // fallback: find in list
     }
@@ -276,7 +339,7 @@ export default function ChadhavaBookingsPage() {
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => fetchEventDetail(r.id)} />
         <ExpandButton expanded={expandedId === r.id} onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} />
-        <DeleteButton onClick={() => alert('Delete not available for events with active bookings')} />
+        <DeleteButton onClick={() => handleDeleteEvent(r.id)} />
       </div>
     )},
   ];
@@ -298,6 +361,8 @@ export default function ChadhavaBookingsPage() {
 
   /* ── Derived for event modal ── */
   const eventStage   = (selectedEvent as any)?.stage as ChadhavaEventStage | undefined;
+  const eventStatus  = (selectedEvent as any)?.status as string | undefined;
+  const isEventCancelled = eventStatus === 'CANCELLED';
   const allDevotees  = ((selectedEvent as any)?.bookingsData ?? []).flatMap((b: any) =>
     (b.devotees ?? []).map((d: any) => ({ name: d.name, gotra: d.gotra, offerings: b.offerings ?? [] }))
   );
@@ -335,9 +400,37 @@ export default function ChadhavaBookingsPage() {
         onAdd={openCreateModal}
       />
 
+      {(filterChadhavaId || filterPujariId) && (
+        <div className="bg-primary/10 border border-primary/30 rounded-md px-4 py-2 mb-3 flex items-center justify-between">
+          <div className="text-xs">
+            {filterChadhavaId && (
+              <>Showing events for <span className="font-semibold">{availableChadhavas.find((c) => c.id === filterChadhavaId)?.name ?? filterChadhavaId.slice(0, 8)}</span></>
+            )}
+            {filterPujariId && (
+              <>Showing events assigned to <span className="font-semibold">{availablePujaris.find((p) => p.id === filterPujariId)?.name ?? filterPujariId.slice(0, 8)}</span></>
+            )}
+            <span className="ml-2 text-muted-foreground">· Total: {chadhavaEvents.length}</span>
+          </div>
+          <button onClick={clearFilter} className="text-xs text-primary hover:underline">Clear filter</button>
+        </div>
+      )}
+
+      {!filterChadhavaId && !filterPujariId && chadhavaEvents.length > 0 && (
+        <div className="text-xs text-muted-foreground mb-2">Total: {chadhavaEvents.length} events</div>
+      )}
+
       {tab === 'List' ? (
         <div>
-          <DataTable columns={eventColumns} data={chadhavaEvents} />
+          {chadhavaEvents.length === 0 ? (
+            <div className="border border-dashed border-border rounded-md p-8 text-center text-sm text-muted-foreground">
+              No events match these filters.
+              {(filterChadhavaId || filterPujariId) && (
+                <> <button onClick={clearFilter} className="text-primary hover:underline">Clear filters</button></>
+              )}
+            </div>
+          ) : (
+            <DataTable columns={eventColumns} data={chadhavaEvents} />
+          )}
           {expandedId && (
             <div className="mt-2 ml-4 border-l-2 border-primary/30 pl-4">
               <DataTable columns={bookingColumns} data={chadhavaBookings} />
@@ -493,23 +586,116 @@ export default function ChadhavaBookingsPage() {
               <p className="text-[11px] text-muted-foreground">Rating: ⭐ 5 Star (99)</p>
             )}
 
-            {/* Action buttons */}
-            <div className="flex gap-3 mt-4">
-              {eventStage === 'YET_TO_START' && (
-                <>
-                  <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Cancel Booking</OutlineButton>
-                  <PrimaryButton className="flex-1" onClick={() => setShowLiveModal(true)}>Add Live Feed Link</PrimaryButton>
-                </>
-              )}
-              {eventStage === 'LIVE_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => setShowVideoModal(true)}>Add Short Video</PrimaryButton>
-              )}
-              {eventStage === 'SHORT_VIDEO_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => setShowSankalpModal(true)}>Add Sankalp Video</PrimaryButton>
-              )}
-              {eventStage === 'SANKALP_VIDEO_ADDED' && (
-                <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Complete</PrimaryButton>
-              )}
+            {/* Action buttons (hidden when event is cancelled) */}
+            {isEventCancelled ? (
+              <div className="mt-4 p-3 rounded-md border border-red-200 bg-red-50 text-xs text-red-700">
+                This event is <strong>CANCELLED</strong>. Stage progression is locked.
+                Refunds for affected bookings have been queued.
+              </div>
+            ) : (
+              <div className="flex gap-3 mt-4">
+                {eventStage === 'YET_TO_START' && (
+                  <>
+                    <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Close</OutlineButton>
+                    <PrimaryButton className="flex-1" onClick={() => setShowLiveModal(true)}>Add Live Feed Link</PrimaryButton>
+                  </>
+                )}
+                {eventStage === 'LIVE_ADDED' && (
+                  <PrimaryButton className="flex-1" onClick={() => setShowVideoModal(true)}>Add Short Video</PrimaryButton>
+                )}
+                {eventStage === 'SHORT_VIDEO_ADDED' && (
+                  <PrimaryButton className="flex-1" onClick={() => setShowSankalpModal(true)}>Add Sankalp Video</PrimaryButton>
+                )}
+                {eventStage === 'SANKALP_VIDEO_ADDED' && (
+                  <PrimaryButton className="flex-1" onClick={() => handleAdvanceStage(selectedEvent.id)}>Mark Complete</PrimaryButton>
+                )}
+              </div>
+            )}
+
+            {/* Admin meta tools — hidden when cancelled */}
+            {!isEventCancelled && (
+              <div className="flex gap-3 mt-2 pt-3 border-t border-border">
+                <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(true)}>Edit Event Meta</OutlineButton>
+                <OutlineButton
+                  className="flex-1 text-red-500 border-red-300 hover:bg-red-50"
+                  onClick={() => handleCancelAllBookings(selectedEvent.id)}
+                >
+                  Cancel All & Refund
+                </OutlineButton>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Edit Event Meta Modal ── */}
+      <Modal open={showEditEventModal} onClose={() => setShowEditEventModal(false)} title="Edit Event Metadata">
+        {selectedEvent && (
+          <div className="space-y-3">
+            <p className="text-[10px] text-muted-foreground">Editing event {selectedEvent.id.slice(0, 8)}…</p>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">Pujari</label>
+              <select
+                value={editEventPujariId}
+                onChange={(e) => setEditEventPujariId(e.target.value)}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs"
+              >
+                <option value="">Unassigned</option>
+                {availablePujaris.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">
+                Start Time
+                {(selectedEvent.bookingsData?.length ?? 0) > 0 && (
+                  <span className="ml-2 text-red-500 font-normal normal-case">— locked (event has bookings)</span>
+                )}
+              </label>
+              <input
+                type="datetime-local"
+                value={editEventStartTime}
+                onChange={(e) => setEditEventStartTime(e.target.value)}
+                disabled={(selectedEvent.bookingsData?.length ?? 0) > 0}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block">Max Bookings</label>
+              <input
+                type="number"
+                min={1}
+                value={editEventMaxBookings}
+                onChange={(e) => setEditEventMaxBookings(Number(e.target.value))}
+                className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs"
+              />
+            </div>
+            <div className="flex gap-3 mt-3">
+              <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(false)}>Cancel</OutlineButton>
+              <PrimaryButton className="flex-1" onClick={async () => {
+                if (!selectedEvent) return;
+                const data: any = {};
+                if (editEventPujariId !== ((selectedEvent as any).pujari_id ?? '')) {
+                  data.pujari_id = editEventPujariId || null;
+                }
+                if (editEventStartTime && (selectedEvent.bookingsData?.length ?? 0) === 0) {
+                  data.start_time = new Date(editEventStartTime).toISOString();
+                }
+                if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
+                  data.max_bookings = editEventMaxBookings;
+                }
+                if (Object.keys(data).length === 0) {
+                  alert('No changes to save');
+                  return;
+                }
+                try {
+                  await chadhavaEventService.update(selectedEvent.id, data);
+                  setShowEditEventModal(false);
+                  await fetchEvents();
+                  await fetchEventDetail(selectedEvent.id);
+                } catch (err: any) {
+                  alert(err?.response?.data?.message || 'Save failed');
+                }
+              }}>Save</PrimaryButton>
             </div>
           </div>
         )}

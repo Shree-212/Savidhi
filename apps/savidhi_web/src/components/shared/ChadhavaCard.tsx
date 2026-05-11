@@ -51,7 +51,7 @@ export function ChadhavaCard({ chadhava }: ChadhavaCardProps) {
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs text-text-secondary">{chadhava.date}</span>
             <span className="text-sm font-bold text-primary-500">
-              From ₹{chadhava.startingPrice}
+              Arpit Kare ₹{chadhava.startingPrice}
             </span>
           </div>
         </div>

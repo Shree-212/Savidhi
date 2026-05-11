@@ -38,7 +38,6 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string }>>([
     { name: '', gotra: '' },
   ]);
-  const [sankalp, setSankalp] = useState('');
   const [address, setAddress] = useState('');
   const [pincode, setPincode] = useState('');
 
@@ -160,7 +159,6 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
       setError('');
       const payload = {
         chadhava_event_id: selectedEventId,
-        sankalp: sankalp || undefined,
         prasad_delivery_address: sendHamper ? `${address}${pincode ? `, PIN: ${pincode}` : ''}` : undefined,
         devotees: devotees.map((d) => ({ name: d.name.trim(), gotra: d.gotra.trim() })),
         offerings: selectedOfferings.map((o) => ({
@@ -497,15 +495,15 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
                   </>
                 )}
 
-                <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Sankalp <span className="text-sm font-normal text-text-muted">(optional)</span></h2>
-                <p className="text-sm text-text-secondary mb-3">Your intention for the chadhava.</p>
-                <textarea
-                  placeholder="e.g. For the well-being of my family"
-                  value={sankalp}
-                  onChange={(e) => setSankalp(e.target.value)}
-                  rows={3}
-                  className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition resize-none"
-                />
+                {chadhava.raw.shlok && (
+                  <>
+                    <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Chadhava Shlok</h2>
+                    <p className="text-sm text-text-secondary mb-3">This shlok will be recited during your chadhava.</p>
+                    <div className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-orange-50 text-text-primary whitespace-pre-line leading-relaxed">
+                      {chadhava.raw.shlok}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

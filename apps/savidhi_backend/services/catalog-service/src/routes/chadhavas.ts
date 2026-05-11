@@ -9,8 +9,9 @@ import {
 } from '../lib/tithiCalendar';
 import { translateToHindi, translateArrayToHindi } from '../lib/translate';
 import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+import { scheduleBackfill } from '../lib/lazyTranslate';
 
-const CHADHAVA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included'] as const;
+const CHADHAVA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included', 'shlok'] as const;
 const CHADHAVA_TX_ARRAYS  = ['items_used', 'how_will_it_happen'] as const;
 const CHADHAVA_LOCALE_FIELDS = [...CHADHAVA_TX_SCALARS, ...CHADHAVA_TX_ARRAYS];
 const OFFERING_LOCALE_FIELDS = ['item_name', 'benefit'];
@@ -87,6 +88,7 @@ const CHADHAVA_FIELDS = [
   'rituals_included',
   'items_used',
   'how_will_it_happen',
+  'shlok',
   'hamper_id',
   'send_hamper',
 ] as const;
@@ -176,16 +178,23 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
       `SELECT c.*, t.name AS temple_name, t.name_hi AS temple_name_hi,
               t.address AS temple_address, t.address_hi AS temple_address_hi,
               d.name AS deity_name, d.name_hi AS deity_name_hi,
-              (SELECT MIN(co.price) FROM chadhava_offerings co WHERE co.chadhava_id = c.id) AS min_price
+              (SELECT MIN(co.price) FROM chadhava_offerings co WHERE co.chadhava_id = c.id) AS min_price,
+              COALESCE(ec.upcoming_events_count, 0)::int AS upcoming_events_count
        FROM chadhavas c
        LEFT JOIN temples t ON c.temple_id = t.id
        LEFT JOIN deities d ON c.deity_id = d.id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS upcoming_events_count
+         FROM chadhava_events ce
+         WHERE ce.chadhava_id = c.id AND ce.start_time >= NOW() AND ce.status != 'COMPLETED'
+       ) ec ON true
        ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       dataParams,
     );
     const locale = parseLocale(req.query.locale);
+    scheduleBackfill('chadhavas', result.rows, { scalars: CHADHAVA_TX_SCALARS, arrays: CHADHAVA_TX_ARRAYS });
     res.json({
       success: true,
       data: applyLocaleArray(result.rows, locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address', 'deity_name']),
@@ -218,6 +227,7 @@ chadhavasRouter.get('/:identifier', async (req: Request, res: Response, next: Ne
     );
 
     const locale = parseLocale(req.query.locale);
+    scheduleBackfill('chadhavas', chadhava.rows, { scalars: CHADHAVA_TX_SCALARS, arrays: CHADHAVA_TX_ARRAYS });
     const localizedChadhava = applyLocale(chadhava.rows[0], locale, [...CHADHAVA_LOCALE_FIELDS, 'temple_name', 'temple_address', 'deity_name']);
     const localizedOfferings = applyLocaleArray(offerings.rows, locale, OFFERING_LOCALE_FIELDS);
 
@@ -542,5 +552,54 @@ chadhavasRouter.delete('/:chadhavaId/offerings/:offeringId', requireAuth, requir
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Offering not found' }); return; }
     res.json({ success: true, message: 'Offering deleted' });
+  } catch (err) { next(err); }
+});
+
+// DELETE /:id/events?from=<ISO-date>&dry_run=true|false
+// Mirror of the puja bulk-cleanup endpoint for chadhavas.
+chadhavasRouter.delete('/:id/events', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const from = (req.query.from as string) || new Date().toISOString();
+    const dryRun = (req.query.dry_run as string) !== 'false';
+
+    const candidates = await pool.query(
+      `SELECT ce.id, ce.start_time,
+              EXISTS (SELECT 1 FROM chadhava_bookings cb WHERE cb.chadhava_event_id = ce.id) AS has_bookings
+       FROM chadhava_events ce
+       WHERE ce.chadhava_id = $1 AND ce.start_time >= $2
+       ORDER BY ce.start_time`,
+      [id, from],
+    );
+
+    const toDelete = candidates.rows.filter((r) => !r.has_bookings).map((r) => r.id);
+    const keptIds = candidates.rows.filter((r) => r.has_bookings).map((r) => r.id);
+
+    if (dryRun) {
+      return res.json({
+        success: true,
+        data: {
+          would_delete: toDelete.length,
+          would_keep: keptIds.length,
+          kept_ids: keptIds,
+          from,
+        },
+      });
+    }
+
+    if (toDelete.length > 0) {
+      await pool.query(`DELETE FROM chadhava_events WHERE id = ANY($1::uuid[])`, [toDelete]);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        deleted: toDelete.length,
+        kept: keptIds.length,
+        kept_ids: keptIds,
+        from,
+      },
+      message: `Deleted ${toDelete.length} events (${keptIds.length} kept due to bookings)`,
+    });
   } catch (err) { next(err); }
 });

@@ -19,7 +19,7 @@ const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; 
 /** GET / – list puja events. Admins see all; devotees see future non-cancelled events. */
 pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, puja_id, from_date, to_date, upcoming, page = '1', limit = '20' } = req.query;
+    const { status, puja_id, pujari_id, from_date, to_date, upcoming, page = '1', limit = '20' } = req.query;
     const role = req.headers['x-user-role'] as string;
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
@@ -29,9 +29,9 @@ pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next:
     const params: unknown[] = [];
     let idx = 1;
 
-    // Devotees can only see events they can still book (future, not completed)
+    // Devotees can only see events they can still book (future, not completed or cancelled)
     if (role === 'DEVOTEE') {
-      conditions.push(`pe.status != 'COMPLETED'`);
+      conditions.push(`pe.status NOT IN ('COMPLETED', 'CANCELLED')`);
       conditions.push(`pe.start_time >= NOW() - INTERVAL '1 day'`);
     }
 
@@ -45,6 +45,10 @@ pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next:
         conditions.push(`pe.puja_id = (SELECT id FROM pujas WHERE slug = $${idx++})`);
         params.push(puja_id);
       }
+    }
+    if (pujari_id && isUuid(pujari_id)) {
+      conditions.push(`pe.pujari_id = $${idx++}`);
+      params.push(pujari_id);
     }
     if (from_date) { conditions.push(`pe.start_time >= $${idx++}`); params.push(from_date); }
     if (to_date) { conditions.push(`pe.start_time <= $${idx++}`); params.push(to_date); }
@@ -221,6 +225,10 @@ pujaEventsRouter.patch('/:id/stage', requireAdmin, async (req: Request, res: Res
       return res.status(404).json({ success: false, message: 'Puja event not found' });
     }
 
+    if (eventResult.rows[0].status === 'CANCELLED') {
+      return res.status(409).json({ success: false, message: 'Event is cancelled; cannot advance stage.' });
+    }
+
     const currentStage = eventResult.rows[0].stage as string;
     const transition = STAGE_TRANSITIONS[currentStage];
     if (!transition) {
@@ -268,5 +276,79 @@ pujaEventsRouter.patch('/:id/stage', requireAdmin, async (req: Request, res: Res
     }
 
     res.json({ success: true, data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+/** POST /:id/cancel-all-bookings – cancel every active booking on this event.
+ *  Used when admin needs to nuke an event (pujari sick, festival rescheduled).
+ *  Marks affected payments PENDING_REFUND so the payment-service worker can
+ *  trigger Razorpay refunds; this endpoint does not invoke the gateway directly. */
+pujaEventsRouter.post('/:id/cancel-all-bookings', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { reason, refund = true } = req.body ?? {};
+
+    const eventResult = await pool.query(`SELECT id FROM puja_events WHERE id = $1`, [id]);
+    if (eventResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Puja event not found' });
+    }
+
+    const activeBookings = await pool.query(
+      `SELECT id, payment_id, cost
+       FROM puja_bookings
+       WHERE puja_event_id = $1 AND status IN ('NOT_STARTED', 'INPROGRESS')`,
+      [id],
+    );
+
+    if (activeBookings.rows.length === 0) {
+      return res.json({
+        success: true,
+        data: { cancelled_count: 0, refund_initiated_count: 0, errors: [] },
+        message: 'No active bookings on this event',
+      });
+    }
+
+    const ids = activeBookings.rows.map((b: { id: string }) => b.id);
+    await pool.query(
+      `UPDATE puja_bookings SET status = 'CANCELLED', updated_at = NOW() WHERE id = ANY($1::uuid[])`,
+      [ids],
+    );
+
+    // Mark the event itself as cancelled so admin stage-advance is blocked
+    // and devotees see a cancelled notice instead of a live timeline.
+    await pool.query(
+      `UPDATE puja_events SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
+      [id],
+    );
+
+    const errors: Array<{ booking_id: string; reason: string }> = [];
+    let refundInitiated = 0;
+    if (refund) {
+      for (const b of activeBookings.rows) {
+        if (!b.payment_id) {
+          errors.push({ booking_id: b.id, reason: 'No payment_id (not paid)' });
+          continue;
+        }
+        try {
+          await pool.query(
+            `UPDATE puja_bookings SET payment_status = 'PENDING_REFUND' WHERE id = $1`,
+            [b.id],
+          );
+          refundInitiated++;
+        } catch (e: any) {
+          errors.push({ booking_id: b.id, reason: e?.message ?? 'Refund flag failed' });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        cancelled_count: ids.length,
+        refund_initiated_count: refundInitiated,
+        errors,
+        reason: reason ?? null,
+      },
+    });
   } catch (err) { next(err); }
 });
