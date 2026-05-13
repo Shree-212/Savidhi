@@ -118,7 +118,7 @@ export default function HampersPage() {
       <PageHeader search={search} onSearchChange={setSearch} onAdd={handleAdd} />
       <DataTable columns={columns} data={hampers} />
 
-      <Modal open={!!editing} onClose={() => { setEditing(null); setIsNew(false); }} title={isNew ? 'New Hamper' : `Edit Hamper <${editing?.id?.slice(0, 8)}>`}>
+      <Modal open={!!editing} onClose={() => { setEditing(null); setIsNew(false); }} title={isNew ? 'New Hamper' : `Edit Hamper ${editing?.id?.slice(0, 8)}`}>
         {editing && (
           <div className="space-y-4">
             <input ref={nameRef} defaultValue={editing.name} placeholder="Hamper Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />

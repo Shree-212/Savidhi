@@ -10,10 +10,12 @@ interface SupportActionsProps {
   shareUrl?: string;
 }
 
+const FALLBACK_PHONE = '+919528811930';
+
 /** Call Support + Share Status buttons. Used by both booking-details pages.
- *  Pulls support phone from public settings; falls back gracefully if missing. */
+ *  Pulls support phone from public settings; falls back to default if missing. */
 export function SupportActions({ shareTitle, shareUrl }: SupportActionsProps) {
-  const [supportPhone, setSupportPhone] = useState<string | null>(null);
+  const [supportPhone, setSupportPhone] = useState<string>(FALLBACK_PHONE);
 
   useEffect(() => {
     settingsService.get()
@@ -22,7 +24,7 @@ export function SupportActions({ shareTitle, shareUrl }: SupportActionsProps) {
         const phone = d.support_phone ?? d.supportPhone ?? d.contact_phone ?? d.phone ?? null;
         if (phone) setSupportPhone(String(phone));
       })
-      .catch(() => { /* settings unavailable — leave button disabled */ });
+      .catch(() => { /* keep fallback */ });
   }, []);
 
   const handleCall = () => {
@@ -56,7 +58,7 @@ export function SupportActions({ shareTitle, shareUrl }: SupportActionsProps) {
     <div className="flex gap-3">
       <button
         onClick={handleCall}
-        disabled={!supportPhone}
+        disabled={false}
         className="flex-1 btn-outline flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <Phone className="w-4 h-4" />

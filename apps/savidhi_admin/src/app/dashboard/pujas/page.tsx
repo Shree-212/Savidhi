@@ -383,7 +383,7 @@ function PujasPageInner() {
       <Modal
         open={!!editing}
         onClose={() => { setEditing(null); setIsNew(false); setError(null); }}
-        title={isNew ? 'New Puja' : `Edit Puja <${editing?.id?.slice(0, 8)}>`}
+        title={isNew ? 'New Puja' : `Edit Puja ${editing?.id?.slice(0, 8)}`}
         statusBadge={!isNew ? <StatusBadge status="ACTIVE" className="text-status-completed" /> : undefined}
         wide
       >

@@ -68,18 +68,26 @@ function buildSteps(booking: any): TimelineStep[] {
   ];
 }
 
-function parseSankalpTimestamps(raw: any): SankalpTimestamp[] {
-  // Accepts: { devotees: [{ name, gotra, minute, second }] } or an array directly.
-  const list = Array.isArray(raw) ? raw : raw?.devotees ?? raw?.timestamps ?? [];
-  if (!Array.isArray(list)) return [];
-  return list
-    .filter((t: any) => t && (t.minute != null || t.second != null))
-    .map((t: any) => ({
-      name: String(t.name ?? 'Devotee'),
-      gotra: t.gotra ? String(t.gotra) : undefined,
-      minute: Number(t.minute ?? 0),
-      second: Number(t.second ?? 0),
-    }));
+function parseSankalpTimestamps(raw: any, devoteeName?: string): SankalpTimestamp[] {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : raw?.devotees ?? raw?.timestamps ?? null;
+  if (Array.isArray(list)) {
+    return list
+      .filter((t: any) => t && (t.minute != null || t.second != null))
+      .map((t: any) => ({
+        name: String(t.name ?? devoteeName ?? 'Devotee'),
+        gotra: t.gotra ? String(t.gotra) : undefined,
+        minute: Number(t.minute ?? 0),
+        second: Number(t.second ?? 0),
+      }));
+  }
+  if (typeof raw === 'string' && raw.includes(':')) {
+    const [m, s] = raw.split(':').map(Number);
+    if (!isNaN(m) && !isNaN(s)) {
+      return [{ name: devoteeName ?? 'Your name', minute: m, second: s }];
+    }
+  }
+  return [];
 }
 
 export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: string }> }) {
@@ -125,6 +133,7 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
   const sankalpVideoUrl = booking.event_sankalp_video_url ?? booking.sankalp_video_url;
   const sankalpTimestamps = parseSankalpTimestamps(
     booking.event_sankalp_timestamps ?? booking.sankalp_timestamps ?? booking.sankalp_video_timestamp,
+    booking.devotee_name,
   );
   // event-level prasad toggle. Defaults to true so legacy events keep the prasad steps.
   const hasPrasad = booking.event_has_prasad ?? booking.has_prasad ?? true;

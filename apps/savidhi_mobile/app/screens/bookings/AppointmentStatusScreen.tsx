@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIndicator, Linking } from 'react-native';
+
+const SUPPORT_PHONE = '+919528811930';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { appointmentService } from '../../services';
@@ -100,7 +102,7 @@ export function AppointmentStatusScreen({ navigation, route }: { navigation: any
         </View>
 
         {/* Support */}
-        <TouchableOpacity style={styles.supportBtn}>
+        <TouchableOpacity style={styles.supportBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}>
           <Icon name="phone" size={18} color={Colors.primary} />
           <Text style={styles.supportBtnText}>Call Support</Text>
         </TouchableOpacity>

@@ -169,7 +169,7 @@ export default function TemplesPage() {
       <PageHeader search={search} onSearchChange={setSearch} onAdd={handleAdd} />
       <DataTable columns={columns} data={temples} />
 
-      <Modal open={!!editing} onClose={() => { setEditing(null); setIsNew(false); }} title={isNew ? 'New Temple' : `Edit Temple <${editing?.id?.slice(0, 8)}>`}>
+      <Modal open={!!editing} onClose={() => { setEditing(null); setIsNew(false); }} title={isNew ? 'New Temple' : `Edit Temple ${editing?.id?.slice(0, 8)}`}>
         {editing && (
           <div className="space-y-4">
             <input ref={nameRef} defaultValue={editing.name} placeholder="Temple Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />

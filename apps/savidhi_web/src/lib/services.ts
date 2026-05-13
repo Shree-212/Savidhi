@@ -125,6 +125,17 @@ export const settingsService = {
   get: () => api.get('/catalog/settings'),
 };
 
+// ─── Media ───────────────────────────────────────────────────────────────────
+export const mediaService = {
+  uploadLocal: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/media/upload/local', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
 // ─── Panchang ────────────────────────────────────────────────────────────────
 export const panchangService = {
   get: (params: { date: string; location?: string; lat?: number; lng?: number }) =>

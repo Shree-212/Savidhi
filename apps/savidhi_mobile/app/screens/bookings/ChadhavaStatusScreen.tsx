@@ -12,7 +12,8 @@ import { chadhavaBookingApi } from '../../services/extra';
  * Mirrors PujaStatusScreen but for chadhavas (with offerings list).
  */
 
-const STAGES = ['YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'];
+const ALL_STAGES = ['YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'];
+const PRASAD_STAGES = new Set(['TO_BE_SHIPPED', 'SHIPPED']);
 const STAGE_LABEL: Record<string, string> = {
   YET_TO_START: 'Scheduled',
   LIVE_ADDED: 'Live Stream',
@@ -45,8 +46,10 @@ export const ChadhavaStatusScreen: React.FC = () => {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>;
   if (!data) return <View style={styles.center}><Text style={{ color: Colors.textSecondary }}>Booking not found</Text></View>;
 
+  const hasPrasad = data.event_has_prasad !== false;
+  const STAGES = hasPrasad ? ALL_STAGES : ALL_STAGES.filter((s) => !PRASAD_STAGES.has(s));
   const stage: string = data.event_stage ?? 'YET_TO_START';
-  const stageIdx = STAGES.indexOf(stage);
+  const stageIdx = STAGES.indexOf(stage) !== -1 ? STAGES.indexOf(stage) : ALL_STAGES.indexOf(stage);
   const openIfUrl = (url?: string | null) => { if (url) Linking.openURL(url).catch(() => {}); };
 
   return (

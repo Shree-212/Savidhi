@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, ActivityIndicator, Linking } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+const SUPPORT_PHONE = '+919528811930';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
 import { pujaBookingService } from '../../services';
 import { resolveMediaUrl } from '../../utils';
@@ -45,19 +47,23 @@ export function PujaStatusScreen({ navigation, route }: { navigation: any; route
         const d = res.data?.data ?? res.data;
         const stageOrder = ['YET_TO_START','LIVE_ADDED','SHORT_VIDEO_ADDED','SANKALP_VIDEO_ADDED','TO_BE_SHIPPED','SHIPPED'];
         const stageIdx = stageOrder.indexOf(d.event_stage ?? 'YET_TO_START');
+        const hasPrasad = d.event_has_prasad !== false;
+        const allSteps = [
+          { label: 'Booking Confirmed', subtitle: d.created_at ? `Booked on ${new Date(d.created_at).toLocaleDateString('en-IN')}` : '', completed: true },
+          { label: 'Live Puja Stream', subtitle: d.event_live_link ? `Watch live: ${d.event_live_link}` : 'Live link will be shared before puja', completed: stageIdx >= stageOrder.indexOf('LIVE_ADDED'), videoThumbnail: undefined },
+          { label: 'Puja Video', subtitle: d.event_short_video_url ? 'Short puja video available' : 'Video will be shared after puja', completed: stageIdx >= stageOrder.indexOf('SHORT_VIDEO_ADDED'), videoThumbnail: d.event_short_video_url ?? undefined },
+          { label: 'Sankalp Video', subtitle: d.event_sankalp_video_url ? 'Your sankalp video is ready' : 'Personalized sankalp video', completed: stageIdx >= stageOrder.indexOf('SANKALP_VIDEO_ADDED'), videoThumbnail: d.event_sankalp_video_url ?? undefined },
+          ...(hasPrasad ? [
+            { label: 'Prasad Dispatched', subtitle: d.shipment_id ? `Tracking: ${d.shipment_id}` : undefined, completed: stageIdx >= stageOrder.indexOf('TO_BE_SHIPPED') },
+            { label: 'Delivered', completed: stageIdx >= stageOrder.indexOf('SHIPPED') },
+          ] : []),
+        ];
         setStatus({
           bookingId: d.id ?? bookingId,
           pujaName: d.puja_name ?? '',
           templeName: d.temple_name ?? '',
           pujaId: d.puja_event_id ?? '',
-          steps: [
-            { label: 'Booking Confirmed', subtitle: d.created_at ? `Booked on ${new Date(d.created_at).toLocaleDateString('en-IN')}` : '', completed: true },
-            { label: 'Live Puja Stream', subtitle: d.event_live_link ? `Watch live: ${d.event_live_link}` : 'Live link will be shared before puja', completed: stageIdx >= stageOrder.indexOf('LIVE_ADDED'), videoThumbnail: undefined },
-            { label: 'Puja Video', subtitle: d.event_short_video_url ? 'Short puja video available' : 'Video will be shared after puja', completed: stageIdx >= stageOrder.indexOf('SHORT_VIDEO_ADDED'), videoThumbnail: d.event_short_video_url ?? undefined },
-            { label: 'Sankalp Video', subtitle: d.event_sankalp_video_url ? 'Your sankalp video is ready' : 'Personalized sankalp video', completed: stageIdx >= stageOrder.indexOf('SANKALP_VIDEO_ADDED'), videoThumbnail: d.event_sankalp_video_url ?? undefined },
-            { label: 'Prasad Dispatched', subtitle: d.shipment_id ? `Tracking: ${d.shipment_id}` : undefined, completed: stageIdx >= stageOrder.indexOf('TO_BE_SHIPPED') },
-            { label: 'Delivered', completed: stageIdx >= stageOrder.indexOf('SHIPPED') },
-          ],
+          steps: allSteps,
         });
       } catch (err) {
         console.error('PujaStatusScreen fetch error:', err);
@@ -106,7 +112,7 @@ export function PujaStatusScreen({ navigation, route }: { navigation: any; route
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.secondaryBtn}>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}>
             <Icon name="phone" size={18} color={Colors.primary} />
             <Text style={styles.secondaryBtnText}>Call Support</Text>
           </TouchableOpacity>

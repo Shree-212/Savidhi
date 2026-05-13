@@ -152,6 +152,8 @@ export const pujaBookingService = {
   getById: (id: string) => apiClient.get(`/bookings/puja-bookings/${id}`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/puja-bookings/${id}/cancel`),
+  setSankalpTimestamp: (id: string, sankalp_video_timestamp: string) =>
+    apiClient.patch(`/bookings/puja-bookings/${id}/sankalp-timestamp`, { sankalp_video_timestamp }),
 };
 
 export const chadhavaEventService = {
@@ -193,6 +195,8 @@ export const chadhavaBookingService = {
   getById: (id: string) => apiClient.get(`/bookings/chadhava-bookings/${id}`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/chadhava-bookings/${id}/cancel`),
+  setSankalpTimestamp: (id: string, sankalp_video_timestamp: string) =>
+    apiClient.patch(`/bookings/chadhava-bookings/${id}/sankalp-timestamp`, { sankalp_video_timestamp }),
 };
 
 export const appointmentService = {

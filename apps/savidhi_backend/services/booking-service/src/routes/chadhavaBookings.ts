@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../lib/db';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 
 export const chadhavaBookingsRouter = Router();
 
@@ -259,6 +259,23 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
   } finally {
     client.release();
   }
+});
+
+/** PATCH /:id/sankalp-timestamp – admin sets the devotee-name timestamp for a chadhava booking */
+chadhavaBookingsRouter.patch('/:id/sankalp-timestamp', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { sankalp_video_timestamp } = req.body;
+    if (!sankalp_video_timestamp) {
+      return res.status(400).json({ success: false, message: 'sankalp_video_timestamp is required' });
+    }
+    const { rows } = await pool.query(
+      `UPDATE chadhava_bookings SET sankalp_video_timestamp = $1, updated_at = NOW() WHERE id = $2 RETURNING id`,
+      [String(sankalp_video_timestamp), id],
+    );
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Booking not found' });
+    res.json({ success: true });
+  } catch (err) { next(err); }
 });
 
 /** PATCH /:id/cancel – cancel chadhava booking */

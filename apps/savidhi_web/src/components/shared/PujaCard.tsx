@@ -12,6 +12,15 @@ interface PujaCardProps {
   puja: Puja;
 }
 
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatPujaDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr; // already "Monday" / "Weekly" / etc.
+  return `${DAYS[d.getDay()]}, ${dateStr}`;
+}
+
 export function PujaCard({ puja }: PujaCardProps) {
   const t = useT();
   const repeatLabel = getRepeatLabel(t, puja);
@@ -55,7 +64,7 @@ export function PujaCard({ puja }: PujaCardProps) {
             </p>
           )}
           <div className="flex items-center justify-between pt-1">
-            <span className="text-xs text-text-secondary">{puja.date}</span>
+            <span className="text-xs text-text-secondary">{formatPujaDate(puja.date)}</span>
             <span className="text-sm font-bold text-primary-500">
               ₹{puja.pricePerDevotee.toLocaleString()}
             </span>

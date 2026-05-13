@@ -125,6 +125,8 @@ function PujaBookingsPageInner() {
   const [liveLink, setLiveLink] = useState('');
   const [shortVideoUrl, setShortVideoUrl] = useState('');
   const [sankalpVideoUrl, setSankalpVideoUrl] = useState('');
+  // bookingId → "MM:SS" timestamp string
+  const [sankalpTimestamps, setSankalpTimestamps] = useState<Record<string, { minute: string; second: string }>>({});
 
   // Create-event modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -468,7 +470,7 @@ function PujaBookingsPageInner() {
       <Modal
         open={!!selectedBooking}
         onClose={() => setSelectedBooking(null)}
-        title={`Booking <${selectedBooking?.id?.slice(0, 8)}> Details`}
+        title={`Booking ${selectedBooking?.id?.slice(0, 8)} Details`}
         statusBadge={selectedBooking && <StatusBadge status={selectedBooking.status} />}
       >
         {selectedBooking && (
@@ -537,7 +539,7 @@ function PujaBookingsPageInner() {
       <Modal
         open={!!selectedEvent}
         onClose={() => setSelectedEvent(null)}
-        title={`<Puja Evn ${selectedEvent?.id?.slice(0, 8)}> Details`}
+        title={`Puja Evn ${selectedEvent?.id?.slice(0, 8)} Details`}
         statusBadge={selectedEvent && <StatusBadge status={selectedEvent.status} />}
         wide
       >
@@ -800,21 +802,50 @@ function PujaBookingsPageInner() {
             type="video"
             label="Sankalp Video File"
           />
-          <h4 className="text-[10px] font-bold uppercase tracking-wider">Time Stamp of Devotee Names</h4>
-          {allDevotees.map((d: any, i: number) => (
-            <div key={i} className="flex items-center gap-3">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider">Devotee Name Timestamp (per booking)</h4>
+          {((selectedEvent as any)?.bookingsData ?? []).map((b: any) => (
+            <div key={b.id} className="flex items-center gap-3">
               <div className="min-w-[12rem] flex-1">
-                <p className="text-xs text-foreground leading-tight">{d.name}</p>
-                {d.gotra && <p className="text-[10px] text-muted-foreground leading-tight">Gotra: {d.gotra}</p>}
+                <p className="text-xs text-foreground leading-tight">{b.devotee_name ?? (b.devotees?.[0]?.name ?? 'Devotee')}</p>
+                <p className="text-[10px] text-muted-foreground leading-tight">Booking: {b.id?.slice(0, 8)}</p>
               </div>
-              <input placeholder="Minute" className="w-20 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
-              <input placeholder="Second" className="w-20 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input
+                placeholder="Min"
+                type="number"
+                min="0"
+                value={sankalpTimestamps[b.id]?.minute ?? ''}
+                onChange={(e) => setSankalpTimestamps((prev) => ({ ...prev, [b.id]: { ...prev[b.id], minute: e.target.value } }))}
+                className="w-16 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground"
+              />
+              <span className="text-xs text-muted-foreground">:</span>
+              <input
+                placeholder="Sec"
+                type="number"
+                min="0"
+                max="59"
+                value={sankalpTimestamps[b.id]?.second ?? ''}
+                onChange={(e) => setSankalpTimestamps((prev) => ({ ...prev, [b.id]: { ...prev[b.id], second: e.target.value } }))}
+                className="w-16 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground"
+              />
             </div>
           ))}
           <PrimaryButton className="w-full" onClick={async () => {
             if (!sankalpVideoUrl.trim()) return alert('Please upload a video');
-            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+            if (selectedEvent) {
+              await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+              // Save per-booking timestamps
+              await Promise.allSettled(
+                Object.entries(sankalpTimestamps).map(([bookingId, ts]) => {
+                  const m = parseInt(ts.minute || '0');
+                  const s = parseInt(ts.second || '0');
+                  if (isNaN(m) && isNaN(s)) return Promise.resolve();
+                  const value = `${String(m || 0).padStart(2, '0')}:${String(s || 0).padStart(2, '0')}`;
+                  return pujaBookingService.setSankalpTimestamp(bookingId, value);
+                })
+              );
+            }
             setSankalpVideoUrl('');
+            setSankalpTimestamps({});
             setShowSankalpModal(false);
           }}>Submit</PrimaryButton>
         </div>

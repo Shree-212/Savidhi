@@ -341,7 +341,7 @@ export default function AstrologersPage() {
       <DataTable columns={columns} data={astrologers} />
 
       {/* Edit Modal */}
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={isNew ? 'Add Astrologer' : `Edit Astrologer <${editing?.id}>`} statusBadge={!isNew ? <StatusBadge status="ACTIVE" className="text-status-completed" /> : undefined} wide>
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={isNew ? 'Add Astrologer' : `Edit Astrologer ${editing?.id?.slice(0, 8)}`} statusBadge={!isNew ? <StatusBadge status="ACTIVE" className="text-status-completed" /> : undefined} wide>
         {editing && (
           <div className="space-y-4">
             <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />

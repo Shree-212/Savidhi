@@ -366,7 +366,7 @@ export default function ChadhavasPage() {
       <Modal
         open={!!editing}
         onClose={() => { setEditing(null); setIsNew(false); setError(null); }}
-        title={isNew ? 'New Chadhava' : `Edit Chadhava <${editing?.id?.slice(0, 8)}>`}
+        title={isNew ? 'New Chadhava' : `Edit Chadhava ${editing?.id?.slice(0, 8)}`}
         statusBadge={!isNew ? <StatusBadge status="ACTIVE" className="text-status-completed" /> : undefined}
         wide
       >

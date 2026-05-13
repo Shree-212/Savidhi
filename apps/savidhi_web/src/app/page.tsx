@@ -34,31 +34,31 @@ const SERVICES = [
   {
     icon: BookOpen,
     title: 'Book Pujas',
-    description: 'Book Puja Nifebebf jebebvfjev Ebe Bet Kasre Ashi Jon Ebe',
+    description: 'Book sacred pujas with verified priests for festivals, doshas, and personal rituals.',
     href: '/puja',
   },
   {
     icon: Gift,
     title: 'Book Chadhava',
-    description: 'Book Chadhava Nifebebf jebebvfjvv Ebe Bet Kasre Ashi Jon Ebe',
+    description: 'Send your chadhava offerings to temples with devotion, trust, and transparency.',
     href: '/chadhava',
   },
   {
     icon: Landmark,
     title: 'Discover Temples',
-    description: 'Discover Famous Temples Across India Which Have Mentioned In A History Like Which Have The...',
+    description: 'Discover ancient temples, their history, rituals, timings, and spiritual importance.',
     href: '/temples',
   },
   {
     icon: CalendarDays,
     title: 'Know Panchang & Tithi',
-    description: 'Read About Arik Panchage Jeeth Hojele Ahrb Ebe Sphrleshlo Ejdsbjei Duhften',
+    description: 'Check daily Panchang, tithi, nakshatra, muhurat, and festival details.',
     href: '/panchang',
   },
   {
     icon: Gem,
     title: 'Track Your Devotee Journey',
-    description: 'Track HH Fhjbjf Jle Jewith Hojele Ahrb Ebe Fljflebejk Sphrleshlo Ejdsbjei Duhften',
+    description: 'Track your puja bookings, offerings, and spiritual activities in one place.',
     href: '/points',
   },
 ];
@@ -199,20 +199,20 @@ function HowToVideoThumbnail() {
 
 export default function HomePage() {
   const t = useT();
-  const pujaScroll = useHorizontalScroll();
-  const chadhavaScroll = useHorizontalScroll();
   const templeScroll = useHorizontalScroll();
 
   // Fetch real data from the API
   const [pujas, setPujas] = useState<any[]>([]);
   const [chadhavas, setChadhavas] = useState<any[]>([]);
   const [temples, setTemples] = useState<any[]>([]);
+  const [pujaLimit, setPujaLimit] = useState(4);
+  const [chadhavaLimit, setChadhavaLimit] = useState(4);
 
   useEffect(() => {
     async function loadData() {
       const [pujasRes, chadhavasRes, templesRes] = await Promise.allSettled([
-        pujaService.list({ limit: 10 }),
-        chadhavaService.list({ limit: 10 }),
+        pujaService.list({ limit: 20 }),
+        chadhavaService.list({ limit: 20 }),
         templeService.list({ limit: 10 }),
       ]);
 
@@ -325,25 +325,29 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ═══════════ UPCOMING PUJAS CAROUSEL ═══════════ */}
+      {/* ═══════════ UPCOMING PUJAS ═══════════ */}
       <section className="section-container py-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingPujas')}</h2>
-          <CarouselNav
-            onLeft={() => pujaScroll.scroll('left')}
-            onRight={() => pujaScroll.scroll('right')}
-          />
+          <Link href="/puja" className="text-xs text-primary-500 font-medium hover:underline">
+            View All
+          </Link>
         </div>
-        <div
-          ref={pujaScroll.ref}
-          className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
-        >
-          {pujas.map((puja) => (
-            <div key={puja.id} className="min-w-[260px] sm:min-w-[280px] snap-start">
-              <PujaCard puja={puja} />
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {pujas.slice(0, pujaLimit).map((puja) => (
+            <PujaCard key={puja.id} puja={puja} />
           ))}
         </div>
+        {pujas.length > pujaLimit && (
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={() => setPujaLimit((l) => l + 4)}
+              className="px-6 py-2.5 rounded-full border border-primary-400 text-primary-500 text-sm font-semibold hover:bg-primary-50 transition"
+            >
+              Load More
+            </button>
+          </div>
+        )}
       </section>
 
       {/* ═══════════ HOW TO BOOK ═══════════ */}
@@ -404,25 +408,29 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ═══════════ DAILY CHADHAVA CAROUSEL ═══════════ */}
+      {/* ═══════════ DAILY CHADHAVA ═══════════ */}
       <section className="section-container py-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingChadhavas')}</h2>
-          <CarouselNav
-            onLeft={() => chadhavaScroll.scroll('left')}
-            onRight={() => chadhavaScroll.scroll('right')}
-          />
+          <Link href="/chadhava" className="text-xs text-primary-500 font-medium hover:underline">
+            View All
+          </Link>
         </div>
-        <div
-          ref={chadhavaScroll.ref}
-          className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
-        >
-          {chadhavas.map((c) => (
-            <div key={c.id} className="min-w-[260px] sm:min-w-[280px] snap-start">
-              <ChadhavaCard chadhava={c} />
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {chadhavas.slice(0, chadhavaLimit).map((c) => (
+            <ChadhavaCard key={c.id} chadhava={c} />
           ))}
         </div>
+        {chadhavas.length > chadhavaLimit && (
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={() => setChadhavaLimit((l) => l + 4)}
+              className="px-6 py-2.5 rounded-full border border-primary-400 text-primary-500 text-sm font-semibold hover:bg-primary-50 transition"
+            >
+              Load More
+            </button>
+          </div>
+        )}
       </section>
 
       {/* ═══════════ OUR SERVICES ═══════════ */}
