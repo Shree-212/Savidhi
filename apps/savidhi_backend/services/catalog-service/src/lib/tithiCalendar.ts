@@ -38,6 +38,15 @@ export async function getProkeralaToken(): Promise<string> {
 type RawPanchang = Record<string, unknown>;
 const _panchangCache = new Map<string, { data: RawPanchang; expiry: number }>();
 
+/** Read a cached panchang entry without making a network call. Returns null
+ *  on miss. Used by the calendar/events endpoint to assemble a month from
+ *  whatever the background prewarm has filled in so far. */
+export function peekPanchangCache(date: string, lat: number, lng: number): RawPanchang | null {
+  const hit = _panchangCache.get(`${date}_${lat}_${lng}`);
+  if (hit && Date.now() < hit.expiry) return hit.data;
+  return null;
+}
+
 export async function fetchPanchangRaw(date: string, lat: number, lng: number): Promise<RawPanchang> {
   const cacheKey = `${date}_${lat}_${lng}`;
   const hit = _panchangCache.get(cacheKey);
@@ -52,7 +61,13 @@ export async function fetchPanchangRaw(date: string, lat: number, lng: number): 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Prokerala panchang ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    const err = new Error(`Prokerala panchang ${res.status}: ${body}`);
+    // Surface the upstream status so callers can map it (e.g. 429 → 503).
+    (err as Error & { upstreamStatus?: number }).upstreamStatus = res.status;
+    throw err;
+  }
   const json = (await res.json()) as { status: string; data: RawPanchang };
 
   _panchangCache.set(cacheKey, { data: json.data, expiry: Date.now() + 24 * 60 * 60 * 1000 });

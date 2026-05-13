@@ -2,14 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Flame, Clock, Gift, LogIn, Loader2 } from 'lucide-react';
+import { Flame, Gift, LogIn, Loader2 } from 'lucide-react';
 import { isAuthenticated } from '@/lib/auth';
-import { pujaBookingService, chadhavaBookingService, appointmentService } from '@/lib/services';
+import { pujaBookingService, chadhavaBookingService } from '@/lib/services';
 
 export default function BookingsPage() {
   const [pujaCount, setPujaCount] = useState(0);
   const [chadhavaCount, setChadhavaCount] = useState(0);
-  const [apptCount, setApptCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
 
@@ -18,14 +17,12 @@ export default function BookingsPage() {
     setLoggedIn(true);
     (async () => {
       try {
-        const [pRes, cRes, aRes] = await Promise.allSettled([
+        const [pRes, cRes] = await Promise.allSettled([
           pujaBookingService.list(),
           chadhavaBookingService.list(),
-          appointmentService.list(),
         ]);
         if (pRes.status === 'fulfilled') setPujaCount(pRes.value.data?.data?.length ?? 0);
         if (cRes.status === 'fulfilled') setChadhavaCount(cRes.value.data?.data?.length ?? 0);
-        if (aRes.status === 'fulfilled') setApptCount(aRes.value.data?.data?.length ?? 0);
       } catch { /* ignore */ }
       finally { setLoading(false); }
     })();
@@ -75,13 +72,7 @@ export default function BookingsPage() {
           <p className="text-xs text-text-secondary mt-1">{chadhavaCount} {chadhavaCount === 1 ? 'offering' : 'offerings'}</p>
         </Link>
 
-        <Link href="/bookings/appointments" className="card p-6 hover:shadow-md transition group">
-          <div className="w-12 h-12 bg-primary-50 rounded-xl flex items-center justify-center mb-3">
-            <Clock className="w-6 h-6 text-primary-500" />
-          </div>
-          <h2 className="font-semibold text-text-primary group-hover:text-primary-500 transition">Appointment Bookings</h2>
-          <p className="text-xs text-text-secondary mt-1">{apptCount} {apptCount === 1 ? 'booking' : 'bookings'}</p>
-        </Link>
+        {/* Appointment Bookings card temporarily hidden until astrologer launch. */}
       </div>
     </div>
   );

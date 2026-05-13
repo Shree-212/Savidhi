@@ -25,6 +25,8 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
 
   // Close lang dropdown on outside click
   useEffect(() => {
@@ -35,6 +37,25 @@ export function Header() {
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [langOpen]);
+
+  // Close mobile menu on outside click (the toggle button handles its own toggling).
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (
+        mobileMenuRef.current && !mobileMenuRef.current.contains(t) &&
+        mobileToggleRef.current && !mobileToggleRef.current.contains(t)
+      ) {
+        setMobileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [mobileMenuOpen]);
+
+  // Close on route change.
+  useEffect(() => { setMobileMenuOpen(false); }, [pathname]);
 
   const pickLocale = (l: Locale) => { setLocale(l); setLangOpen(false); };
 
@@ -108,6 +129,7 @@ export function Header() {
 
             {/* Mobile menu button */}
             <button
+              ref={mobileToggleRef}
               className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Toggle menu"
@@ -124,7 +146,13 @@ export function Header() {
 
       {/* Mobile Nav */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-border-light bg-white">
+        <>
+          <div
+            className="lg:hidden fixed inset-0 top-[72px] bg-black/20 z-40"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden
+          />
+          <div ref={mobileMenuRef} className="lg:hidden border-t border-border-light bg-white relative z-50">
           <nav className="section-container py-4 flex flex-col gap-1">
             {NAV_KEYS.map((link) => (
               <Link
@@ -160,7 +188,8 @@ export function Header() {
               </div>
             </div>
           </nav>
-        </div>
+          </div>
+        </>
       )}
     </header>
   );

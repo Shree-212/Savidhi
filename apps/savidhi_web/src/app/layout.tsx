@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { AuthProvider } from "@/lib/AuthContext";
 import { LocaleProvider } from "@/lib/i18n";
+import { Toaster } from "react-hot-toast";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair", weight: ["400", "500", "600", "700"] });
@@ -70,6 +71,7 @@ export default function RootLayout({
             <Header />
             <main className="flex-1">{children}</main>
             <Footer />
+            <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
           </AuthProvider>
         </LocaleProvider>
       </body>

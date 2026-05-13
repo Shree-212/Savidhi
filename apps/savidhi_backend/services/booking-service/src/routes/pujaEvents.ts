@@ -8,8 +8,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const isUuid = (v: unknown) => typeof v === 'string' && UUID_RE.test(v);
 
 // ─── Allowed stage transitions & side-effects ────────────────────────────────
+// Live link is OPTIONAL — admin can advance to LIVE_ADDED with or without one.
 const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; statusUpdate?: string }> = {
-  YET_TO_START:          { next: 'LIVE_ADDED',            requiredField: 'live_link',          statusUpdate: 'INPROGRESS' },
+  YET_TO_START:          { next: 'LIVE_ADDED',                                                  statusUpdate: 'INPROGRESS' },
   LIVE_ADDED:            { next: 'SHORT_VIDEO_ADDED',     requiredField: 'short_video_url' },
   SHORT_VIDEO_ADDED:     { next: 'SANKALP_VIDEO_ADDED',   requiredField: 'sankalp_video_url' },
   SANKALP_VIDEO_ADDED:   { next: 'TO_BE_SHIPPED' },
@@ -138,7 +139,7 @@ pujaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, ne
 /** POST / – create puja event */
 pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { puja_id, pujari_id, start_time } = req.body;
+    const { puja_id, pujari_id, start_time, has_prasad } = req.body;
     if (!puja_id || !start_time) {
       return res.status(400).json({ success: false, message: 'puja_id and start_time are required' });
     }
@@ -152,9 +153,9 @@ pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, nex
     const maxBookings = pujaResult.rows[0].max_devotee;
 
     const { rows } = await pool.query(
-      `INSERT INTO puja_events (puja_id, pujari_id, start_time, max_bookings)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [puja_id, pujari_id ?? null, start_time, maxBookings],
+      `INSERT INTO puja_events (puja_id, pujari_id, start_time, max_bookings, has_prasad)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [puja_id, pujari_id ?? null, start_time, maxBookings, has_prasad ?? true],
     );
 
     res.status(201).json({ success: true, data: rows[0] });
@@ -165,7 +166,7 @@ pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, nex
 pujaEventsRouter.patch('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const allowed = ['pujari_id', 'start_time', 'max_bookings'];
+    const allowed = ['pujari_id', 'start_time', 'max_bookings', 'has_prasad'];
     const sets: string[] = [];
     const params: unknown[] = [];
     let idx = 1;

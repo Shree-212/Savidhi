@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Calendar, Loader2, User, Check } from 'lucide-react';
@@ -80,7 +80,9 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
           if (pujaRaw.booking_mode === 'SUBSCRIPTION') setBookingType('SUBSCRIPTION');
           else if (pujaRaw.booking_mode === 'ONE_TIME') setBookingType('ONE_TIME');
         }
-        setEvents(eventsRes.data?.data ?? []);
+        const evs = (eventsRes.data?.data ?? []) as PujaEvent[];
+        evs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        setEvents(evs);
       } catch (err: any) {
         if (!cancelled) setError(err.response?.data?.message || err.message || 'Failed to load');
       } finally {
@@ -102,6 +104,12 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
       return prev.slice(0, devoteeCount);
     });
   }, [devoteeCount]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [step]);
+
+  const idempotencyKey = useMemo(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`), []);
 
   if (loading) {
     return (
@@ -156,6 +164,7 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
           relation: d.relation.trim() || undefined,
         })),
         booking_type: bookingType,
+        idempotency_key: idempotencyKey,
       };
       const bookingRes = await pujaBookingService.create(payload);
       const booking = bookingRes.data?.data;

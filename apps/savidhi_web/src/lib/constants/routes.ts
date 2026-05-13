@@ -18,5 +18,9 @@ export const ROUTES = {
   PUJA_STATUS: (id: string) => `/bookings/puja/${id}`,
   APPOINTMENT_STATUS: (id: string) => `/bookings/appointments/${id}`,
   PROFILE: '/profile',
+  PROFILE_EDIT: '/profile/edit',
+  HELP: '/help',
+  CONTACT: '/contact',
+  ABOUT: '/about',
   LOGIN: '/login',
 } as const;

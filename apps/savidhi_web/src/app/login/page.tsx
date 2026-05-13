@@ -101,9 +101,6 @@ export default function LoginPage() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Generate OTP <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-              <p className="text-xs text-text-muted mt-3 text-center">
-                OTP will be logged in auth-service console for testing
-              </p>
             </>
           ) : (
             <>
@@ -114,15 +111,45 @@ export default function LoginPage() {
                     key={i}
                     type="text"
                     inputMode="numeric"
-                    maxLength={1}
+                    maxLength={6}
                     value={otp[i] || ''}
                     onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '');
+                      const raw = e.target.value.replace(/\D/g, '');
+                      if (raw.length > 1) {
+                        // Paste path: distribute digits across boxes starting from this index.
+                        const next = otp.split('');
+                        for (let k = 0; k < raw.length && i + k < 6; k++) next[i + k] = raw[k];
+                        const padded = next.join('').slice(0, 6);
+                        setOtp(padded);
+                        const target = e.target as HTMLInputElement;
+                        const container = target.parentElement;
+                        if (container) {
+                          const inputs = container.querySelectorAll('input');
+                          const lastIdx = Math.min(i + raw.length, 6) - 1;
+                          (inputs[lastIdx] as HTMLInputElement | undefined)?.focus();
+                        }
+                        return;
+                      }
                       const newOtp = otp.split('');
-                      newOtp[i] = val;
+                      newOtp[i] = raw;
                       setOtp(newOtp.join(''));
-                      if (val && e.target.nextElementSibling) {
+                      if (raw && e.target.nextElementSibling) {
                         (e.target.nextElementSibling as HTMLInputElement).focus();
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const text = e.clipboardData.getData('text').replace(/\D/g, '');
+                      if (!text) return;
+                      e.preventDefault();
+                      const next = otp.split('');
+                      for (let k = 0; k < text.length && i + k < 6; k++) next[i + k] = text[k];
+                      const padded = next.join('').slice(0, 6);
+                      setOtp(padded);
+                      const container = (e.target as HTMLInputElement).parentElement;
+                      if (container) {
+                        const inputs = container.querySelectorAll('input');
+                        const lastIdx = Math.min(i + text.length, 6) - 1;
+                        (inputs[lastIdx] as HTMLInputElement | undefined)?.focus();
                       }
                     }}
                     className="w-11 h-12 text-center border border-border-DEFAULT rounded-xl text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"

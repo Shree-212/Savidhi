@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { fetchPanchangRaw } from '../lib/tithiCalendar';
+import { fetchPanchangRaw, peekPanchangCache } from '../lib/tithiCalendar';
 
 export const panchangRouter = Router();
 
@@ -141,9 +141,20 @@ panchangRouter.get('/', async (req: Request, res: Response, next: NextFunction) 
     try {
       d = await fetchPanchangRaw(date, lat, lng);
     } catch (e) {
-      const msg = (e as Error).message;
+      const err = e as Error & { upstreamStatus?: number };
+      const msg = err.message ?? '';
       if (msg.includes('PROKERALA_CLIENT_ID')) {
         res.status(503).json({ success: false, message: 'Panchang API credentials not configured' });
+        return;
+      }
+      // Prokerala free-tier rate limit (5 req/60s). Surface as 503 so the
+      // frontend can show a retryable message instead of a hard error, and
+      // include Retry-After so the browser respects the back-off.
+      if (err.upstreamStatus === 429 || msg.includes('429')) {
+        res.set('Retry-After', '60').status(503).json({
+          success: false,
+          message: 'Panchang service is temporarily rate-limited. Please try again shortly.',
+        });
         return;
       }
       throw e;
@@ -213,6 +224,136 @@ panchangRouter.get('/', async (req: Request, res: Response, next: NextFunction) 
 
     _cache.set(cacheKey, { data: result, expiry: Date.now() + 24 * 60 * 60 * 1000 });
     res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── /events – month-wide calendar of tithi + festivals ────────────────────────
+//
+// Prokerala's free tier rate-limits at 5 requests / 60s. Fetching all ~30 days
+// of a month synchronously would (a) blow past the rate limit instantly, and
+// (b) cascade 429s onto subsequent /panchang single-day calls. So this endpoint
+// does NOT fetch on the request path. Instead:
+//
+//   1. We read whatever days are already in the panchang cache.
+//   2. Assemble the partial result and return immediately.
+//   3. If the cache is incomplete for this month+location, we kick off a
+//      throttled background prewarm (one Prokerala call every ~13s) that fills
+//      the cache. Subsequent /events calls then return more days.
+//
+// This means the first time a user opens the Calendar tab for a month, they
+// see whatever has been pre-warmed by the daily panchang views — likely empty.
+// After ~6–8 minutes of background warmup, the month is complete and stays in
+// the 24h cache. Switching to a different city/month restarts the warmup for
+// that combination.
+
+type DayEvent = { date: string; title: string; tithi: string; location: string };
+
+const _eventsCache = new Map<string, { data: DayEvent[]; expiry: number }>();
+const _prewarmingMonths = new Set<string>();
+
+function listDatesInMonth(year: number, month: number): string[] {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const out: string[] = [];
+  const mm = String(month).padStart(2, '0');
+  for (let d = 1; d <= daysInMonth; d++) {
+    out.push(`${year}-${mm}-${String(d).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+function dayToEvent(date: string, raw: Record<string, unknown>, locationLabel: string): DayEvent | null {
+  const tithiArr = (Array.isArray(raw.tithi) ? raw.tithi : [raw.tithi]) as Record<string, string | number>[];
+  const tithi = tithiLabel(tithiArr[0] as Record<string, string>);
+  const festivals: string[] = Array.isArray(raw.festivals)
+    ? (raw.festivals as unknown[]).map((f) => (typeof f === 'string' ? f : (f as { name?: string })?.name ?? '')).filter(Boolean)
+    : [];
+  if (festivals.length === 0) return null;
+  return {
+    date: new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+    title: festivals.join(', '),
+    tithi,
+    location: locationLabel,
+  };
+}
+
+/** Throttled background prewarmer. Fetches each day at ~13s intervals so we
+ *  stay under Prokerala's 5/60s limit and don't starve concurrent /panchang
+ *  requests. fetchPanchangRaw is itself cached, so this is idempotent. */
+async function prewarmMonth(year: number, month: number, lat: number, lng: number): Promise<void> {
+  const key = `prewarm_${year}_${month}_${lat}_${lng}`;
+  if (_prewarmingMonths.has(key)) return;
+  _prewarmingMonths.add(key);
+  try {
+    for (const date of listDatesInMonth(year, month)) {
+      // Skip days we already have to avoid burning rate-limit budget on no-ops.
+      if (peekPanchangCache(date, lat, lng)) continue;
+      try {
+        await fetchPanchangRaw(date, lat, lng);
+      } catch (e) {
+        const err = e as Error & { upstreamStatus?: number };
+        // On 429, wait a full minute before continuing — gives the limit time to
+        // reset rather than burning the next 4 slots failing.
+        if (err.upstreamStatus === 429) {
+          await new Promise((r) => setTimeout(r, 60_000));
+          continue;
+        }
+        // Other errors: log and keep going.
+        console.warn(`[panchang prewarm] ${date}@${lat},${lng} failed:`, err.message);
+      }
+      // Pace ourselves: 5 requests / 60s = 1 every 12s. Round up to 13s
+      // for safety against clock drift / concurrent /panchang calls.
+      await new Promise((r) => setTimeout(r, 13_000));
+    }
+  } finally {
+    _prewarmingMonths.delete(key);
+  }
+}
+
+panchangRouter.get('/events', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const now = new Date();
+    const month = Math.max(1, Math.min(12, parseInt((req.query.month as string) || String(now.getMonth() + 1), 10)));
+    const year  = parseInt((req.query.year as string) || String(now.getFullYear()), 10) || now.getFullYear();
+    const lat   = parseFloat((req.query.lat as string) || '23.0225');
+    const lng   = parseFloat((req.query.lng as string) || '72.5714');
+    const locationLabel = (req.query.location as string) || 'Ahmedabad';
+
+    // Build a result from whatever's currently in the per-day panchang cache.
+    const dates = listDatesInMonth(year, month);
+    const results: DayEvent[] = [];
+    let hits = 0;
+    for (const date of dates) {
+      const raw = peekPanchangCache(date, lat, lng);
+      if (!raw) continue;
+      hits++;
+      const ev = dayToEvent(date, raw, locationLabel);
+      if (ev) results.push(ev);
+    }
+
+    const complete = hits === dates.length;
+    const cacheKey = `events_${year}_${month}_${lat}_${lng}`;
+    // Cache complete months for 24h; partial results for 90s so we re-aggregate
+    // as the prewarm fills in more days.
+    const ttl = complete ? 24 * 60 * 60 * 1000 : 90 * 1000;
+    _eventsCache.set(cacheKey, { data: results, expiry: Date.now() + ttl });
+
+    // Kick off a background prewarm if we don't have the full month yet. This
+    // is fire-and-forget — the response returns immediately.
+    if (!complete) {
+      // Returning the promise to a no-op handler so we don't get an
+      // unhandled-rejection warning if the prewarm itself crashes.
+      prewarmMonth(year, month, lat, lng).catch((e) => {
+        console.warn('[panchang prewarm] crashed:', (e as Error).message);
+      });
+    }
+
+    res.json({
+      success: true,
+      data: results,
+      meta: complete ? undefined : { warming: true, daysReady: hits, daysTotal: dates.length },
+    });
   } catch (err) {
     next(err);
   }

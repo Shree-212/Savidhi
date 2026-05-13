@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Calendar, Loader2, Minus, Plus, Check } from 'lucide-react';
@@ -68,6 +68,12 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
   }, [searchParams]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [step]);
+
+  const idempotencyKey = useMemo(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`), []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -80,7 +86,9 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
         if (cancelled) return;
         const chRaw = chRes.data?.data ?? chRes.data;
         if (chRaw) setChadhava({ mapped: mapChadhava(chRaw), raw: chRaw });
-        setEvents(evRes.data?.data ?? []);
+        const evs = (evRes.data?.data ?? []) as ChadhavaEvent[];
+        evs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        setEvents(evs);
       } catch (err: any) {
         if (!cancelled) setError(err.response?.data?.message || 'Failed to load');
       } finally {
@@ -165,6 +173,7 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
           offering_id: o.id,
           quantity: offeringsQty[o.id],
         })),
+        idempotency_key: idempotencyKey,
       };
       const bookingRes = await chadhavaBookingService.create(payload);
       const booking = bookingRes.data?.data;

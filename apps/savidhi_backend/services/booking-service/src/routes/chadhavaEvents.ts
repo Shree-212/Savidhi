@@ -9,8 +9,9 @@ const isUuid = (v: unknown) => typeof v === 'string' && UUID_RE.test(v);
 
 // ─── Stage transitions ──────────────────────────────────────────────────────
 // PDF: chadhava has NO prasad shipping. Terminal stage after sankalp is COMPLETED.
+// Live link is OPTIONAL — admin can advance to LIVE_ADDED with or without one.
 const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; statusUpdate?: string }> = {
-  YET_TO_START:        { next: 'LIVE_ADDED',          requiredField: 'live_link',        statusUpdate: 'INPROGRESS' },
+  YET_TO_START:        { next: 'LIVE_ADDED',                                              statusUpdate: 'INPROGRESS' },
   LIVE_ADDED:          { next: 'SHORT_VIDEO_ADDED',   requiredField: 'short_video_url' },
   SHORT_VIDEO_ADDED:   { next: 'SANKALP_VIDEO_ADDED', requiredField: 'sankalp_video_url' },
   SANKALP_VIDEO_ADDED: { next: 'COMPLETED',           statusUpdate: 'COMPLETED' },
@@ -143,7 +144,7 @@ chadhavaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response
 /** POST / – create chadhava event (admin) */
 chadhavaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { chadhava_id, pujari_id, start_time } = req.body;
+    const { chadhava_id, pujari_id, start_time, has_prasad } = req.body;
     if (!chadhava_id || !start_time) {
       return res.status(400).json({ success: false, message: 'chadhava_id and start_time are required' });
     }
@@ -156,20 +157,20 @@ chadhavaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response,
     const maxBookings = chResult.rows[0].max_bookings_per_event;
 
     const { rows } = await pool.query(
-      `INSERT INTO chadhava_events (chadhava_id, pujari_id, start_time, max_bookings)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [chadhava_id, pujari_id ?? null, start_time, maxBookings],
+      `INSERT INTO chadhava_events (chadhava_id, pujari_id, start_time, max_bookings, has_prasad)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [chadhava_id, pujari_id ?? null, start_time, maxBookings, has_prasad ?? true],
     );
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) { next(err); }
 });
 
-/** PATCH /:id – admin updates event metadata (pujari / start_time / max_bookings) */
+/** PATCH /:id – admin updates event metadata (pujari / start_time / max_bookings / has_prasad) */
 chadhavaEventsRouter.patch('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const allowed = ['pujari_id', 'start_time', 'max_bookings'];
+    const allowed = ['pujari_id', 'start_time', 'max_bookings', 'has_prasad'];
     const sets: string[] = [];
     const params: unknown[] = [];
     let idx = 1;

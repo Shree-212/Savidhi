@@ -61,6 +61,9 @@ chadhavaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Respon
     const role = req.headers['x-user-role'] as string;
     const userId = req.headers['x-user-id'] as string;
 
+    // cb.* already includes the booking's sankalp_video_timestamp (per-booking,
+    // per-devotee minute/second list). Event row carries the shared video URL
+    // and the has_prasad toggle that drives the customer-side timeline.
     const bookingResult = await pool.query(
       `SELECT cb.*,
               c.name AS chadhava_name, t.name AS temple_name,
@@ -70,6 +73,7 @@ chadhavaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Respon
               ce.live_link AS event_live_link,
               ce.short_video_url AS event_short_video_url,
               ce.sankalp_video_url AS event_sankalp_video_url,
+              ce.has_prasad AS event_has_prasad,
               d.name AS devotee_name, d.phone AS devotee_phone
        FROM chadhava_bookings cb
        JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
@@ -112,13 +116,39 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
   const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const { chadhava_event_id, sankalp, prasad_delivery_address, devotees, offerings } = req.body;
+    const { chadhava_event_id, sankalp, prasad_delivery_address, devotees, offerings, idempotency_key } = req.body;
 
     if (!chadhava_event_id) {
       return res.status(400).json({ success: false, message: 'chadhava_event_id is required' });
     }
     if (!Array.isArray(offerings) || offerings.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one offering is required' });
+    }
+
+    // Idempotency: if the client retried (network blip, double-tap, React
+    // StrictMode dev double-render), return the row we already created.
+    if (idempotency_key) {
+      const existing = await pool.query(
+        `SELECT * FROM chadhava_bookings WHERE devotee_id = $1 AND idempotency_key = $2`,
+        [userId, idempotency_key],
+      );
+      if (existing.rows.length > 0) {
+        const booking = existing.rows[0];
+        const devRows = await pool.query(
+          `SELECT id, name, gotra FROM chadhava_booking_devotees WHERE chadhava_booking_id = $1`,
+          [booking.id],
+        );
+        booking.devotees = devRows.rows;
+        const offRows = await pool.query(
+          `SELECT cbo.*, co.item_name
+           FROM chadhava_booking_offerings cbo
+           JOIN chadhava_offerings co ON co.id = cbo.offering_id
+           WHERE cbo.chadhava_booking_id = $1`,
+          [booking.id],
+        );
+        booking.offerings = offRows.rows;
+        return res.status(200).json({ success: true, data: booking, idempotent_replay: true });
+      }
     }
 
     await client.query('BEGIN');
@@ -176,9 +206,9 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
     }
 
     const bookingResult = await client.query(
-      `INSERT INTO chadhava_bookings (chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [chadhava_event_id, userId, totalCost, sankalp ?? null, prasad_delivery_address ?? null],
+      `INSERT INTO chadhava_bookings (chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [chadhava_event_id, userId, totalCost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null],
     );
     const booking = bookingResult.rows[0];
 

@@ -73,6 +73,7 @@ export const pujaBookingService = {
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; relation?: string; gotra: string }>;
     booking_type?: 'ONE_TIME' | 'SUBSCRIPTION';
+    idempotency_key?: string;
   }) => api.post('/bookings/puja-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/puja-bookings/${id}/cancel`),
 };
@@ -87,6 +88,7 @@ export const chadhavaBookingService = {
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; gotra: string }>;
     offerings: Array<{ offering_id: string; quantity: number }>;
+    idempotency_key?: string;
   }) => api.post('/bookings/chadhava-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/chadhava-bookings/${id}/cancel`),
 };
@@ -125,8 +127,8 @@ export const settingsService = {
 
 // ─── Panchang ────────────────────────────────────────────────────────────────
 export const panchangService = {
-  get: (params: { date: string; location?: string }) =>
+  get: (params: { date: string; location?: string; lat?: number; lng?: number }) =>
     api.get('/catalog/panchang', { params }),
-  getEvents: (params: { month: number; year: number }) =>
+  getEvents: (params: { month: number; year: number; location?: string; lat?: number; lng?: number }) =>
     api.get('/catalog/panchang/events', { params }),
 };

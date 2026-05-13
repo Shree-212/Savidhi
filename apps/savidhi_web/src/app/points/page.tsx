@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Flame, Clock, Users, CalendarHeart, Diamond, Share2, Star, Loader2, LogIn } from 'lucide-react';
+import { Flame, Clock, Users, CalendarHeart, Loader2, LogIn } from 'lucide-react';
 import { isAuthenticated } from '@/lib/auth';
 import { userService } from '@/lib/services';
 import { normaliseMediaUrl } from '@/lib/utils';
@@ -12,13 +12,6 @@ const STATS = [
   { key: 'pujaBooked' as const, label: 'Puja Booked', Icon: Flame },
   { key: 'appointments' as const, label: 'Appointments', Icon: Clock },
   { key: 'pujaForOthers' as const, label: 'Puja For Others', Icon: Users },
-];
-
-const EARN_WAYS = [
-  { Icon: Flame, text: 'Book a Puja – Earn 10 gems' },
-  { Icon: Clock, text: 'Book an Appointment – Earn 5 gems' },
-  { Icon: Share2, text: 'Refer a Friend – Earn 25 gems' },
-  { Icon: Star, text: 'Complete Weekly Puja – Earn 15 gems' },
 ];
 
 export default function PointsPage() {
@@ -34,14 +27,12 @@ export default function PointsPage() {
     setLoggedIn(true);
     (async () => {
       try {
-        const [profileRes, gemsRes, achievementsRes] = await Promise.allSettled([
+        const [profileRes, achievementsRes] = await Promise.allSettled([
           userService.getProfile(),
-          userService.getGems(),
           userService.getAchievements(),
         ]);
 
         const d = profileRes.status === 'fulfilled' ? (profileRes.value.data?.data ?? profileRes.value.data) : null;
-        const gemsData = gemsRes.status === 'fulfilled' ? (gemsRes.value.data?.data ?? gemsRes.value.data) : null;
         const achData = achievementsRes.status === 'fulfilled' ? (achievementsRes.value.data?.data ?? achievementsRes.value.data) : [];
 
         if (d) {
@@ -49,7 +40,6 @@ export default function PointsPage() {
             name: d.name ?? '',
             imageUrl: d.image_url ?? '',
             level: d.level ?? 1,
-            gems: d.gems ?? gemsData?.balance ?? 0,
             pujaBooked: d.bookings?.puja ?? 0,
             appointments: d.bookings?.appointment ?? 0,
             pujaForOthers: 0,
@@ -108,11 +98,6 @@ export default function PointsPage() {
           <p className="font-semibold text-text-primary">{user.name}</p>
           <p className="text-xs text-primary-500">Level {user.level}</p>
         </div>
-        <div className="text-center">
-          <Diamond className="w-5 h-5 text-primary-500 mx-auto" />
-          <p className="text-xl font-bold text-primary-600">{user.gems}</p>
-          <p className="text-[10px] text-text-secondary">Gems</p>
-        </div>
       </div>
 
       {/* Progress */}
@@ -160,18 +145,6 @@ export default function PointsPage() {
         ))}
       </div>
 
-      {/* How to Earn */}
-      <div className="border border-border-DEFAULT rounded-xl p-4 bg-white">
-        <h3 className="font-semibold text-text-primary mb-3">How to Earn Gems</h3>
-        <div className="space-y-3">
-          {EARN_WAYS.map(({ Icon, text }, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm text-text-secondary">
-              <Icon className="w-4 h-4 text-primary-500 shrink-0" />
-              {text}
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

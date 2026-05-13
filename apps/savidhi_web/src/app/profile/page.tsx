@@ -5,8 +5,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  User, Phone, Edit2, BookOpen, Calendar, Gem, ChevronRight, Users,
-  Gift, MapPin, CreditCard, Bell, Globe, Shield, HelpCircle, Mail, Info,
+  Phone, Edit2, BookOpen, ChevronRight,
+  Gift, HelpCircle, Mail, Info,
   LogOut, LogIn, Loader2,
 } from 'lucide-react';
 import { isAuthenticated, clearAuthTokens } from '@/lib/auth';
@@ -16,26 +16,16 @@ import { normaliseMediaUrl } from '@/lib/utils';
 interface MenuItem { icon: React.ElementType; label: string; href: string; badge?: number; }
 interface MenuSection { title: string; items: MenuItem[]; }
 
+// Account / App Settings sections hidden until the corresponding pages ship.
 const menuSections: MenuSection[] = [
   { title: 'Bookings', items: [
     { icon: BookOpen, label: 'Puja Bookings', href: '/bookings/puja' },
     { icon: Gift, label: 'Chadhava Bookings', href: '/bookings/chadhava' },
-    { icon: Calendar, label: 'Appointments', href: '/bookings/appointments' },
-  ]},
-  { title: 'Account', items: [
-    { icon: Users, label: 'My Family', href: '#' },
-    { icon: MapPin, label: 'Saved Addresses', href: '#' },
-    { icon: CreditCard, label: 'Payment Methods', href: '#' },
-  ]},
-  { title: 'App Settings', items: [
-    { icon: Bell, label: 'Notifications', href: '#' },
-    { icon: Globe, label: 'Language', href: '#' },
-    { icon: Shield, label: 'Privacy', href: '#' },
   ]},
   { title: 'Support', items: [
-    { icon: HelpCircle, label: 'Help & FAQ', href: '#' },
-    { icon: Mail, label: 'Contact Us', href: '#' },
-    { icon: Info, label: 'About Savidhi', href: '#' },
+    { icon: HelpCircle, label: 'Help & FAQ', href: '/help' },
+    { icon: Mail, label: 'Contact Us', href: '/contact' },
+    { icon: Info, label: 'About Savidhi', href: '/about' },
   ]},
 ];
 
@@ -58,9 +48,8 @@ export default function ProfilePage() {
             phone: d.phone ?? '',
             imageUrl: d.image_url ?? '',
             level: d.level ?? 1,
-            gems: d.gems ?? 0,
             pujaBooked: d.bookings?.puja ?? 0,
-            appointments: d.bookings?.appointment ?? 0,
+            chadhavaBooked: d.bookings?.chadhava ?? 0,
           });
         }
       } catch { /* ignore */ }
@@ -114,29 +103,26 @@ export default function ProfilePage() {
               +91 {user.phone}
             </p>
           </div>
-          <button className="p-2 rounded-full hover:bg-surface-warm transition">
+          <Link
+            href="/profile/edit"
+            aria-label="Edit profile"
+            className="p-2 rounded-full hover:bg-surface-warm transition"
+          >
             <Edit2 className="w-4 h-4 text-primary-500" />
-          </button>
+          </Link>
         </div>
       </div>
 
       {/* Quick Stats */}
       <div className="card p-4 mb-6">
-        <div className="grid grid-cols-3 divide-x divide-border-DEFAULT text-center">
+        <div className="grid grid-cols-2 divide-x divide-border-DEFAULT text-center">
           <div>
             <p className="text-lg font-bold text-primary-500">{user.pujaBooked}</p>
             <p className="text-xs text-text-muted">Pujas Booked</p>
           </div>
           <div>
-            <p className="text-lg font-bold text-primary-500">{user.appointments}</p>
-            <p className="text-xs text-text-muted">Appointments</p>
-          </div>
-          <div>
-            <div className="flex items-center justify-center gap-1">
-              <Gem className="w-4 h-4 text-primary-500" />
-              <p className="text-lg font-bold text-primary-500">{user.gems}</p>
-            </div>
-            <p className="text-xs text-text-muted">Gems</p>
+            <p className="text-lg font-bold text-primary-500">{user.chadhavaBooked}</p>
+            <p className="text-xs text-text-muted">Chadhavas Booked</p>
           </div>
         </div>
       </div>

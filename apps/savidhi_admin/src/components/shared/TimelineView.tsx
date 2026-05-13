@@ -32,6 +32,12 @@ function startOfWeek(d: Date): Date {
   return clone;
 }
 
+function startOfDay(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
@@ -52,7 +58,12 @@ interface TimelineViewProps {
 }
 
 export function TimelineView({ events, onEventClick }: TimelineViewProps) {
+  // The user thinks of this as "I am looking at one day at a time". We keep
+  // a 7-day strip for navigation but only render events that fall on the
+  // selected date — clicking another date in the strip changes the visible
+  // events, not just the window. The chevrons scroll a week at a time.
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()));
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const days = useMemo(
@@ -71,62 +82,66 @@ export function TimelineView({ events, onEventClick }: TimelineViewProps) {
     return `${s.getDate()} ${MONTH_SHORT[s.getMonth()]} – ${e.getDate()} ${MONTH_SHORT[e.getMonth()]}`;
   }, [days]);
 
-  // Group events by day column
-  const eventsByDay = useMemo(() => {
-    const map = new Map<number, TimelineEvent[]>();
-    for (const evt of events) {
-      const evtDate = evt.date ? new Date(evt.date) : null;
-      if (!evtDate) continue;
-      const dayIdx = days.findIndex(d => isSameDay(d, evtDate));
-      if (dayIdx === -1) continue;
-      if (!map.has(dayIdx)) map.set(dayIdx, []);
-      map.get(dayIdx)!.push(evt);
-    }
-    return map;
-  }, [events, days]);
+  // Only events on the selected day, ordered top-to-bottom by start_time.
+  const dayEvents = useMemo(() => {
+    return events
+      .filter((evt) => {
+        if (!evt.date) return false;
+        return isSameDay(new Date(evt.date), selectedDate);
+      })
+      .sort((a, b) => a.startHour - b.startHour);
+  }, [events, selectedDate]);
 
   const ROW_H = 44;
-  const maxRows = Math.max(1, ...Array.from(eventsByDay.values()).map(v => v.length));
+  const maxRows = Math.max(1, dayEvents.length);
 
   return (
     <div>
       {/* ── Date navigation ── */}
       <div className="flex items-center gap-2 mb-4">
         <button
-          aria-label="Previous day"
-          onClick={() => setWeekStart(d => addDays(d, -1))}
+          aria-label="Previous week"
+          onClick={() => setWeekStart((d) => addDays(d, -7))}
           className="h-8 w-8 bg-accent border border-border rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft size={14} />
         </button>
 
-        {/* Day cells — click to jump that date to the left edge */}
-        {days.map((d, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setWeekStart(d)}
-            className={cn(
-              'flex-1 text-center py-1.5 rounded-lg text-xs select-none transition-colors',
-              isSameDay(d, today)
-                ? 'bg-primary/20 border border-primary text-primary font-bold'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-            )}
-          >
-            <div className="font-semibold leading-tight">{d.getDate()}</div>
-            <div className="text-[10px] leading-tight">{MONTH_SHORT[d.getMonth()]}</div>
-          </button>
-        ))}
+        {/* Day cells — click selects that day */}
+        {days.map((d, i) => {
+          const isSelected = isSameDay(d, selectedDate);
+          const isToday = isSameDay(d, today);
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setSelectedDate(startOfDay(d))}
+              className={cn(
+                'flex-1 text-center py-1.5 rounded-lg text-xs select-none transition-colors relative',
+                isSelected
+                  ? 'bg-primary text-primary-foreground font-bold shadow-sm'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+            >
+              <div className="font-semibold leading-tight">{d.getDate()}</div>
+              <div className="text-[10px] leading-tight">{MONTH_SHORT[d.getMonth()]}</div>
+              {/* Subtle "today" indicator when today is not the selected date */}
+              {isToday && !isSelected && (
+                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" aria-hidden />
+              )}
+            </button>
+          );
+        })}
 
         <button
-          aria-label="Next day"
-          onClick={() => setWeekStart(d => addDays(d, 1))}
+          aria-label="Next week"
+          onClick={() => setWeekStart((d) => addDays(d, 7))}
           className="h-8 w-8 bg-accent border border-border rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground"
         >
           <ChevronRight size={14} />
         </button>
 
-        {/* Range button opens a native date picker; selecting jumps the window */}
+        {/* Range button opens a native date picker; selecting jumps the window AND selection */}
         <div className="relative">
           <button
             type="button"
@@ -144,14 +159,15 @@ export function TimelineView({ events, onEventClick }: TimelineViewProps) {
           <input
             ref={dateInputRef}
             type="date"
-            value={toDateInputValue(weekStart)}
+            value={toDateInputValue(selectedDate)}
             onChange={(e) => {
               const v = e.target.value;
               if (!v) return;
               const [y, m, d] = v.split('-').map(Number);
               const picked = new Date(y, m - 1, d);
               picked.setHours(0, 0, 0, 0);
-              setWeekStart(picked);
+              setWeekStart(startOfWeek(picked));
+              setSelectedDate(picked);
             }}
             className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
             aria-hidden
@@ -169,35 +185,32 @@ export function TimelineView({ events, onEventClick }: TimelineViewProps) {
         ))}
       </div>
 
-      {/* ── Event grid ── */}
+      {/* ── Event grid: each event in its own row on the selected day ── */}
       <div style={{ minHeight: `${maxRows * ROW_H + 20}px` }} className="relative">
-        {days.map((_, dayIdx) => {
-          const dayEvents = eventsByDay.get(dayIdx) ?? [];
-          return dayEvents.map((event, slotIdx) => {
-            const leftPct  = ((event.startHour - 8) / 12) * 100;
-            const widthPct = Math.max((event.durationHours / 12) * 100, 10);
-            const top      = dayIdx * ROW_H + slotIdx * ROW_H + 4;
+        {dayEvents.map((event, idx) => {
+          const leftPct  = ((event.startHour - 8) / 12) * 100;
+          const widthPct = Math.max((event.durationHours / 12) * 100, 10);
+          const top      = idx * ROW_H + 4;
 
-            return (
-              <div
-                key={event.id}
-                className={cn(
-                  'absolute h-[36px] rounded-md px-2 py-1 cursor-pointer border-l-2 overflow-hidden transition-opacity hover:opacity-90',
-                  COLOR_MAP[event.color] || COLOR_MAP.orange,
-                )}
-                style={{ left: `${leftPct}%`, width: `${widthPct}%`, top: `${top}px` }}
-                onClick={() => onEventClick?.(event)}
-              >
-                <p className="text-[10px] font-semibold text-white truncate leading-tight">{event.title}</p>
-                <p className="text-[9px] text-white/70 truncate leading-tight">{event.subtitle}</p>
-              </div>
-            );
-          });
+          return (
+            <div
+              key={event.id}
+              className={cn(
+                'absolute h-[36px] rounded-md px-2 py-1 cursor-pointer border-l-2 overflow-hidden transition-opacity hover:opacity-90',
+                COLOR_MAP[event.color] || COLOR_MAP.orange,
+              )}
+              style={{ left: `${leftPct}%`, width: `${widthPct}%`, top: `${top}px` }}
+              onClick={() => onEventClick?.(event)}
+            >
+              <p className="text-[10px] font-semibold text-white truncate leading-tight">{event.title}</p>
+              <p className="text-[9px] text-white/70 truncate leading-tight">{event.subtitle}</p>
+            </div>
+          );
         })}
 
-        {events.length === 0 && (
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            No events scheduled for this week
+        {dayEvents.length === 0 && (
+          <div className="flex items-center justify-center h-[120px] text-sm text-muted-foreground">
+            No events scheduled for {selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
           </div>
         )}
       </div>

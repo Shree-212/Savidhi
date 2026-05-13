@@ -2,11 +2,13 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Calendar, Gift, MapPin, Package, Phone, Share2, Loader2, Users } from 'lucide-react';
+import { ArrowLeft, Calendar, Gift, MapPin, Package, Loader2, Users } from 'lucide-react';
 import { chadhavaBookingService } from '@/lib/services';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { VideoPlayer } from '@/components/shared/VideoPlayer';
-import { normaliseMediaUrl } from '@/lib/utils';
+import { YourVideosCard } from '@/components/booking/YourVideosCard';
+import { BookingTimeline, type TimelineStep } from '@/components/booking/BookingTimeline';
+import { SupportActions } from '@/components/booking/SupportActions';
+import type { SankalpTimestamp } from '@/components/booking/SankalpTimestamps';
 import type { ChadhavaBookingStatus } from '@/data/models';
 
 const STATUS_ORDER = [
@@ -31,13 +33,7 @@ function mapDisplayStatus(s: string): ChadhavaBookingStatus {
   return map[s] ?? 'YET_TO_START';
 }
 
-interface Step {
-  label: string;
-  subtitle?: string;
-  completed: boolean;
-}
-
-function buildSteps(booking: any): Step[] {
+function buildSteps(booking: any): TimelineStep[] {
   const si = statusIndex(booking.event_stage ?? booking.status ?? 'PENDING');
   return [
     {
@@ -56,11 +52,13 @@ function buildSteps(booking: any): Step[] {
       label: 'Prasad Being Prepared',
       subtitle: 'Prasad from the offering is being packed for you',
       completed: si >= statusIndex('TO_BE_SHIPPED'),
+      isPrasadStep: true,
     },
     {
       label: 'Prasad Dispatched',
       subtitle: booking.tracking_id ? `Tracking ID: ${booking.tracking_id}` : 'Will be shipped to your address',
       completed: si >= statusIndex('SHIPPED'),
+      isPrasadStep: true,
     },
     {
       label: 'Completed',
@@ -68,6 +66,20 @@ function buildSteps(booking: any): Step[] {
       completed: si >= statusIndex('COMPLETED'),
     },
   ];
+}
+
+function parseSankalpTimestamps(raw: any): SankalpTimestamp[] {
+  // Accepts: { devotees: [{ name, gotra, minute, second }] } or an array directly.
+  const list = Array.isArray(raw) ? raw : raw?.devotees ?? raw?.timestamps ?? [];
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((t: any) => t && (t.minute != null || t.second != null))
+    .map((t: any) => ({
+      name: String(t.name ?? 'Devotee'),
+      gotra: t.gotra ? String(t.gotra) : undefined,
+      minute: Number(t.minute ?? 0),
+      second: Number(t.second ?? 0),
+    }));
 }
 
 export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: string }> }) {
@@ -111,6 +123,11 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
   const isCancelled = booking.status === 'CANCELLED' || booking.event_status === 'CANCELLED';
   const shortVideoUrl = booking.event_short_video_url ?? booking.short_video_url;
   const sankalpVideoUrl = booking.event_sankalp_video_url ?? booking.sankalp_video_url;
+  const sankalpTimestamps = parseSankalpTimestamps(
+    booking.event_sankalp_timestamps ?? booking.sankalp_timestamps ?? booking.sankalp_video_timestamp,
+  );
+  // event-level prasad toggle. Defaults to true so legacy events keep the prasad steps.
+  const hasPrasad = booking.event_has_prasad ?? booking.has_prasad ?? true;
 
   const offerings: any[] = booking.offerings ?? [];
   const devotees: any[] = booking.devotees ?? [];
@@ -205,66 +222,17 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
         </div>
       )}
 
-      {/* Videos */}
-      {(shortVideoUrl || sankalpVideoUrl) && (
-        <div className="bg-white border border-orange-100 rounded-xl p-4 mb-5 shadow-sm">
-          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Your Videos</h3>
-          <div className="space-y-4">
-            {shortVideoUrl && (
-              <div>
-                <p className="text-xs font-semibold text-text-primary mb-2">Short Puja Video</p>
-                <VideoPlayer
-                  src={normaliseMediaUrl(shortVideoUrl)}
-                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden bg-black ring-1 ring-black/10"
-                />
-              </div>
-            )}
-            {sankalpVideoUrl && (
-              <div>
-                <p className="text-xs font-semibold text-text-primary mb-2">Sankalp Video</p>
-                <VideoPlayer
-                  src={normaliseMediaUrl(sankalpVideoUrl)}
-                  className="relative h-48 sm:h-56 rounded-xl overflow-hidden bg-black ring-1 ring-black/10"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <YourVideosCard
+        shortVideoUrl={shortVideoUrl}
+        sankalpVideoUrl={sankalpVideoUrl}
+        sankalpTimestamps={sankalpTimestamps}
+      />
 
       {/* Timeline */}
       {!isCancelled && (
         <div className="bg-white border border-orange-100 rounded-xl p-4 mb-5 shadow-sm">
           <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-4">Progress</h3>
-          <div className="relative pl-6">
-            {steps.map((step, idx) => {
-              const isLast = idx === steps.length - 1;
-              return (
-                <div key={idx} className="relative pb-6 last:pb-0">
-                  {!isLast && (
-                    <div
-                      className={`absolute left-[-17px] top-3 w-0.5 h-full ${
-                        step.completed ? 'bg-primary-500' : 'bg-border-DEFAULT'
-                      }`}
-                    />
-                  )}
-                  <div
-                    className={`absolute left-[-21px] top-1 w-2.5 h-2.5 rounded-full border-2 ${
-                      step.completed
-                        ? 'bg-primary-500 border-primary-500'
-                        : 'bg-white border-border-DEFAULT'
-                    }`}
-                  />
-                  <p className={`font-semibold text-sm ${step.completed ? 'text-text-primary' : 'text-text-muted'}`}>
-                    {step.label}
-                  </p>
-                  {step.subtitle && (
-                    <p className="text-xs text-text-secondary mt-0.5">{step.subtitle}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <BookingTimeline steps={steps} hasPrasad={hasPrasad} />
         </div>
       )}
 
@@ -274,16 +242,9 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
         </div>
       )}
 
-      <div className="flex gap-3">
-        <button className="flex-1 btn-outline flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium">
-          <Phone className="w-4 h-4" />
-          Call Support
-        </button>
-        <button className="flex-1 btn-outline flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium">
-          <Share2 className="w-4 h-4" />
-          Share Status
-        </button>
-      </div>
+      <SupportActions
+        shareTitle={`My Chadhava Booking — ${booking.chadhava_name ?? 'Savidhi'}`}
+      />
     </div>
   );
 }

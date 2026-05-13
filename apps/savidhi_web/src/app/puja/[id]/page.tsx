@@ -6,7 +6,6 @@ import { ArrowLeft, MapPin, Calendar, Loader2, Clock, Repeat, Sparkles } from 'l
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
-import { VideoPlayer } from '@/components/shared/VideoPlayer';
 import { pujaService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
 import type { Puja } from '@/data/models';
@@ -180,12 +179,7 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
               )}
             </div>
 
-            {puja.videoThumbnail && (
-              <div className="mt-6">
-                <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-2.5">{t('puja.detail.video')}</h3>
-                <VideoPlayer src={puja.videoThumbnail} />
-              </div>
-            )}
+            {/* "Puja Video you will receive" section temporarily hidden until intro videos are live. */}
 
             {puja.templeId && (
               <Link

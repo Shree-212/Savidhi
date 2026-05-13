@@ -119,6 +119,7 @@ function PujaBookingsPageInner() {
   const [editEventPujariId, setEditEventPujariId] = useState('');
   const [editEventStartTime, setEditEventStartTime] = useState('');
   const [editEventMaxBookings, setEditEventMaxBookings] = useState<number>(0);
+  const [editEventHasPrasad, setEditEventHasPrasad] = useState(true);
 
   // Input state for modals
   const [liveLink, setLiveLink] = useState('');
@@ -133,6 +134,7 @@ function PujaBookingsPageInner() {
   const [newEventPujariId, setNewEventPujariId] = useState('');
   const [newEventDate, setNewEventDate] = useState('');
   const [newEventTime, setNewEventTime] = useState('');
+  const [newEventHasPrasad, setNewEventHasPrasad] = useState(true);
   const [creating, setCreating] = useState(false);
 
   // Data state
@@ -189,6 +191,7 @@ function PujaBookingsPageInner() {
       setEditEventPujariId(data.pujari_id ?? '');
       setEditEventStartTime(data.start_time ? new Date(data.start_time).toISOString().slice(0, 16) : '');
       setEditEventMaxBookings(data.max_bookings ?? 100);
+      setEditEventHasPrasad(data.has_prasad ?? true);
     } catch {
       // Fallback to the event from the list
     }
@@ -217,6 +220,7 @@ function PujaBookingsPageInner() {
     setNewEventPujariId('');
     setNewEventDate('');
     setNewEventTime('');
+    setNewEventHasPrasad(true);
     setShowCreateModal(true);
   };
 
@@ -232,7 +236,8 @@ function PujaBookingsPageInner() {
         puja_id: newEventPujaId,
         pujari_id: newEventPujariId || undefined,
         start_time,
-      });
+        has_prasad: newEventHasPrasad,
+      } as any);
       setShowCreateModal(false);
       await fetchEvents();
     } catch (err: any) {
@@ -689,6 +694,15 @@ function PujaBookingsPageInner() {
                 className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs"
               />
             </div>
+            <label className="flex items-center gap-2 text-xs text-foreground select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editEventHasPrasad}
+                onChange={(e) => setEditEventHasPrasad(e.target.checked)}
+                className="accent-primary"
+              />
+              Prasad delivery enabled
+            </label>
             <div className="flex gap-3 mt-3">
               <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(false)}>Cancel</OutlineButton>
               <PrimaryButton className="flex-1" onClick={async () => {
@@ -702,6 +716,9 @@ function PujaBookingsPageInner() {
                 }
                 if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
                   data.max_bookings = editEventMaxBookings;
+                }
+                if (editEventHasPrasad !== ((selectedEvent as any).has_prasad ?? true)) {
+                  data.has_prasad = editEventHasPrasad;
                 }
                 if (Object.keys(data).length === 0) {
                   alert('No changes to save');
@@ -721,21 +738,36 @@ function PujaBookingsPageInner() {
         )}
       </Modal>
 
-      {/* ── Add Live Feed Link Modal ────────────────────── */}
+      {/* ── Add Live Feed Link Modal ── (Skip is allowed — live link is optional) */}
       <Modal open={showLiveModal} onClose={() => setShowLiveModal(false)} title="Add Live Feed Link" onBack={() => setShowLiveModal(false)}>
         <div className="space-y-4">
           <input
             value={liveLink}
             onChange={(e) => setLiveLink(e.target.value)}
-            placeholder="Paste You Tube Private Link"
+            placeholder="Paste YouTube Private Link (optional)"
             className="w-full h-10 px-3 bg-accent border border-border rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <PrimaryButton className="w-full" onClick={async () => {
-            if (!liveLink.trim()) return alert('Please enter a link');
-            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { live_link: liveLink });
-            setLiveLink('');
-            setShowLiveModal(false);
-          }}>Submit</PrimaryButton>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                if (selectedEvent) await handleAdvanceStage(selectedEvent.id, {});
+                setLiveLink('');
+                setShowLiveModal(false);
+              }}
+              className="flex-1 h-10 bg-accent border border-border rounded-md text-xs text-foreground hover:bg-accent/80"
+            >
+              Skip
+            </button>
+            <PrimaryButton className="flex-1" onClick={async () => {
+              if (selectedEvent) {
+                const payload = liveLink.trim() ? { live_link: liveLink.trim() } : {};
+                await handleAdvanceStage(selectedEvent.id, payload);
+              }
+              setLiveLink('');
+              setShowLiveModal(false);
+            }}>Submit</PrimaryButton>
+          </div>
         </div>
       </Modal>
 
@@ -759,7 +791,7 @@ function PujaBookingsPageInner() {
       </Modal>
 
       {/* ── Add Sankalp Video Modal ─────────────────────── */}
-      <Modal open={showSankalpModal} onClose={() => setShowSankalpModal(false)} title="Add Sankalp Video" onBack={() => setShowSankalpModal(false)}>
+      <Modal open={showSankalpModal} onClose={() => setShowSankalpModal(false)} title="Add Sankalp Video" onBack={() => setShowSankalpModal(false)} wide>
         <div className="space-y-4">
           <MediaUploadSingle
             value={sankalpVideoUrl}
@@ -771,9 +803,12 @@ function PujaBookingsPageInner() {
           <h4 className="text-[10px] font-bold uppercase tracking-wider">Time Stamp of Devotee Names</h4>
           {allDevotees.map((d: any, i: number) => (
             <div key={i} className="flex items-center gap-3">
-              <span className="text-xs text-foreground w-28 truncate">{d.name}</span>
-              <input placeholder="Minute" className="flex-1 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
-              <input placeholder="Second" className="flex-1 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <div className="min-w-[12rem] flex-1">
+                <p className="text-xs text-foreground leading-tight">{d.name}</p>
+                {d.gotra && <p className="text-[10px] text-muted-foreground leading-tight">Gotra: {d.gotra}</p>}
+              </div>
+              <input placeholder="Minute" className="w-20 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
+              <input placeholder="Second" className="w-20 h-8 px-2 bg-accent border border-border rounded-md text-xs text-foreground" />
             </div>
           ))}
           <PrimaryButton className="w-full" onClick={async () => {
@@ -839,6 +874,16 @@ function PujaBookingsPageInner() {
               />
             </div>
           </div>
+
+          <label className="flex items-center gap-2 text-xs text-foreground select-none cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              checked={newEventHasPrasad}
+              onChange={(e) => setNewEventHasPrasad(e.target.checked)}
+              className="accent-primary"
+            />
+            Prasad delivery enabled
+          </label>
 
           <div className="flex gap-3 pt-2">
             <OutlineButton className="flex-1" onClick={() => setShowCreateModal(false)}>Cancel</OutlineButton>

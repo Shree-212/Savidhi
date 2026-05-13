@@ -81,6 +81,7 @@ pujaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Response, 
               pe.live_link AS event_live_link,
               pe.short_video_url AS event_short_video_url,
               pe.sankalp_video_url AS event_sankalp_video_url,
+              pe.has_prasad AS event_has_prasad,
               d.name AS devotee_name, d.phone AS devotee_phone
        FROM puja_bookings pb
        JOIN puja_events pe ON pe.id = pb.puja_event_id
@@ -116,10 +117,27 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
   const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const { puja_event_id, devotee_count = 1, sankalp, prasad_delivery_address, devotees } = req.body;
+    const { puja_event_id, devotee_count = 1, sankalp, prasad_delivery_address, devotees, idempotency_key } = req.body;
 
     if (!puja_event_id) {
       return res.status(400).json({ success: false, message: 'puja_event_id is required' });
+    }
+
+    // Idempotency: replay-safe inserts. See chadhavaBookings.ts for rationale.
+    if (idempotency_key) {
+      const existing = await pool.query(
+        `SELECT * FROM puja_bookings WHERE devotee_id = $1 AND idempotency_key = $2`,
+        [userId, idempotency_key],
+      );
+      if (existing.rows.length > 0) {
+        const booking = existing.rows[0];
+        const devRows = await pool.query(
+          `SELECT id, name, relation, gotra FROM puja_booking_devotees WHERE puja_booking_id = $1`,
+          [booking.id],
+        );
+        booking.devotees = devRows.rows;
+        return res.status(200).json({ success: true, data: booking, idempotent_replay: true });
+      }
     }
 
     await client.query('BEGIN');
@@ -166,9 +184,9 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
     }
 
     const bookingResult = await client.query(
-      `INSERT INTO puja_bookings (puja_event_id, devotee_id, devotee_count, cost, sankalp, prasad_delivery_address)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [puja_event_id, userId, dc, cost, sankalp ?? null, prasad_delivery_address ?? null],
+      `INSERT INTO puja_bookings (puja_event_id, devotee_id, devotee_count, cost, sankalp, prasad_delivery_address, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [puja_event_id, userId, dc, cost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null],
     );
     const booking = bookingResult.rows[0];
 
