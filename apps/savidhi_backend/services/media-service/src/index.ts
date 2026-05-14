@@ -20,10 +20,22 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({
-  origin: '*', // Allow all origins for static file serving
-  credentials: false,
-}));
+// CORS:
+//  - /uploads and /api/v1/media/files/* are static image fetches; keep them
+//    permissive (origin: *, no credentials) so any frontend can <img src=…>.
+//  - Everything else (upload endpoints, presigned-url issuance, etc.) is
+//    credentialed and must come from an allow-listed origin matching the
+//    gateway's CORS_ORIGIN. Wildcard with credentials is illegal in browsers.
+const allowedOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(',');
+app.use((req, res, next) => {
+  const isPublicAsset =
+    req.path.startsWith('/uploads/') ||
+    req.path.startsWith('/api/v1/media/files/');
+  return cors({
+    origin: isPublicAsset ? '*' : allowedOrigins,
+    credentials: !isPublicAsset,
+  })(req, res, next);
+});
 app.use(express.json());
 const _isProd = process.env.NODE_ENV === 'production';
 app.use(rateLimit({

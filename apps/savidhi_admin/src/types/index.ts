@@ -294,11 +294,22 @@ export interface DevoteeAdmin {
   level: number;
   joinedSince: string;
   bookings?: DevoteeBookingSummary[];
+  bookings_list?: DevoteeBookingItem[];
 }
 
 export interface DevoteeBookingSummary {
   title: string;
   details: string;
+  status: string;
+}
+
+export interface DevoteeBookingItem {
+  id: string;
+  type: 'PUJA' | 'CHADHAVA' | 'APPOINTMENT';
+  title: string;
+  subtitle: string;
+  scheduled_at: string;
+  cost: number;
   status: string;
 }
 

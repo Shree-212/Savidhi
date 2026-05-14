@@ -1,188 +1,538 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../lib/db';
 import { requireAdmin } from '../middleware/auth';
+import { buildExcel, buildZip, sendFile, MIME_XLSX, MIME_ZIP } from '../lib/reportExport';
 
 export const reportsRouter = Router();
 
-// ─── Helper: date-range + pagination conditions ──────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
+ *  Helpers
+ * ────────────────────────────────────────────────────────────────────────── */
+
 function dateRangeParams(query: Record<string, unknown>, dateCol: string) {
   const conditions: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
 
   if (query.from_date) { conditions.push(`${dateCol} >= $${idx++}`); params.push(query.from_date); }
-  if (query.to_date) { conditions.push(`${dateCol} <= $${idx++}`); params.push(query.to_date); }
+  if (query.to_date)   { conditions.push(`${dateCol} <= $${idx++}`); params.push(query.to_date); }
 
   return { conditions, params, idx };
 }
 
-/** GET /puja-sankalp – puja bookings with sankalp details */
+function fmtDate(d: Date | string | null | undefined): string {
+  if (!d) return '';
+  const date = typeof d === 'string' ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+  });
+}
+
+function fmtShortId(id: string | null | undefined): string {
+  if (!id) return '';
+  return String(id).slice(0, 6).toUpperCase();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ *  1.  PUJA SANKALP — one row per puja_event, with devotee count.
+ *      Per-row download = .xlsx of devotee+gotra list for that event.
+ *      Page download    = .zip of one .xlsx per event in the date range.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+async function fetchPujaSankalpEvents(query: Record<string, unknown>) {
+  const { conditions, params, idx: startIdx } = dateRangeParams(query, 'pe.start_time');
+  let idx = startIdx;
+  if (query.temple_id) { conditions.push(`p.temple_id = $${idx++}`); params.push(query.temple_id); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows } = await pool.query(
+    `SELECT pe.id            AS event_id,
+            p.name           AS puja_name,
+            t.name           AS temple_name,
+            COUNT(pb.id)::int AS devotee_count,
+            pe.start_time    AS event_date,
+            COALESCE(SUM(pb.cost), 0)::numeric AS received,
+            pe.status        AS status,
+            pj.name          AS pujari_name
+       FROM puja_events pe
+       JOIN pujas    p  ON p.id  = pe.puja_id
+       JOIN temples  t  ON t.id  = p.temple_id
+       LEFT JOIN pujaris pj ON pj.id = pe.pujari_id
+       LEFT JOIN puja_bookings pb
+              ON pb.puja_event_id = pe.id
+             AND pb.status <> 'CANCELLED'
+       ${where}
+       GROUP BY pe.id, p.name, t.name, pe.start_time, pe.status, pj.name
+       ORDER BY pe.start_time DESC`,
+    params,
+  );
+  return rows;
+}
+
+async function fetchPujaEventDevotees(eventId: string) {
+  // Bookings -> devotees, plus the additional devotee rows captured per booking.
+  const { rows } = await pool.query(
+    `SELECT d.name AS name, COALESCE(d.gotra, '') AS gotra
+       FROM puja_bookings pb
+       JOIN devotees d ON d.id = pb.devotee_id
+      WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'`,
+    [eventId],
+  );
+  // puja_booking_devotees (multiple devotees per booking)
+  let extras: any[] = [];
+  try {
+    const r = await pool.query(
+      `SELECT pbd.name AS name, COALESCE(pbd.gotra, '') AS gotra
+         FROM puja_booking_devotees pbd
+         JOIN puja_bookings pb ON pb.id = pbd.puja_booking_id
+        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'`,
+      [eventId],
+    );
+    extras = r.rows;
+  } catch { /* table may not exist on older deploys */ }
+  return [...rows, ...extras].filter((r) => r.name);
+}
+
 reportsRouter.get('/puja-sankalp', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { conditions, params, idx: startIdx } = dateRangeParams(req.query as Record<string, unknown>, 'pe.start_time');
-    let idx = startIdx;
-
-    if (req.query.temple_id) {
-      conditions.push(`p.temple_id = $${idx++}`);
-      params.push(req.query.temple_id);
+    const rows = await fetchPujaSankalpEvents(req.query as Record<string, unknown>);
+    const data = rows.map((r) => ({
+      id:          fmtShortId(r.event_id),
+      event_id:    r.event_id,
+      pujaName:    r.puja_name,
+      temple:      r.temple_name,
+      devotee:     r.devotee_count,
+      startTime:   fmtDate(r.event_date),
+      received:    Number(r.received),
+      status:      r.status,
+      pujari:      r.pujari_name ?? '—',
+    }));
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'ID', key: 'id' },
+        { header: 'Puja Name', key: 'pujaName', width: 28 },
+        { header: 'Temple', key: 'temple', width: 28 },
+        { header: 'Devotees', key: 'devotee' },
+        { header: 'Start Time', key: 'startTime' },
+        { header: 'Received', key: 'received' },
+        { header: 'Status', key: 'status' },
+        { header: 'Pujari', key: 'pujari' },
+      ], 'Puja Sankalp');
+      return sendFile(res, buf, 'Puja Sankalp Report.xlsx', MIME_XLSX);
     }
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 50)));
-    const offset = (page - 1) * limit;
-
-    const { rows } = await pool.query(
-      `SELECT pb.id, pb.sankalp, pb.cost, pb.status, pb.payment_status, pb.created_at,
-              d.name AS devotee_name, d.phone AS devotee_phone,
-              p.name AS puja_name, t.name AS temple_name,
-              pe.start_time AS event_date
-       FROM puja_bookings pb
-       JOIN puja_events pe ON pe.id = pb.puja_event_id
-       JOIN pujas p        ON p.id  = pe.puja_id
-       JOIN temples t      ON t.id  = p.temple_id
-       JOIN devotees d     ON d.id  = pb.devotee_id
-       ${where}
-       ORDER BY pe.start_time DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...params, limit, offset],
-    );
-
-    res.json({ success: true, data: rows });
+    if (req.query.format === 'zip') {
+      const files = [] as { name: string; buffer: Buffer }[];
+      for (const r of rows) {
+        const devotees = await fetchPujaEventDevotees(r.event_id);
+        const buf = await buildExcel(
+          devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
+          [
+            { header: 'SL', key: 'sl', width: 6 },
+            { header: 'Devotee Name', key: 'name', width: 30 },
+            { header: 'Gotra', key: 'gotra', width: 18 },
+          ],
+          'Sankalp Devotees',
+        );
+        const label = `${r.puja_name} - ${fmtDate(r.event_date)}.xlsx`;
+        files.push({ name: label, buffer: buf });
+      }
+      const zip = await buildZip(files);
+      return sendFile(res, zip, 'Puja Sankalp Report.zip', MIME_ZIP);
+    }
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
-/** GET /chadhava-sankalp – chadhava bookings with sankalp */
+/** Per-row download: zip wrapping a single excel file for one puja_event. */
+reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { eventId } = req.params;
+    const eventInfo = await pool.query(
+      `SELECT p.name AS puja_name, pe.start_time
+         FROM puja_events pe JOIN pujas p ON p.id = pe.puja_id
+        WHERE pe.id = $1`,
+      [eventId],
+    );
+    if (eventInfo.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Puja event not found' });
+      return;
+    }
+    const meta = eventInfo.rows[0];
+    const devotees = await fetchPujaEventDevotees(eventId);
+    const xlsx = await buildExcel(
+      devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
+      [
+        { header: 'SL', key: 'sl', width: 6 },
+        { header: 'Devotee Name', key: 'name', width: 30 },
+        { header: 'Gotra', key: 'gotra', width: 18 },
+      ],
+      'Sankalp Devotees',
+    );
+    const zip = await buildZip([{ name: `${meta.puja_name} - ${fmtDate(meta.start_time)}.xlsx`, buffer: xlsx }]);
+    return sendFile(res, zip, `Puja Sankalp - ${meta.puja_name}.zip`, MIME_ZIP);
+  } catch (err) { next(err); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ *  2.  CHADHAVA SANKALP — one row per chadhava_event.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+async function fetchChadhavaSankalpEvents(query: Record<string, unknown>) {
+  const { conditions, params, idx: startIdx } = dateRangeParams(query, 'ce.start_time');
+  let idx = startIdx;
+  if (query.temple_id) { conditions.push(`c.temple_id = $${idx++}`); params.push(query.temple_id); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows } = await pool.query(
+    `SELECT ce.id          AS event_id,
+            c.name         AS chadhava_name,
+            t.name         AS temple_name,
+            COUNT(cb.id)::int AS devotee_count,
+            ce.start_time  AS event_date,
+            COALESCE(SUM(cb.cost), 0)::numeric AS received,
+            ce.status      AS status,
+            pj.name        AS pujari_name
+       FROM chadhava_events ce
+       JOIN chadhavas c ON c.id = ce.chadhava_id
+       JOIN temples   t ON t.id = c.temple_id
+       LEFT JOIN pujaris pj ON pj.id = ce.pujari_id
+       LEFT JOIN chadhava_bookings cb
+              ON cb.chadhava_event_id = ce.id
+             AND cb.status <> 'CANCELLED'
+       ${where}
+       GROUP BY ce.id, c.name, t.name, ce.start_time, ce.status, pj.name
+       ORDER BY ce.start_time DESC`,
+    params,
+  );
+  return rows;
+}
+
+async function fetchChadhavaEventDevotees(eventId: string) {
+  const { rows } = await pool.query(
+    `SELECT d.name AS name, COALESCE(d.gotra, '') AS gotra
+       FROM chadhava_bookings cb
+       JOIN devotees d ON d.id = cb.devotee_id
+      WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'`,
+    [eventId],
+  );
+  let extras: any[] = [];
+  try {
+    const r = await pool.query(
+      `SELECT cbd.name AS name, COALESCE(cbd.gotra, '') AS gotra
+         FROM chadhava_booking_devotees cbd
+         JOIN chadhava_bookings cb ON cb.id = cbd.chadhava_booking_id
+        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'`,
+      [eventId],
+    );
+    extras = r.rows;
+  } catch { /* table may not exist */ }
+  return [...rows, ...extras].filter((r) => r.name);
+}
+
 reportsRouter.get('/chadhava-sankalp', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { conditions, params, idx: startIdx } = dateRangeParams(req.query as Record<string, unknown>, 'ce.start_time');
-    let idx = startIdx;
-
-    if (req.query.temple_id) {
-      conditions.push(`c.temple_id = $${idx++}`);
-      params.push(req.query.temple_id);
+    const rows = await fetchChadhavaSankalpEvents(req.query as Record<string, unknown>);
+    const data = rows.map((r) => ({
+      id:           fmtShortId(r.event_id),
+      event_id:     r.event_id,
+      chadhavaName: r.chadhava_name,
+      temple:       r.temple_name,
+      devotee:      r.devotee_count,
+      startTime:    fmtDate(r.event_date),
+      received:     Number(r.received),
+      status:       r.status,
+      pujari:       r.pujari_name ?? '—',
+    }));
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'ID', key: 'id' },
+        { header: 'Chadhava Name', key: 'chadhavaName', width: 28 },
+        { header: 'Temple', key: 'temple', width: 28 },
+        { header: 'Devotees', key: 'devotee' },
+        { header: 'Start Time', key: 'startTime' },
+        { header: 'Received', key: 'received' },
+        { header: 'Status', key: 'status' },
+        { header: 'Pujari', key: 'pujari' },
+      ], 'Chadhava Sankalp');
+      return sendFile(res, buf, 'Chadhava Sankalp Report.xlsx', MIME_XLSX);
     }
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 50)));
-    const offset = (page - 1) * limit;
-
-    const { rows } = await pool.query(
-      `SELECT cb.id, cb.sankalp, cb.cost, cb.status, cb.payment_status, cb.created_at,
-              d.name AS devotee_name, d.phone AS devotee_phone,
-              c.name AS chadhava_name, t.name AS temple_name,
-              ce.start_time AS event_date
-       FROM chadhava_bookings cb
-       JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
-       JOIN chadhavas c        ON c.id  = ce.chadhava_id
-       JOIN temples t          ON t.id  = c.temple_id
-       JOIN devotees d         ON d.id  = cb.devotee_id
-       ${where}
-       ORDER BY ce.start_time DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...params, limit, offset],
-    );
-
-    res.json({ success: true, data: rows });
+    if (req.query.format === 'zip') {
+      const files = [] as { name: string; buffer: Buffer }[];
+      for (const r of rows) {
+        const devotees = await fetchChadhavaEventDevotees(r.event_id);
+        const buf = await buildExcel(
+          devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
+          [
+            { header: 'SL', key: 'sl', width: 6 },
+            { header: 'Devotee Name', key: 'name', width: 30 },
+            { header: 'Gotra', key: 'gotra', width: 18 },
+          ],
+          'Sankalp Devotees',
+        );
+        files.push({ name: `${r.chadhava_name} - ${fmtDate(r.event_date)}.xlsx`, buffer: buf });
+      }
+      const zip = await buildZip(files);
+      return sendFile(res, zip, 'Chadhava Sankalp Report.zip', MIME_ZIP);
+    }
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
-/** GET /chadhava-offerings – aggregated offerings with quantities */
+reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { eventId } = req.params;
+    const info = await pool.query(
+      `SELECT c.name AS chadhava_name, ce.start_time
+         FROM chadhava_events ce JOIN chadhavas c ON c.id = ce.chadhava_id
+        WHERE ce.id = $1`,
+      [eventId],
+    );
+    if (info.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Chadhava event not found' });
+      return;
+    }
+    const meta = info.rows[0];
+    const devotees = await fetchChadhavaEventDevotees(eventId);
+    const xlsx = await buildExcel(
+      devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
+      [
+        { header: 'SL', key: 'sl', width: 6 },
+        { header: 'Devotee Name', key: 'name', width: 30 },
+        { header: 'Gotra', key: 'gotra', width: 18 },
+      ],
+      'Sankalp Devotees',
+    );
+    const zip = await buildZip([{ name: `${meta.chadhava_name} - ${fmtDate(meta.start_time)}.xlsx`, buffer: xlsx }]);
+    return sendFile(res, zip, `Chadhava Sankalp - ${meta.chadhava_name}.zip`, MIME_ZIP);
+  } catch (err) { next(err); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ *  3.  CHADHAVA OFFERINGS — one row per chadhava_event, with offerings text.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
 reportsRouter.get('/chadhava-offerings', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { conditions, params, idx: startIdx } = dateRangeParams(req.query as Record<string, unknown>, 'ce.start_time');
     let idx = startIdx;
-
-    if (req.query.temple_id) {
-      conditions.push(`c.temple_id = $${idx++}`);
-      params.push(req.query.temple_id);
-    }
-
-    // Only count non-cancelled bookings
-    conditions.push(`cb.status != 'CANCELLED'`);
-
+    if (req.query.temple_id) { conditions.push(`c.temple_id = $${idx++}`); params.push(req.query.temple_id); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const { rows } = await pool.query(
-      `SELECT co.id AS offering_id,
-              co.item_name,
-              co.price AS unit_price,
-              SUM(cbo.quantity)::int AS total_quantity,
-              SUM(cbo.quantity * cbo.unit_price)::numeric AS total_value
-       FROM chadhava_booking_offerings cbo
-       JOIN chadhava_offerings co ON co.id = cbo.offering_id
-       JOIN chadhava_bookings cb  ON cb.id = cbo.chadhava_booking_id
-       JOIN chadhava_events ce    ON ce.id = cb.chadhava_event_id
-       JOIN chadhavas c           ON c.id  = ce.chadhava_id
-       ${where}
-       GROUP BY co.id, co.item_name, co.price
-       ORDER BY total_quantity DESC`,
+      `SELECT ce.id          AS event_id,
+              c.name         AS chadhava_name,
+              t.name         AS temple_name,
+              ce.start_time  AS event_date,
+              COALESCE(
+                json_agg(
+                  json_build_object('item', co.item_name, 'qty', cbo_q.total_qty)
+                  ORDER BY co.item_name
+                ) FILTER (WHERE co.item_name IS NOT NULL),
+                '[]'::json
+              ) AS offerings_json
+         FROM chadhava_events ce
+         JOIN chadhavas c ON c.id = ce.chadhava_id
+         JOIN temples   t ON t.id = c.temple_id
+         LEFT JOIN LATERAL (
+           SELECT cbo.offering_id, SUM(cbo.quantity)::int AS total_qty
+             FROM chadhava_booking_offerings cbo
+             JOIN chadhava_bookings cb ON cb.id = cbo.chadhava_booking_id
+            WHERE cb.chadhava_event_id = ce.id AND cb.status <> 'CANCELLED'
+            GROUP BY cbo.offering_id
+         ) cbo_q ON true
+         LEFT JOIN chadhava_offerings co ON co.id = cbo_q.offering_id
+         ${where}
+         GROUP BY ce.id, c.name, t.name, ce.start_time
+         ORDER BY ce.start_time DESC`,
       params,
     );
 
-    res.json({ success: true, data: rows });
+    const data = rows.map((r) => {
+      const items: { item: string; qty: number }[] = r.offerings_json || [];
+      const txt = items.length
+        ? items.map((o) => `${o.item} — ${o.qty}X`).join('\n')
+        : '—';
+      return {
+        id:                  fmtShortId(r.event_id),
+        chadhavaName:        r.chadhava_name,
+        temple:              r.temple_name,
+        startTime:           fmtDate(r.event_date),
+        offeringsAndQuantity: txt,
+      };
+    });
+
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'ID', key: 'id' },
+        { header: 'Chadhava Name', key: 'chadhavaName', width: 28 },
+        { header: 'Temple', key: 'temple', width: 28 },
+        { header: 'Start Time', key: 'startTime' },
+        { header: 'Offerings & Quantity', key: 'offeringsAndQuantity', width: 60 },
+      ], 'Chadhava Offerings');
+      return sendFile(res, buf, 'Chadhava Offerings Report.xlsx', MIME_XLSX);
+    }
+
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
-/** GET /appointments – appointment report */
+/* ══════════════════════════════════════════════════════════════════════════
+ *  4.  APPOINTMENTS — one row per astrologer (aggregated for date range).
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+async function fetchAppointmentsByAstrologer(query: Record<string, unknown>) {
+  const { conditions, params, idx: startIdx } = dateRangeParams(query, 'a.scheduled_at');
+  let idx = startIdx;
+  if (query.astrologer_id) { conditions.push(`a.astrologer_id = $${idx++}`); params.push(query.astrologer_id); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows } = await pool.query(
+    `SELECT ast.id AS astrologer_id,
+            ast.name AS astrologer_name,
+            COUNT(a.id)::int AS bookings,
+            COUNT(*) FILTER (WHERE a.meet_link IS NOT NULL AND a.meet_link <> '')::int AS meet_link_count,
+            COALESCE(SUM(a.cost), 0)::numeric AS received
+       FROM astrologers ast
+       LEFT JOIN appointments a
+              ON a.astrologer_id = ast.id
+             AND a.status <> 'CANCELLED'
+             ${conditions.length ? 'AND ' + conditions.join(' AND ') : ''}
+       GROUP BY ast.id, ast.name
+       HAVING COUNT(a.id) > 0
+       ORDER BY ast.name`,
+    params,
+  );
+  return rows;
+}
+
+async function fetchAstrologerAppointments(astrologerId: string, from?: string, to?: string) {
+  const conds: string[] = [`a.astrologer_id = $1`];
+  const params: unknown[] = [astrologerId];
+  let idx = 2;
+  if (from) { conds.push(`a.scheduled_at >= $${idx++}`); params.push(from); }
+  if (to)   { conds.push(`a.scheduled_at <= $${idx++}`); params.push(to); }
+  const where = `WHERE ${conds.join(' AND ')}`;
+  const { rows } = await pool.query(
+    `SELECT d.name        AS devotee_name,
+            COALESCE(d.gotra, '') AS gotra,
+            a.scheduled_at,
+            a.duration,
+            COALESCE(a.meet_link, '') AS meet_link
+       FROM appointments a
+       JOIN devotees d ON d.id = a.devotee_id
+       ${where}
+       ORDER BY a.scheduled_at`,
+    params,
+  );
+  return rows;
+}
+
 reportsRouter.get('/appointments', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { conditions, params, idx: startIdx } = dateRangeParams(req.query as Record<string, unknown>, 'a.scheduled_at');
-    let idx = startIdx;
+    const rows = await fetchAppointmentsByAstrologer(req.query as Record<string, unknown>);
+    const data = rows.map((r) => ({
+      id:                fmtShortId(r.astrologer_id),
+      astrologer_id:     r.astrologer_id,
+      astrologerName:    r.astrologer_name,
+      bookings:          r.bookings,
+      meetLinkAvailable: `${r.meet_link_count}/${r.bookings}`,
+      received:          Number(r.received),
+    }));
 
-    if (req.query.status) {
-      conditions.push(`a.status = $${idx++}`);
-      params.push(req.query.status);
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'ID', key: 'id' },
+        { header: 'Astrologer', key: 'astrologerName', width: 28 },
+        { header: 'Bookings', key: 'bookings' },
+        { header: 'Meet Link Available', key: 'meetLinkAvailable' },
+        { header: 'Received', key: 'received' },
+      ], 'Appointments');
+      return sendFile(res, buf, 'Appointments Report.xlsx', MIME_XLSX);
     }
-    if (req.query.astrologer_id) {
-      conditions.push(`a.astrologer_id = $${idx++}`);
-      params.push(req.query.astrologer_id);
+    if (req.query.format === 'zip') {
+      const from = req.query.from_date as string | undefined;
+      const to   = req.query.to_date as string | undefined;
+      const files = [] as { name: string; buffer: Buffer }[];
+      for (const r of rows) {
+        const appts = await fetchAstrologerAppointments(r.astrologer_id, from, to);
+        const buf = await buildExcel(
+          appts.map((a, i) => ({
+            sl: i + 1,
+            name: a.devotee_name,
+            gotra: a.gotra || '—',
+            start: fmtDate(a.scheduled_at),
+            duration: a.duration,
+            link: a.meet_link || 'Not generated',
+          })),
+          [
+            { header: 'SL', key: 'sl', width: 6 },
+            { header: 'Devotee Name', key: 'name', width: 28 },
+            { header: 'Gotra', key: 'gotra', width: 18 },
+            { header: 'Start Time', key: 'start', width: 24 },
+            { header: 'Duration', key: 'duration', width: 12 },
+            { header: 'Meeting Link', key: 'link', width: 40 },
+          ],
+          'Appointments',
+        );
+        files.push({ name: `${r.astrologer_name}.xlsx`, buffer: buf });
+      }
+      const zip = await buildZip(files);
+      return sendFile(res, zip, 'Appointments Report.zip', MIME_ZIP);
     }
 
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 50)));
-    const offset = (page - 1) * limit;
-
-    const { rows } = await pool.query(
-      `SELECT a.*,
-              ast.name AS astrologer_name,
-              d.name AS devotee_display_name,
-              d.phone AS devotee_phone
-       FROM appointments a
-       JOIN astrologers ast ON ast.id = a.astrologer_id
-       JOIN devotees d      ON d.id  = a.devotee_id
-       ${where}
-       ORDER BY a.scheduled_at DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...params, limit, offset],
-    );
-
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
-/** GET /ledger – ledger entries with party name, type, fee, settled status */
+reportsRouter.get('/appointments/:astrologerId/export', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { astrologerId } = req.params;
+    const ast = await pool.query('SELECT name FROM astrologers WHERE id = $1', [astrologerId]);
+    if (ast.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Astrologer not found' });
+      return;
+    }
+    const from = req.query.from_date as string | undefined;
+    const to   = req.query.to_date as string | undefined;
+    const appts = await fetchAstrologerAppointments(astrologerId, from, to);
+    const xlsx = await buildExcel(
+      appts.map((a, i) => ({
+        sl: i + 1,
+        name: a.devotee_name,
+        gotra: a.gotra || '—',
+        start: fmtDate(a.scheduled_at),
+        duration: a.duration,
+        link: a.meet_link || 'Not generated',
+      })),
+      [
+        { header: 'SL', key: 'sl', width: 6 },
+        { header: 'Devotee Name', key: 'name', width: 28 },
+        { header: 'Gotra', key: 'gotra', width: 18 },
+        { header: 'Start Time', key: 'start', width: 24 },
+        { header: 'Duration', key: 'duration', width: 12 },
+        { header: 'Meeting Link', key: 'link', width: 40 },
+      ],
+      'Appointments',
+    );
+    const zip = await buildZip([{ name: `${ast.rows[0].name}.xlsx`, buffer: xlsx }]);
+    return sendFile(res, zip, `Appointments - ${ast.rows[0].name}.zip`, MIME_ZIP);
+  } catch (err) { next(err); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ *  5.  LEDGER (unchanged shape, kept for compat — used by /reports/ledger).
+ * ══════════════════════════════════════════════════════════════════════════ */
+
 reportsRouter.get('/ledger', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { conditions, params, idx: startIdx } = dateRangeParams(req.query as Record<string, unknown>, 'le.created_at');
     let idx = startIdx;
-
-    if (req.query.party_type) {
-      conditions.push(`le.party_type = $${idx++}`);
-      params.push(req.query.party_type);
-    }
-    if (req.query.settled !== undefined) {
-      conditions.push(`le.settled = $${idx++}`);
-      params.push(req.query.settled === 'true');
-    }
+    if (req.query.party_type) { conditions.push(`le.party_type = $${idx++}`); params.push(req.query.party_type); }
+    if (req.query.settled !== undefined) { conditions.push(`le.settled = $${idx++}`); params.push(req.query.settled === 'true'); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
     const page = Math.max(1, Number(req.query.page ?? 1));
     const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 50)));
     const offset = (page - 1) * limit;
@@ -190,224 +540,324 @@ reportsRouter.get('/ledger', requireAdmin, async (req: Request, res: Response, n
     const { rows } = await pool.query(
       `SELECT le.*,
               CASE
-                WHEN le.party_type = 'PUJARI'     THEN pj.name
+                WHEN le.party_type = 'PUJARI'      THEN pj.name
                 WHEN le.party_type = 'ASTROLOGER'  THEN ast.name
               END AS party_name
-       FROM ledger_entries le
-       LEFT JOIN pujaris pj     ON le.party_type = 'PUJARI'     AND pj.id  = le.party_id
-       LEFT JOIN astrologers ast ON le.party_type = 'ASTROLOGER' AND ast.id = le.party_id
-       ${where}
-       ORDER BY le.created_at DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
+         FROM ledger_entries le
+         LEFT JOIN pujaris     pj  ON le.party_type = 'PUJARI'     AND pj.id  = le.party_id
+         LEFT JOIN astrologers ast ON le.party_type = 'ASTROLOGER' AND ast.id = le.party_id
+         ${where}
+         ORDER BY le.created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     );
-
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }
 });
 
-/** GET /all-bookings – combined view of all booking types */
+/* ══════════════════════════════════════════════════════════════════════════
+ *  6.  ALL BOOKINGS — single combined view.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+async function fetchAllBookings(query: Record<string, unknown>) {
+  const allParams: unknown[] = [];
+  let pi = 1;
+  let pujaFilter = '', chadhavaFilter = '', apptFilter = '';
+  if (query.from_date) {
+    pujaFilter += ` AND pe.start_time >= $${pi}`;
+    chadhavaFilter += ` AND ce.start_time >= $${pi}`;
+    apptFilter += ` AND a.scheduled_at >= $${pi}`;
+    allParams.push(query.from_date); pi++;
+  }
+  if (query.to_date) {
+    pujaFilter += ` AND pe.start_time <= $${pi}`;
+    chadhavaFilter += ` AND ce.start_time <= $${pi}`;
+    apptFilter += ` AND a.scheduled_at <= $${pi}`;
+    allParams.push(query.to_date); pi++;
+  }
+  const { rows } = await pool.query(
+    `(
+       SELECT 'PUJA' AS type, pb.id, pb.cost, pb.status, pb.created_at,
+              d.name AS devotee_name, p.name AS service_name, t.name AS temple_name,
+              pe.start_time AS event_date
+         FROM puja_bookings pb
+         JOIN puja_events pe ON pe.id = pb.puja_event_id
+         JOIN pujas    p  ON p.id  = pe.puja_id
+         JOIN temples  t  ON t.id  = p.temple_id
+         JOIN devotees d  ON d.id  = pb.devotee_id
+        WHERE 1=1 ${pujaFilter}
+     )
+     UNION ALL
+     (
+       SELECT 'CHADHAVA' AS type, cb.id, cb.cost, cb.status, cb.created_at,
+              d.name AS devotee_name, c.name AS service_name, t.name AS temple_name,
+              ce.start_time AS event_date
+         FROM chadhava_bookings cb
+         JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
+         JOIN chadhavas    c  ON c.id  = ce.chadhava_id
+         JOIN temples      t  ON t.id  = c.temple_id
+         JOIN devotees     d  ON d.id  = cb.devotee_id
+        WHERE 1=1 ${chadhavaFilter}
+     )
+     UNION ALL
+     (
+       SELECT 'APPOINTMENT' AS type, a.id, a.cost, a.status, a.created_at,
+              d.name AS devotee_name, ast.name AS service_name, NULL AS temple_name,
+              a.scheduled_at AS event_date
+         FROM appointments a
+         JOIN astrologers ast ON ast.id = a.astrologer_id
+         JOIN devotees    d   ON d.id   = a.devotee_id
+        WHERE 1=1 ${apptFilter}
+     )
+     ORDER BY event_date DESC NULLS LAST
+     LIMIT 1000`,
+    allParams,
+  );
+  return rows;
+}
+
 reportsRouter.get('/all-bookings', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { from_date, to_date, page = '1', limit = '50' } = req.query;
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.min(100, Math.max(1, Number(limit)));
-    const offset = (pageNum - 1) * limitNum;
-
-    const dateParams: unknown[] = [];
-    let paramIdx = 1;
-
-    if (from_date) { dateParams.push(from_date); paramIdx++; }
-    if (to_date) { dateParams.push(to_date); paramIdx++; }
-
-    // Build optional date filters for each sub-query
-    let pujaDateFilter = '';
-    let chadhavaDateFilter = '';
-    let apptDateFilter = '';
-    const allParams: unknown[] = [];
-    let pi = 1;
-
-    if (from_date) {
-      pujaDateFilter += ` AND pe.start_time >= $${pi}`;
-      chadhavaDateFilter += ` AND ce.start_time >= $${pi}`;
-      apptDateFilter += ` AND a.scheduled_at >= $${pi}`;
-      allParams.push(from_date);
-      pi++;
+    const rows = await fetchAllBookings(req.query as Record<string, unknown>);
+    const data = rows.map((r) => ({
+      id:          fmtShortId(r.id),
+      devoteeName: r.devotee_name,
+      type:        r.type,
+      service:     r.temple_name ? `${r.service_name} — ${r.temple_name}` : r.service_name,
+      dateTime:    fmtDate(r.event_date),
+      cost:        Number(r.cost),
+      status:      r.status,
+    }));
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'ID', key: 'id' },
+        { header: 'Devotee Name', key: 'devoteeName', width: 24 },
+        { header: 'Type', key: 'type', width: 14 },
+        { header: 'Service', key: 'service', width: 44 },
+        { header: 'Date & Time', key: 'dateTime' },
+        { header: 'Cost', key: 'cost' },
+        { header: 'Status', key: 'status' },
+      ], 'All Bookings');
+      return sendFile(res, buf, 'All Bookings Report.xlsx', MIME_XLSX);
     }
-    if (to_date) {
-      pujaDateFilter += ` AND pe.start_time <= $${pi}`;
-      chadhavaDateFilter += ` AND ce.start_time <= $${pi}`;
-      apptDateFilter += ` AND a.scheduled_at <= $${pi}`;
-      allParams.push(to_date);
-      pi++;
-    }
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
 
-    const { rows } = await pool.query(
-      `(
-        SELECT 'PUJA' AS booking_type, pb.id, pb.cost, pb.status, pb.payment_status,
-               pb.created_at, d.name AS devotee_name, p.name AS service_name, t.name AS temple_name,
-               pe.start_time AS event_date
-        FROM puja_bookings pb
-        JOIN puja_events pe ON pe.id = pb.puja_event_id
-        JOIN pujas p        ON p.id  = pe.puja_id
-        JOIN temples t      ON t.id  = p.temple_id
-        JOIN devotees d     ON d.id  = pb.devotee_id
-        WHERE 1=1 ${pujaDateFilter}
-      )
-      UNION ALL
-      (
-        SELECT 'CHADHAVA' AS booking_type, cb.id, cb.cost, cb.status, cb.payment_status,
-               cb.created_at, d.name AS devotee_name, c.name AS service_name, t.name AS temple_name,
-               ce.start_time AS event_date
-        FROM chadhava_bookings cb
-        JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
-        JOIN chadhavas c        ON c.id  = ce.chadhava_id
-        JOIN temples t          ON t.id  = c.temple_id
-        JOIN devotees d         ON d.id  = cb.devotee_id
-        WHERE 1=1 ${chadhavaDateFilter}
-      )
-      UNION ALL
-      (
-        SELECT 'APPOINTMENT' AS booking_type, a.id, a.cost, a.status, a.payment_status,
-               a.created_at, d.name AS devotee_name, ast.name AS service_name, NULL AS temple_name,
-               a.scheduled_at AS event_date
-        FROM appointments a
-        JOIN astrologers ast ON ast.id = a.astrologer_id
-        JOIN devotees d      ON d.id  = a.devotee_id
-        WHERE 1=1 ${apptDateFilter}
-      )
-      ORDER BY created_at DESC
-      LIMIT $${pi++} OFFSET $${pi++}`,
-      [...allParams, limitNum, offset],
-    );
+/* ══════════════════════════════════════════════════════════════════════════
+ *  7.  SUMMARY — totals by booking variable.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+reportsRouter.get('/summary', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const fromTo = dateRangeParams(req.query as Record<string, unknown>, 'created_at');
+    const dateWhere = fromTo.conditions.length ? `WHERE ${fromTo.conditions.join(' AND ')}` : '';
+    const dateParams = fromTo.params;
+
+    const [pujas, chadhavas, appts, ledger] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(cost), 0)::numeric AS sum
+           FROM puja_bookings ${dateWhere}`,
+        dateParams,
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(cost), 0)::numeric AS sum
+           FROM chadhava_bookings ${dateWhere}`,
+        dateParams,
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(cost), 0)::numeric AS sum
+           FROM appointments ${dateWhere}`,
+        dateParams,
+      ),
+      pool.query(`SELECT COALESCE(SUM(fee), 0)::numeric AS sum FROM ledger_entries`),
+    ]);
+
+    const totalFee = Number(ledger.rows[0].sum);
+    const totalCost = Number(pujas.rows[0].sum) + Number(chadhavas.rows[0].sum) + Number(appts.rows[0].sum);
+
+    const rows = [
+      { variable: 'PUJAS',         totalNumber: pujas.rows[0].cnt,     totalCost: Number(pujas.rows[0].sum),     totalFee: 0, netProfit: Number(pujas.rows[0].sum) },
+      { variable: 'CHADHAVAS',     totalNumber: chadhavas.rows[0].cnt, totalCost: Number(chadhavas.rows[0].sum), totalFee: 0, netProfit: Number(chadhavas.rows[0].sum) },
+      { variable: 'APPOINTMENTS',  totalNumber: appts.rows[0].cnt,     totalCost: Number(appts.rows[0].sum),     totalFee: 0, netProfit: Number(appts.rows[0].sum) },
+      { variable: 'TOTAL',         totalNumber: pujas.rows[0].cnt + chadhavas.rows[0].cnt + appts.rows[0].cnt,
+        totalCost, totalFee, netProfit: totalCost - totalFee },
+    ];
+
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(rows, [
+        { header: 'Variable', key: 'variable', width: 18 },
+        { header: 'Total Number', key: 'totalNumber' },
+        { header: 'Total Cost', key: 'totalCost' },
+        { header: 'Total Fee', key: 'totalFee' },
+        { header: 'Net Profit', key: 'netProfit' },
+      ], 'Summary');
+      return sendFile(res, buf, 'Summary Report.xlsx', MIME_XLSX);
+    }
 
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }
 });
 
-/** GET /summary – financial summary */
-reportsRouter.get('/summary', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const [totalRevenue, revenueByType, settledVsUnsettled] = await Promise.all([
-      pool.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM payments WHERE status = 'CAPTURED'`),
-      pool.query(
-        `SELECT booking_type, COALESCE(SUM(amount), 0)::numeric AS total
-         FROM payments WHERE status = 'CAPTURED'
-         GROUP BY booking_type`,
-      ),
-      pool.query(
-        `SELECT settled,
-                COUNT(*)::int AS count,
-                COALESCE(SUM(fee), 0)::numeric AS total
-         FROM ledger_entries
-         GROUP BY settled`,
-      ),
-    ]);
+/* ══════════════════════════════════════════════════════════════════════════
+ *  8.  TEMPLE-WISE — grouped by temple.
+ * ══════════════════════════════════════════════════════════════════════════ */
 
-    const byType: Record<string, number> = {};
-    for (const row of revenueByType.rows) {
-      byType[row.booking_type] = Number(row.total);
-    }
-
-    const settled: Record<string, { count: number; total: number }> = {};
-    for (const row of settledVsUnsettled.rows) {
-      settled[row.settled ? 'settled' : 'unsettled'] = { count: row.count, total: Number(row.total) };
-    }
-
-    res.json({
-      success: true,
-      data: {
-        total_revenue: Number(totalRevenue.rows[0].total),
-        revenue_by_type: byType,
-        ledger: settled,
-      },
-    });
-  } catch (err) { next(err); }
-});
-
-/** GET /temple-wise – bookings grouped by temple */
 reportsRouter.get('/temple-wise', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT t.id AS temple_id, t.name AS temple_name,
-              COALESCE(pb_stats.puja_bookings, 0)::int AS puja_bookings,
-              COALESCE(cb_stats.chadhava_bookings, 0)::int AS chadhava_bookings,
-              COALESCE(pb_stats.puja_revenue, 0)::numeric AS puja_revenue,
-              COALESCE(cb_stats.chadhava_revenue, 0)::numeric AS chadhava_revenue
-       FROM temples t
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*) AS puja_bookings, COALESCE(SUM(pb.cost), 0) AS puja_revenue
-         FROM puja_bookings pb
-         JOIN puja_events pe ON pe.id = pb.puja_event_id
-         JOIN pujas p        ON p.id  = pe.puja_id
-         WHERE p.temple_id = t.id AND pb.status != 'CANCELLED'
-       ) pb_stats ON true
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*) AS chadhava_bookings, COALESCE(SUM(cb.cost), 0) AS chadhava_revenue
-         FROM chadhava_bookings cb
-         JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
-         JOIN chadhavas c        ON c.id  = ce.chadhava_id
-         WHERE c.temple_id = t.id AND cb.status != 'CANCELLED'
-       ) cb_stats ON true
-       WHERE t.is_active = true
-       ORDER BY t.name`,
+      `SELECT t.name AS temple_name,
+              COALESCE(pb_stats.puja_bookings, 0)::int     AS puja_bookings,
+              COALESCE(pb_stats.puja_revenue,  0)::numeric AS puja_cost,
+              COALESCE(cb_stats.chadhava_bookings, 0)::int     AS chadhavas_bookings,
+              COALESCE(cb_stats.chadhava_revenue,  0)::numeric AS chadhava_cost
+         FROM temples t
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) AS puja_bookings, COALESCE(SUM(pb.cost), 0) AS puja_revenue
+             FROM puja_bookings pb
+             JOIN puja_events pe ON pe.id = pb.puja_event_id
+             JOIN pujas       p  ON p.id  = pe.puja_id
+            WHERE p.temple_id = t.id AND pb.status <> 'CANCELLED'
+         ) pb_stats ON true
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) AS chadhava_bookings, COALESCE(SUM(cb.cost), 0) AS chadhava_revenue
+             FROM chadhava_bookings cb
+             JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
+             JOIN chadhavas       c  ON c.id  = ce.chadhava_id
+            WHERE c.temple_id = t.id AND cb.status <> 'CANCELLED'
+         ) cb_stats ON true
+        WHERE t.is_active = true
+        ORDER BY t.name`,
     );
-
-    res.json({ success: true, data: rows });
+    const data = rows.map((r) => ({
+      temple:            r.temple_name,
+      pujaBookings:      r.puja_bookings,
+      pujaCost:          Number(r.puja_cost),
+      chadhavasBookings: r.chadhavas_bookings,
+      chadhavaCost:      Number(r.chadhava_cost),
+    }));
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'Temple', key: 'temple', width: 36 },
+        { header: 'Puja Bookings', key: 'pujaBookings' },
+        { header: 'Puja Cost', key: 'pujaCost' },
+        { header: 'Chadhavas Bookings', key: 'chadhavasBookings' },
+        { header: 'Chadhava Cost', key: 'chadhavaCost' },
+      ], 'Temple Wise');
+      return sendFile(res, buf, 'Temple Wise Report.xlsx', MIME_XLSX);
+    }
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
-/** GET /deity-wise – bookings grouped by deity */
+/* ══════════════════════════════════════════════════════════════════════════
+ *  9.  DEITY-WISE — grouped by deity (pujas + chadhavas).
+ * ══════════════════════════════════════════════════════════════════════════ */
+
 reportsRouter.get('/deity-wise', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT de.id AS deity_id, de.name AS deity_name,
-              COUNT(pb.id)::int AS total_bookings,
-              COALESCE(SUM(pb.cost), 0)::numeric AS total_revenue
-       FROM deities de
-       JOIN pujas p         ON p.deity_id = de.id
-       JOIN puja_events pe  ON pe.puja_id = p.id
-       JOIN puja_bookings pb ON pb.puja_event_id = pe.id AND pb.status != 'CANCELLED'
-       GROUP BY de.id, de.name
-       ORDER BY total_bookings DESC`,
+      `SELECT de.name AS deity_name,
+              COALESCE(p_stats.puja_bookings, 0)::int     AS puja_bookings,
+              COALESCE(p_stats.puja_revenue,  0)::numeric AS puja_cost,
+              COALESCE(c_stats.chadhava_bookings, 0)::int     AS chadhavas_bookings,
+              COALESCE(c_stats.chadhava_revenue,  0)::numeric AS chadhava_cost
+         FROM deities de
+         LEFT JOIN LATERAL (
+           SELECT COUNT(pb.id) AS puja_bookings, COALESCE(SUM(pb.cost), 0) AS puja_revenue
+             FROM pujas p
+             JOIN puja_events  pe ON pe.puja_id = p.id
+             JOIN puja_bookings pb ON pb.puja_event_id = pe.id AND pb.status <> 'CANCELLED'
+            WHERE p.deity_id = de.id
+         ) p_stats ON true
+         LEFT JOIN LATERAL (
+           SELECT COUNT(cb.id) AS chadhava_bookings, COALESCE(SUM(cb.cost), 0) AS chadhava_revenue
+             FROM chadhavas c
+             JOIN chadhava_events  ce ON ce.chadhava_id = c.id
+             JOIN chadhava_bookings cb ON cb.chadhava_event_id = ce.id AND cb.status <> 'CANCELLED'
+            WHERE c.deity_id = de.id
+         ) c_stats ON true
+        ORDER BY de.name`,
     );
-
-    res.json({ success: true, data: rows });
+    const data = rows.map((r) => ({
+      deity:             r.deity_name,
+      pujaBookings:      r.puja_bookings,
+      pujaCost:          Number(r.puja_cost),
+      chadhavasBookings: r.chadhavas_bookings,
+      chadhavaCost:      Number(r.chadhava_cost),
+    }));
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'Deity', key: 'deity', width: 24 },
+        { header: 'Puja Bookings', key: 'pujaBookings' },
+        { header: 'Puja Cost', key: 'pujaCost' },
+        { header: 'Chadhavas Bookings', key: 'chadhavasBookings' },
+        { header: 'Chadhava Cost', key: 'chadhavaCost' },
+      ], 'Deity Wise');
+      return sendFile(res, buf, 'Deity Wise Report.xlsx', MIME_XLSX);
+    }
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
-/** GET /devotee-wise – bookings grouped by devotee */
+/* ══════════════════════════════════════════════════════════════════════════
+ * 10.  DEVOTEE-WISE — per-devotee totals.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
 reportsRouter.get('/devotee-wise', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 50)));
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit ?? 100)));
     const offset = (page - 1) * limit;
 
     const { rows } = await pool.query(
-      `SELECT d.id AS devotee_id, d.name AS devotee_name, d.phone AS devotee_phone,
-              COALESCE(pb_stats.puja_count, 0)::int AS puja_bookings,
-              COALESCE(cb_stats.chadhava_count, 0)::int AS chadhava_bookings,
-              COALESCE(ap_stats.appt_count, 0)::int AS appointments,
-              (COALESCE(pb_stats.puja_spent, 0) + COALESCE(cb_stats.chadhava_spent, 0) + COALESCE(ap_stats.appt_spent, 0))::numeric AS total_spent
-       FROM devotees d
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*) AS puja_count, COALESCE(SUM(cost), 0) AS puja_spent
-         FROM puja_bookings WHERE devotee_id = d.id AND status != 'CANCELLED'
-       ) pb_stats ON true
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*) AS chadhava_count, COALESCE(SUM(cost), 0) AS chadhava_spent
-         FROM chadhava_bookings WHERE devotee_id = d.id AND status != 'CANCELLED'
-       ) cb_stats ON true
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*) AS appt_count, COALESCE(SUM(cost), 0) AS appt_spent
-         FROM appointments WHERE devotee_id = d.id AND status != 'CANCELLED'
-       ) ap_stats ON true
-       WHERE d.is_active = true
-       ORDER BY total_spent DESC
-       LIMIT $1 OFFSET $2`,
+      `SELECT d.id, d.name AS devotee_name, d.phone AS devotee_phone,
+              COALESCE(pb_stats.puja_count, 0)::int        AS pujas,
+              COALESCE(cb_stats.chadhava_count, 0)::int    AS chadhavas,
+              COALESCE(ap_stats.appt_count, 0)::int        AS appointments,
+              (COALESCE(pb_stats.puja_count, 0) + COALESCE(cb_stats.chadhava_count, 0) + COALESCE(ap_stats.appt_count, 0))::int AS total_bookings,
+              (COALESCE(pb_stats.puja_spent, 0) + COALESCE(cb_stats.chadhava_spent, 0) + COALESCE(ap_stats.appt_spent, 0))::numeric AS total_cost
+         FROM devotees d
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) AS puja_count, COALESCE(SUM(cost), 0) AS puja_spent
+             FROM puja_bookings WHERE devotee_id = d.id AND status <> 'CANCELLED'
+         ) pb_stats ON true
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) AS chadhava_count, COALESCE(SUM(cost), 0) AS chadhava_spent
+             FROM chadhava_bookings WHERE devotee_id = d.id AND status <> 'CANCELLED'
+         ) cb_stats ON true
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) AS appt_count, COALESCE(SUM(cost), 0) AS appt_spent
+             FROM appointments WHERE devotee_id = d.id AND status <> 'CANCELLED'
+         ) ap_stats ON true
+        WHERE d.is_active = true
+        ORDER BY total_cost DESC
+        LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
-
-    res.json({ success: true, data: rows });
+    const data = rows.map((r) => ({
+      id:            fmtShortId(r.id),
+      name:          r.devotee_name,
+      phone:         r.devotee_phone,
+      pujas:         r.pujas,
+      chadhavas:     r.chadhavas,
+      appointments:  r.appointments,
+      totalBookings: r.total_bookings,
+      totalCost:     Number(r.total_cost),
+    }));
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'ID', key: 'id' },
+        { header: 'Name', key: 'name', width: 24 },
+        { header: 'Phone', key: 'phone' },
+        { header: 'Pujas', key: 'pujas' },
+        { header: 'Chadhavas', key: 'chadhavas' },
+        { header: 'Appointments', key: 'appointments' },
+        { header: 'Total Bookings', key: 'totalBookings' },
+        { header: 'Total Cost', key: 'totalCost' },
+      ], 'Devotee Wise');
+      return sendFile(res, buf, 'Devotee Wise Report.xlsx', MIME_XLSX);
+    }
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });

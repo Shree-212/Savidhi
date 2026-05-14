@@ -312,49 +312,37 @@ pujasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
 });
 
 // ── Delete ───────────────────────────────────────────────────────────────────
-// Soft-delete the puja AND clean up any of its future events that have no
-// bookings yet. Future events that DO have bookings block the delete (you
-// can't silently orphan a paid booking — admin needs to refund / cancel
-// those first via the bookings page).
+// Hard-delete the puja when no bookings exist (past or present), and block
+// with 409 otherwise. The admin should use the status toggle to soft-deactivate
+// a puja whose history must be preserved.
 pujasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
     await client.query('BEGIN');
 
-    // Find future events that DO have bookings — blocking.
-    const blocked = await client.query(
-      `SELECT pe.id, pe.start_time, COUNT(pb.id)::int AS bookings
-         FROM puja_events pe
-         JOIN puja_bookings pb ON pb.puja_event_id = pe.id
-        WHERE pe.puja_id = $1
-          AND pe.status IN ('NOT_STARTED', 'INPROGRESS')
-          AND pe.start_time >= NOW()
-        GROUP BY pe.id`,
+    // Count any bookings (any status, any time) referencing events of this puja.
+    const usage = await client.query(
+      `SELECT COUNT(*)::int AS n
+         FROM puja_bookings pb
+         JOIN puja_events  pe ON pe.id = pb.puja_event_id
+        WHERE pe.puja_id = $1`,
       [id],
     );
-    if (blocked.rows.length > 0) {
+    if (usage.rows[0].n > 0) {
       await client.query('ROLLBACK');
-      const totalBookings = blocked.rows.reduce((s, r) => s + r.bookings, 0);
       res.status(409).json({
         success: false,
-        message: `Cannot delete: ${blocked.rows.length} upcoming event(s) have ${totalBookings} active booking(s). Cancel/refund the bookings first.`,
+        message: `Cannot delete — puja has ${usage.rows[0].n} booking(s). Use the status toggle to mark it inactive instead.`,
       });
       return;
     }
 
-    // Safe to wipe: future events with zero bookings.
-    const cleared = await client.query(
-      `DELETE FROM puja_events
-        WHERE puja_id = $1
-          AND status IN ('NOT_STARTED', 'INPROGRESS')
-          AND start_time >= NOW()
-        RETURNING id`,
-      [id],
-    );
+    // No bookings — safe to hard-delete. Clear events (no FK cascade) then the puja itself.
+    await client.query('DELETE FROM puja_events WHERE puja_id = $1', [id]);
 
     const result = await client.query(
-      'UPDATE pujas SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      'DELETE FROM pujas WHERE id = $1 RETURNING id',
       [id],
     );
     if (result.rows.length === 0) {
@@ -364,12 +352,16 @@ pujasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Reque
     }
 
     await client.query('COMMIT');
-    res.json({
-      success: true,
-      message: `Puja deleted${cleared.rows.length > 0 ? ` (${cleared.rows.length} upcoming event(s) cleaned up)` : ''}`,
-    });
-  } catch (err) {
+    res.json({ success: true, message: 'Puja deleted' });
+  } catch (err: any) {
     await client.query('ROLLBACK').catch(() => undefined);
+    if (err?.code === '23503') {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot delete — puja is referenced by other records. Use the status toggle to mark it inactive instead.',
+      });
+      return;
+    }
     next(err);
   } finally {
     client.release();

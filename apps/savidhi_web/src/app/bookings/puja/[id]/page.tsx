@@ -105,9 +105,11 @@ export default function PujaStatusPage({ params }: { params: Promise<{ id: strin
   const isCancelled = booking.status === 'CANCELLED' || booking.event_status === 'CANCELLED';
   const shortVideoUrl = booking.event_short_video_url ?? booking.short_video_url;
   const sankalpVideoUrl = booking.event_sankalp_video_url ?? booking.sankalp_video_url;
+  const firstBookingDevoteeName =
+    (Array.isArray(booking.devotees) && booking.devotees[0]?.name) || booking.devotee_name;
   const sankalpTimestamps = parseSankalpTimestamps(
     booking.event_sankalp_timestamps ?? booking.sankalp_timestamps ?? booking.sankalp_video_timestamp,
-    booking.devotee_name,
+    firstBookingDevoteeName,
   );
   const hasPrasad = booking.event_has_prasad ?? booking.has_prasad ?? true;
   const pujaName = booking.puja_name ?? 'Puja';

@@ -261,7 +261,7 @@ function PujasPageInner() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this puja? Any upcoming events with no bookings will be cleaned up.')) return;
+    if (!confirm('Delete this puja permanently? This only works if it has no bookings — otherwise use the status toggle to mark it inactive.')) return;
     try {
       const res = await pujaService.delete(id);
       const msg = res.data?.message || 'Puja deleted';

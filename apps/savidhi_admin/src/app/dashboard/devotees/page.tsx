@@ -67,10 +67,22 @@ export default function DevoteesPage() {
       setSelected({
         ...devotee,
         bookings: detail?.bookings || [],
+        bookings_list: detail?.bookings_list || [],
       });
     } catch {
       setSelected(devotee);
     }
+  };
+
+  const formatBookingDate = (iso: string) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+    } catch { return iso; }
   };
 
   const columns = [
@@ -104,14 +116,27 @@ export default function DevoteesPage() {
 
             <div className="text-left">
               <h4 className="text-[10px] font-bold uppercase tracking-wider mb-2">Bookings</h4>
-              {selected.bookings && selected.bookings.length > 0 ? (
-                selected.bookings.map((b, i) => (
-                  <div key={i} className="border border-border rounded-lg p-3 mb-2">
-                    <p className="text-xs font-bold text-foreground">{b.title}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 whitespace-pre-line">{b.details}</p>
-                    <StatusBadge status={b.status} className="mt-1 block" />
-                  </div>
-                ))
+              {selected.bookings_list && selected.bookings_list.length > 0 ? (
+                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                  {selected.bookings_list.map((b) => (
+                    <div key={b.id} className="border border-border rounded-lg p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs font-bold text-foreground">{b.title}</p>
+                        <span className="text-[9px] uppercase tracking-wider text-primary font-semibold whitespace-nowrap">
+                          {b.type}
+                        </span>
+                      </div>
+                      {b.subtitle && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{b.subtitle}</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{formatBookingDate(b.scheduled_at)}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <StatusBadge status={b.status} />
+                        <span className="text-[10px] font-semibold text-foreground">₹{b.cost}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <p className="text-[10px] text-muted-foreground">No bookings found.</p>
               )}

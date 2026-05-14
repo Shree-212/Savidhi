@@ -450,45 +450,34 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
 });
 
 // ── Delete ───────────────────────────────────────────────────────────────────
-// Same shape as the puja delete: clear future events with no bookings, block
-// when a future event has bookings.
+// Hard-delete the chadhava when no bookings exist (past or present); block
+// with 409 otherwise. chadhava_offerings cascade-delete via FK ON DELETE CASCADE.
 chadhavasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
     await client.query('BEGIN');
 
-    const blocked = await client.query(
-      `SELECT ce.id, ce.start_time, COUNT(cb.id)::int AS bookings
-         FROM chadhava_events ce
-         JOIN chadhava_bookings cb ON cb.chadhava_event_id = ce.id
-        WHERE ce.chadhava_id = $1
-          AND ce.status IN ('NOT_STARTED', 'INPROGRESS')
-          AND ce.start_time >= NOW()
-        GROUP BY ce.id`,
+    const usage = await client.query(
+      `SELECT COUNT(*)::int AS n
+         FROM chadhava_bookings cb
+         JOIN chadhava_events  ce ON ce.id = cb.chadhava_event_id
+        WHERE ce.chadhava_id = $1`,
       [id],
     );
-    if (blocked.rows.length > 0) {
+    if (usage.rows[0].n > 0) {
       await client.query('ROLLBACK');
-      const totalBookings = blocked.rows.reduce((s, r) => s + r.bookings, 0);
       res.status(409).json({
         success: false,
-        message: `Cannot delete: ${blocked.rows.length} upcoming event(s) have ${totalBookings} active booking(s). Cancel/refund the bookings first.`,
+        message: `Cannot delete — chadhava has ${usage.rows[0].n} booking(s). Use the status toggle to mark it inactive instead.`,
       });
       return;
     }
 
-    const cleared = await client.query(
-      `DELETE FROM chadhava_events
-        WHERE chadhava_id = $1
-          AND status IN ('NOT_STARTED', 'INPROGRESS')
-          AND start_time >= NOW()
-        RETURNING id`,
-      [id],
-    );
+    await client.query('DELETE FROM chadhava_events WHERE chadhava_id = $1', [id]);
 
     const result = await client.query(
-      'UPDATE chadhavas SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      'DELETE FROM chadhavas WHERE id = $1 RETURNING id',
       [id],
     );
     if (result.rows.length === 0) {
@@ -498,12 +487,16 @@ chadhavasRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: R
     }
 
     await client.query('COMMIT');
-    res.json({
-      success: true,
-      message: `Chadhava deleted${cleared.rows.length > 0 ? ` (${cleared.rows.length} upcoming event(s) cleaned up)` : ''}`,
-    });
-  } catch (err) {
+    res.json({ success: true, message: 'Chadhava deleted' });
+  } catch (err: any) {
     await client.query('ROLLBACK').catch(() => undefined);
+    if (err?.code === '23503') {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot delete — chadhava is referenced by other records. Use the status toggle to mark it inactive instead.',
+      });
+      return;
+    }
     next(err);
   } finally {
     client.release();

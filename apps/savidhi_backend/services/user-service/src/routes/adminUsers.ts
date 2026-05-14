@@ -91,8 +91,8 @@ adminUsersRouter.get(
 
       const devotee = devoteeResult.rows[0];
 
-      // Booking summaries
-      const [pujaBookings, chadhavaBookings, appointments, achievements] = await Promise.all([
+      // Booking summaries + flat bookings_list (last 50 of each type)
+      const [pujaBookings, chadhavaBookings, appointments, achievements, bookingsList] = await Promise.all([
         pool.query(
           `SELECT
              COUNT(*) AS total,
@@ -121,6 +121,56 @@ adminUsersRouter.get(
           `SELECT COUNT(*) AS count FROM devotee_achievements WHERE devotee_id = $1`,
           [id],
         ),
+        pool.query(
+          `(
+             SELECT pb.id::text AS id,
+                    'PUJA'      AS type,
+                    p.name      AS title,
+                    t.name      AS subtitle,
+                    pe.start_time AS scheduled_at,
+                    pb.cost,
+                    pb.status,
+                    pb.created_at
+             FROM puja_bookings pb
+             JOIN puja_events pe ON pe.id = pb.puja_event_id
+             JOIN pujas       p  ON p.id  = pe.puja_id
+             LEFT JOIN temples t ON t.id  = p.temple_id
+             WHERE pb.devotee_id = $1
+           )
+           UNION ALL
+           (
+             SELECT cb.id::text AS id,
+                    'CHADHAVA'  AS type,
+                    c.name      AS title,
+                    t.name      AS subtitle,
+                    ce.start_time AS scheduled_at,
+                    cb.cost,
+                    cb.status,
+                    cb.created_at
+             FROM chadhava_bookings cb
+             JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
+             JOIN chadhavas       c  ON c.id  = ce.chadhava_id
+             LEFT JOIN temples    t  ON t.id  = c.temple_id
+             WHERE cb.devotee_id = $1
+           )
+           UNION ALL
+           (
+             SELECT a.id::text AS id,
+                    'APPOINTMENT' AS type,
+                    ast.name      AS title,
+                    a.duration    AS subtitle,
+                    a.scheduled_at,
+                    a.cost,
+                    a.status,
+                    a.created_at
+             FROM appointments a
+             JOIN astrologers ast ON ast.id = a.astrologer_id
+             WHERE a.devotee_id = $1
+           )
+           ORDER BY created_at DESC
+           LIMIT 50`,
+          [id],
+        ),
       ]);
 
       const toSummary = (row: Record<string, string>) => ({
@@ -128,6 +178,16 @@ adminUsersRouter.get(
         completed: Number(row.completed),
         total_spent: Number(row.total_spent),
       });
+
+      const bookings_list = bookingsList.rows.map((row: any) => ({
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        subtitle: row.subtitle ?? '',
+        scheduled_at: row.scheduled_at,
+        cost: Number(row.cost ?? 0),
+        status: row.status,
+      }));
 
       res.json({
         success: true,
@@ -139,6 +199,7 @@ adminUsersRouter.get(
             chadhava: toSummary(chadhavaBookings.rows[0]),
             appointment: toSummary(appointments.rows[0]),
           },
+          bookings_list,
         },
       });
     } catch (err) {
@@ -317,7 +378,9 @@ adminUsersRouter.patch(
 
 /**
  * DELETE /api/v1/users/admin-users/:id
- * Soft-delete admin user - ADMIN only.
+ * Hard-delete admin user - ADMIN only. Admin users have no booking/catalogue
+ * dependencies, so this is always a real DELETE (with a 23503 safety net in
+ * case future migrations add an FK).
  */
 adminUsersRouter.delete(
   '/admin-users/:id',
@@ -333,9 +396,7 @@ adminUsersRouter.delete(
       }
 
       const result = await pool.query(
-        `UPDATE admin_users SET is_active = false, updated_at = NOW()
-         WHERE id = $1 AND is_active = true
-         RETURNING id`,
+        `DELETE FROM admin_users WHERE id = $1 RETURNING id`,
         [id],
       );
 
@@ -345,7 +406,14 @@ adminUsersRouter.delete(
       }
 
       res.json({ success: true, message: 'Admin user deleted' });
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === '23503') {
+        res.status(409).json({
+          success: false,
+          message: 'Cannot delete — admin user is referenced by other records. Use the status toggle to mark it inactive instead.',
+        });
+        return;
+      }
       next(err);
     }
   },

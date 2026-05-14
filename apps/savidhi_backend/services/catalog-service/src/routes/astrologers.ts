@@ -117,21 +117,32 @@ astrologersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: 
 astrologersRouter.delete('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const inUse = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM appointments
-       WHERE astrologer_id = $1
-         AND status IN ('LINK_YET_TO_BE_GENERATED', 'YET_TO_START', 'INPROGRESS')
-         AND scheduled_at >= NOW()`,
+    // Any appointment (past or future, any status) blocks a hard-delete because
+    // the appointment row carries devotee/ledger history pointing at this row.
+    const usage = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM appointments WHERE astrologer_id = $1`,
       [id],
     );
-    if (inUse.rows[0].n > 0) {
-      res.status(409).json({ success: false, message: 'Astrologer has upcoming appointments; cancel them first' });
+    if (usage.rows[0].n > 0) {
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete — astrologer has ${usage.rows[0].n} appointment(s). Use the status toggle to mark it inactive instead.`,
+      });
       return;
     }
-    const result = await pool.query('UPDATE astrologers SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
+    const result = await pool.query('DELETE FROM astrologers WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
     res.json({ success: true, message: 'Astrologer deleted' });
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err?.code === '23503') {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot delete — astrologer is referenced by other records. Use the status toggle to mark it inactive instead.',
+      });
+      return;
+    }
+    next(err);
+  }
 });
 
 /**

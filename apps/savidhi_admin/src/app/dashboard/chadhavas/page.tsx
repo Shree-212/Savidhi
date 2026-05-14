@@ -265,7 +265,7 @@ export default function ChadhavasPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this chadhava? Any upcoming events with no bookings will be cleaned up.')) return;
+    if (!confirm('Delete this chadhava permanently? This only works if it has no bookings — otherwise use the status toggle to mark it inactive.')) return;
     try {
       const res = await chadhavaService.delete(id);
       const msg = res.data?.message || 'Chadhava deleted';

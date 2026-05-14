@@ -60,7 +60,7 @@ export default function TempleDetailPage({ params }: { params: Promise<{ id: str
 
         <div className="grid lg:grid-cols-[5fr_7fr] gap-6 lg:gap-10 lg:items-start">
           {/* LEFT — gallery + stats card */}
-          <div className="lg:sticky lg:top-4 space-y-5">
+          <div className="min-w-0 lg:sticky lg:top-4 space-y-5">
             <ImageSlider images={temple.images} alt={temple.name} />
 
             {Number(temple.pujaCount) > 0 && (

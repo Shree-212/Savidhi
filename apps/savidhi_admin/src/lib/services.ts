@@ -295,7 +295,35 @@ export const reportService = {
     apiClient.get('/bookings/reports/deity-wise', { params }),
   devoteeWise: (params?: any) =>
     apiClient.get('/bookings/reports/devotee-wise', { params }),
+
+  /** Download the report-wide export. format=xlsx|zip controls the shape. */
+  downloadReport: (key: string, format: 'xlsx' | 'zip', params?: any) =>
+    apiClient.get(`/bookings/reports/${key}`, {
+      params: { ...(params ?? {}), format },
+      responseType: 'blob',
+    }),
+  /** Download one row of a grouped report (event or astrologer). */
+  downloadRow: (key: string, rowId: string, params?: any) =>
+    apiClient.get(`/bookings/reports/${key}/${rowId}/export`, {
+      params,
+      responseType: 'blob',
+    }),
 };
+
+/** Trigger a browser download from a binary axios response. */
+export function downloadBlob(response: { data: Blob; headers: any }, fallbackName: string) {
+  const cd = String(response.headers?.['content-disposition'] ?? '');
+  const match = /filename\s*=\s*"?([^";]+)"?/i.exec(cd);
+  const filename = match ? match[1] : fallbackName;
+  const url = URL.createObjectURL(response.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 /* ══════════════════════════════════════════════════════════
    Media Service

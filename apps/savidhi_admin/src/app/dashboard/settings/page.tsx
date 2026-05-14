@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { adminUserService, settingsService } from '@/lib/services';
+import { adminUserService, settingsService, pujaService } from '@/lib/services';
 import { TabToggle } from '@/components/shared/TabToggle';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -19,9 +19,14 @@ interface AdminUser {
 }
 
 interface AppSettings {
-  home_slider_pujas: string[];
-  whatsapp_number: string;
-  call_number: string;
+  home_puja_slider_ids: string[];
+  whatsapp_support_number: string;
+  call_support_number: string;
+}
+
+interface PujaOption {
+  id: string;
+  name: string;
 }
 
 export default function SettingsPage() {
@@ -29,7 +34,15 @@ export default function SettingsPage() {
   const [search, setSearch] = useState('');
   const [showNewUser, setShowNewUser] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
-  const [settings, setSettings] = useState<AppSettings>({ home_slider_pujas: [], whatsapp_number: '', call_number: '' });
+  const [settings, setSettings] = useState<AppSettings>({
+    home_puja_slider_ids: [],
+    whatsapp_support_number: '',
+    call_support_number: '',
+  });
+  const [whatsappValue, setWhatsappValue] = useState('');
+  const [callValue, setCallValue] = useState('');
+  const [sliderPujaIds, setSliderPujaIds] = useState<string[]>([]);
+  const [pujas, setPujas] = useState<PujaOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -37,9 +50,6 @@ export default function SettingsPage() {
   const nameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const roleRef = useRef<HTMLSelectElement>(null);
-
-  const whatsappRef = useRef<HTMLInputElement>(null);
-  const callRef = useRef<HTMLInputElement>(null);
 
   const loadAdminUsers = async () => {
     try {
@@ -56,17 +66,37 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       const res = await settingsService.get();
-      if (res.data?.data) {
-        setSettings(res.data.data);
+      const data = res.data?.data;
+      if (data) {
+        const normalised: AppSettings = {
+          home_puja_slider_ids: Array.isArray(data.home_puja_slider_ids) ? data.home_puja_slider_ids : [],
+          whatsapp_support_number: data.whatsapp_support_number ?? '',
+          call_support_number: data.call_support_number ?? '',
+        };
+        setSettings(normalised);
+        setWhatsappValue(normalised.whatsapp_support_number);
+        setCallValue(normalised.call_support_number);
+        setSliderPujaIds(normalised.home_puja_slider_ids);
       }
     } catch (err) {
       console.error('Failed to load settings', err);
     }
   };
 
+  const loadPujas = async () => {
+    try {
+      const res = await pujaService.list({ limit: 200 });
+      const items = res.data?.data ?? [];
+      setPujas(items.map((p: any) => ({ id: p.id, name: p.name })));
+    } catch (err) {
+      console.error('Failed to load pujas', err);
+    }
+  };
+
   useEffect(() => {
     loadAdminUsers();
     loadSettings();
+    loadPujas();
   }, []);
 
   const handleCreateUser = async () => {
@@ -92,8 +122,15 @@ export default function SettingsPage() {
     try {
       await adminUserService.delete(id);
       await loadAdminUsers();
-    } catch (err) {
-      console.error('Failed to delete admin user', err);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message;
+      if (status === 409 && msg) {
+        alert(msg);
+      } else {
+        console.error('Failed to delete admin user', err);
+        alert('Failed to delete admin user');
+      }
     }
   };
 
@@ -101,8 +138,9 @@ export default function SettingsPage() {
     try {
       setSaving(true);
       await settingsService.update({
-        whatsapp_number: whatsappRef.current?.value || '',
-        call_number: callRef.current?.value || '',
+        whatsapp_support_number: whatsappValue,
+        call_support_number: callValue,
+        home_puja_slider_ids: sliderPujaIds,
       });
       await loadSettings();
     } catch (err) {
@@ -110,6 +148,12 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleSliderPuja = (id: string) => {
+    setSliderPujaIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   const adminColumns = [
@@ -139,18 +183,36 @@ export default function SettingsPage() {
         <DataTable columns={adminColumns} data={adminUsers} />
       ) : (
         <div className="space-y-4 max-w-md">
-          <select className="w-full h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground">
-            <option>Select Pujas for Home Page Slider (N)</option>
-          </select>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">
+              Select Pujas for Home Page Slider ({sliderPujaIds.length})
+            </label>
+            <div className="max-h-48 overflow-y-auto border border-border rounded-md bg-accent p-2 space-y-1">
+              {pujas.length === 0 ? (
+                <div className="text-xs text-muted-foreground px-1 py-2">No pujas available.</div>
+              ) : (
+                pujas.map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 text-xs text-foreground cursor-pointer px-1 py-1 hover:bg-background rounded">
+                    <input
+                      type="checkbox"
+                      checked={sliderPujaIds.includes(p.id)}
+                      onChange={() => toggleSliderPuja(p.id)}
+                    />
+                    <span>{p.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
           <input
-            ref={whatsappRef}
-            defaultValue={settings.whatsapp_number}
+            value={whatsappValue}
+            onChange={(e) => setWhatsappValue(e.target.value)}
             placeholder="WhatsApp Support Number"
             className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
           />
           <input
-            ref={callRef}
-            defaultValue={settings.call_number}
+            value={callValue}
+            onChange={(e) => setCallValue(e.target.value)}
             placeholder="Call Support Number"
             className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
           />
