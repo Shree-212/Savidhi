@@ -19,10 +19,34 @@ import {
 import { PujaCard } from '@/components/shared/PujaCard';
 import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
 import { TempleCard } from '@/components/shared/TempleCard';
+import { HomeBannerCarousel } from '@/components/shared/HomeBannerCarousel';
 import { templeService, pujaService, chadhavaService } from '@/lib/services';
 import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
 import { useT } from '@/lib/i18n';
+
+/**
+ * Reveal more cards from a longer pre-fetched list when the sentinel scrolls
+ * into view. Replaces the "Load More" button — competitor apps use infinite
+ * scroll for the same surface and stakeholders flagged the button as poor UX.
+ */
+function useInfiniteReveal(total: number, step = 4, initial = 4) {
+  const [limit, setLimit] = useState(initial);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (limit >= total) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) {
+        setLimit((l) => Math.min(l + step, total));
+      }
+    }, { rootMargin: '200px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [limit, total, step]);
+  return { limit, sentinelRef };
+}
 
 const HOW_TO_STEPS = [
   { num: 1, titleKey: 'home.howToBook.step1.title', descKey: 'home.howToBook.step1.desc', icon: BookOpen },
@@ -224,8 +248,8 @@ export default function HomePage() {
   const [pujas, setPujas] = useState<any[]>([]);
   const [chadhavas, setChadhavas] = useState<any[]>([]);
   const [temples, setTemples] = useState<any[]>([]);
-  const [pujaLimit, setPujaLimit] = useState(4);
-  const [chadhavaLimit, setChadhavaLimit] = useState(4);
+  const pujaReveal = useInfiniteReveal(pujas.length, 4, 4);
+  const chadhavaReveal = useInfiniteReveal(chadhavas.length, 4, 4);
 
   useEffect(() => {
     async function loadData() {
@@ -344,6 +368,9 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ═══════════ HOME BANNERS (admin-curated, auto-playing) ═══════════ */}
+      <HomeBannerCarousel />
+
       {/* ═══════════ UPCOMING PUJAS ═══════════ */}
       <section className="section-container py-8">
         <div className="flex items-center justify-between mb-4">
@@ -353,18 +380,13 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {pujas.slice(0, pujaLimit).map((puja) => (
+          {pujas.slice(0, pujaReveal.limit).map((puja) => (
             <PujaCard key={puja.id} puja={puja} />
           ))}
         </div>
-        {pujas.length > pujaLimit && (
-          <div className="flex justify-center mt-6">
-            <button
-              onClick={() => setPujaLimit((l) => l + 4)}
-              className="px-6 py-2.5 rounded-full border border-primary-400 text-primary-500 text-sm font-semibold hover:bg-primary-50 transition"
-            >
-              Load More
-            </button>
+        {pujas.length > pujaReveal.limit && (
+          <div ref={pujaReveal.sentinelRef} className="h-12 flex items-center justify-center mt-2">
+            <span className="text-xs text-text-muted">Loading more pujas…</span>
           </div>
         )}
       </section>
@@ -436,18 +458,13 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {chadhavas.slice(0, chadhavaLimit).map((c) => (
+          {chadhavas.slice(0, chadhavaReveal.limit).map((c) => (
             <ChadhavaCard key={c.id} chadhava={c} />
           ))}
         </div>
-        {chadhavas.length > chadhavaLimit && (
-          <div className="flex justify-center mt-6">
-            <button
-              onClick={() => setChadhavaLimit((l) => l + 4)}
-              className="px-6 py-2.5 rounded-full border border-primary-400 text-primary-500 text-sm font-semibold hover:bg-primary-50 transition"
-            >
-              Load More
-            </button>
+        {chadhavas.length > chadhavaReveal.limit && (
+          <div ref={chadhavaReveal.sentinelRef} className="h-12 flex items-center justify-center mt-2">
+            <span className="text-xs text-text-muted">Loading more chadhavas…</span>
           </div>
         )}
       </section>

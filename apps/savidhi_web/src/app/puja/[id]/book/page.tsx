@@ -81,8 +81,10 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
           else if (pujaRaw.booking_mode === 'ONE_TIME') setBookingType('ONE_TIME');
         }
         const evs = (eventsRes.data?.data ?? []) as PujaEvent[];
-        evs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-        setEvents(evs);
+        // Only events that haven't actually started yet are bookable.
+        const bookable = evs.filter((e) => e.status === 'NOT_STARTED' && e.stage === 'YET_TO_START');
+        bookable.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        setEvents(bookable);
       } catch (err: any) {
         if (!cancelled) setError(err.response?.data?.message || err.message || 'Failed to load');
       } finally {

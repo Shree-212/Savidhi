@@ -93,12 +93,14 @@ export function Header() {
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            <div ref={langRef} className="relative hidden sm:block">
+            {/* Always visible — also on mobile — per the May-14 redesign so the
+                EN/HI switch is reachable without opening the hamburger menu. */}
+            <div ref={langRef} className="relative">
               <button
                 onClick={() => setLangOpen((v) => !v)}
                 aria-haspopup="menu"
                 aria-expanded={langOpen}
-                className="flex items-center gap-1.5 text-[15px] text-text-secondary hover:text-text-primary transition-colors"
+                className="flex items-center gap-1.5 text-sm sm:text-[15px] text-text-secondary hover:text-text-primary transition-colors"
               >
                 <Globe className="w-[18px] h-[18px]" />
                 <span>{locale === 'hi' ? t('lang.short.hi') : t('lang.short.en')}</span>
@@ -169,24 +171,8 @@ export function Header() {
                 {t(link.key)}
               </Link>
             ))}
-            {/* Mobile language picker */}
-            <div className="mt-2 border-t border-border-light pt-3 px-1">
-              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">{t('lang.english')} / {t('lang.hindi')}</p>
-              <div className="flex gap-2">
-                {(['en', 'hi'] as const).map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => { setLocale(l); setMobileMenuOpen(false); }}
-                    className={cn(
-                      'flex-1 px-3 py-2 rounded-xl text-sm font-medium border transition-colors',
-                      locale === l ? 'bg-primary-500 text-white border-primary-500' : 'border-border-light text-text-secondary',
-                    )}
-                  >
-                    {l === 'en' ? t('lang.english') : t('lang.hindi')}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* Mobile-menu language picker removed — the EN/HI switch lives in
+                the top bar (visible on every breakpoint) per the May-14 redesign. */}
           </nav>
           </div>
         </>

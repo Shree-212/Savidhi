@@ -21,7 +21,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: tick
-              image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v12
+              image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v15
               command:
                 - node
                 - -e

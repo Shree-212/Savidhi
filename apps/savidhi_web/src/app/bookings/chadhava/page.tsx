@@ -9,20 +9,22 @@ import type { ChadhavaBooking, ChadhavaBookingStatus } from '@/data/models';
 
 const FILTERS = ['All', 'Ongoing', 'Upcoming', 'Completed', 'Cancelled'] as const;
 
-function mapStatus(s: string): ChadhavaBookingStatus {
-  const map: Record<string, ChadhavaBookingStatus> = {
-    CONFIRMED: 'YET_TO_START',
-    PENDING: 'YET_TO_START',
-    INPROGRESS: 'ONGOING',
-    LIVE_ADDED: 'ONGOING',
-    SHORT_VIDEO_ADDED: 'ONGOING',
-    SANKALP_VIDEO_ADDED: 'ONGOING',
-    TO_BE_SHIPPED: 'PRASAD_SHIPPED',
-    SHIPPED: 'PRASAD_SHIPPED',
-    COMPLETED: 'COMPLETE',
-    CANCELLED: 'CANCELLED',
-  };
-  return map[s] ?? 'YET_TO_START';
+// The "Yet to Start / Ongoing / Complete" pill must reflect the EVENT's actual
+// progress, not the per-booking status. Once the admin moves the event into
+// INPROGRESS (or further), every booking on it should display "Ongoing", even
+// if the booking row itself still has the default `NOT_STARTED` status.
+function deriveBookingStatus(b: any): ChadhavaBookingStatus {
+  if (b.status === 'CANCELLED' || b.event_status === 'CANCELLED') return 'CANCELLED';
+  if (b.status === 'COMPLETED' || b.event_status === 'COMPLETED') return 'COMPLETE';
+  const stage = b.event_stage as string | undefined;
+  if (stage === 'TO_BE_SHIPPED' || stage === 'SHIPPED') return 'PRASAD_SHIPPED';
+  if (
+    b.event_status === 'INPROGRESS' ||
+    (stage && stage !== 'YET_TO_START')
+  ) {
+    return 'ONGOING';
+  }
+  return 'YET_TO_START';
 }
 
 function mapChadhavaBooking(b: any): ChadhavaBooking {
@@ -39,7 +41,7 @@ function mapChadhavaBooking(b: any): ChadhavaBooking {
       : '',
     totalCost: Number(b.cost ?? 0),
     offeringsCount: Number(b.offerings_count ?? b.offerings?.length ?? 0),
-    status: mapStatus(b.status),
+    status: deriveBookingStatus(b),
   };
 }
 

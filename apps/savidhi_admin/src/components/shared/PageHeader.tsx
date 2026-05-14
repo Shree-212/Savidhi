@@ -100,6 +100,13 @@ export function PageHeader({
 
   const shiftRange = (days: number) => {
     if (!onDateChange) return;
+    // First arrow click with no range seeds the range to (today+days) so the
+    // user gets a concrete window to scrub through, instead of a silent no-op.
+    if (!effectiveFrom && !effectiveTo) {
+      const seed = shiftIso(todayIso(), days);
+      onDateChange({ from: seed, to: seed });
+      return;
+    }
     const from = effectiveFrom ? shiftIso(effectiveFrom, days) : '';
     const to   = effectiveTo   ? shiftIso(effectiveTo,   days) : '';
     onDateChange({ from, to });

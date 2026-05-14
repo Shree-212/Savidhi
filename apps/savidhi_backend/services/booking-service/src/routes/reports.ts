@@ -146,9 +146,13 @@ reportsRouter.get('/puja-sankalp', requireAdmin, async (req: Request, res: Respo
 });
 
 /** Per-row download: zip wrapping a single excel file for one puja_event. */
-reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { eventId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId)) {
+      res.status(400).json({ success: false, message: `Invalid event id: ${eventId}` });
+      return;
+    }
     const eventInfo = await pool.query(
       `SELECT p.name AS puja_name, pe.start_time
          FROM puja_events pe JOIN pujas p ON p.id = pe.puja_id
@@ -171,8 +175,11 @@ reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Req
       'Sankalp Devotees',
     );
     const zip = await buildZip([{ name: `${meta.puja_name} - ${fmtDate(meta.start_time)}.xlsx`, buffer: xlsx }]);
-    return sendFile(res, zip, `Puja Sankalp - ${meta.puja_name}.zip`, MIME_ZIP);
-  } catch (err) { next(err); }
+    sendFile(res, zip, `Puja Sankalp - ${meta.puja_name}.zip`, MIME_ZIP);
+  } catch (err: any) {
+    console.error('[puja-sankalp/export]', err);
+    res.status(500).json({ success: false, message: `Export failed: ${err?.message ?? String(err)}` });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -280,9 +287,13 @@ reportsRouter.get('/chadhava-sankalp', requireAdmin, async (req: Request, res: R
   } catch (err) { next(err); }
 });
 
-reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { eventId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId)) {
+      res.status(400).json({ success: false, message: `Invalid event id: ${eventId}` });
+      return;
+    }
     const info = await pool.query(
       `SELECT c.name AS chadhava_name, ce.start_time
          FROM chadhava_events ce JOIN chadhavas c ON c.id = ce.chadhava_id
@@ -305,8 +316,11 @@ reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req:
       'Sankalp Devotees',
     );
     const zip = await buildZip([{ name: `${meta.chadhava_name} - ${fmtDate(meta.start_time)}.xlsx`, buffer: xlsx }]);
-    return sendFile(res, zip, `Chadhava Sankalp - ${meta.chadhava_name}.zip`, MIME_ZIP);
-  } catch (err) { next(err); }
+    sendFile(res, zip, `Chadhava Sankalp - ${meta.chadhava_name}.zip`, MIME_ZIP);
+  } catch (err: any) {
+    console.error('[chadhava-sankalp/export]', err);
+    res.status(500).json({ success: false, message: `Export failed: ${err?.message ?? String(err)}` });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -486,9 +500,13 @@ reportsRouter.get('/appointments', requireAdmin, async (req: Request, res: Respo
   } catch (err) { next(err); }
 });
 
-reportsRouter.get('/appointments/:astrologerId/export', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+reportsRouter.get('/appointments/:astrologerId/export', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { astrologerId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(astrologerId)) {
+      res.status(400).json({ success: false, message: `Invalid astrologer id: ${astrologerId}` });
+      return;
+    }
     const ast = await pool.query('SELECT name FROM astrologers WHERE id = $1', [astrologerId]);
     if (ast.rows.length === 0) {
       res.status(404).json({ success: false, message: 'Astrologer not found' });
@@ -517,8 +535,11 @@ reportsRouter.get('/appointments/:astrologerId/export', requireAdmin, async (req
       'Appointments',
     );
     const zip = await buildZip([{ name: `${ast.rows[0].name}.xlsx`, buffer: xlsx }]);
-    return sendFile(res, zip, `Appointments - ${ast.rows[0].name}.zip`, MIME_ZIP);
-  } catch (err) { next(err); }
+    sendFile(res, zip, `Appointments - ${ast.rows[0].name}.zip`, MIME_ZIP);
+  } catch (err: any) {
+    console.error('[appointments/export]', err);
+    res.status(500).json({ success: false, message: `Export failed: ${err?.message ?? String(err)}` });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════════════════

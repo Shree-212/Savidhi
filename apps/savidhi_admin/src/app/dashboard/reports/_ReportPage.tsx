@@ -195,7 +195,7 @@ function filterRows(rows: any[], search: string) {
   );
 }
 
-export function ReportPage({ reportKey }: { reportKey: ReportKey }) {
+export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; reportPicker?: React.ReactNode }) {
   const meta = REPORTS[reportKey];
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -225,6 +225,27 @@ export function ReportPage({ reportKey }: { reportKey: ReportKey }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // The download endpoints use responseType:'blob' so axios returns the error
+  // body as a Blob. Read it as text and try to parse the JSON message so the
+  // alert shows the real reason instead of "Request failed with status code 500".
+  const extractBlobError = async (err: any): Promise<string> => {
+    const data = err?.response?.data;
+    if (data instanceof Blob) {
+      try {
+        const text = await data.text();
+        try {
+          const parsed = JSON.parse(text);
+          return parsed?.message ?? text;
+        } catch {
+          return text || err.message || 'Download failed';
+        }
+      } catch {
+        return err.message || 'Download failed';
+      }
+    }
+    return data?.message ?? err.message ?? 'Download failed';
+  };
+
   const handleExport = async () => {
     if (!meta.exportFormat) return;
     try {
@@ -235,7 +256,7 @@ export function ReportPage({ reportKey }: { reportKey: ReportKey }) {
       const res = await reportService.downloadReport(reportKey, meta.exportFormat, params);
       downloadBlob(res, `${meta.title}.${meta.exportFormat}`);
     } catch (err: any) {
-      alert(err.response?.data?.message ?? err.message ?? 'Export failed');
+      alert(await extractBlobError(err));
     } finally {
       setExporting(false);
     }
@@ -253,7 +274,7 @@ export function ReportPage({ reportKey }: { reportKey: ReportKey }) {
       const res = await reportService.downloadRow(reportKey, rowId, params);
       downloadBlob(res, `${meta.title} - ${rowId}.zip`);
     } catch (err: any) {
-      alert(err.response?.data?.message ?? err.message ?? 'Download failed');
+      alert(await extractBlobError(err));
     } finally {
       setDownloadingRow(null);
     }
@@ -282,12 +303,16 @@ export function ReportPage({ reportKey }: { reportKey: ReportKey }) {
 
   return (
     <div>
-      <div className="px-6 pt-4 flex items-center gap-3">
-        <Link href="/dashboard/reports" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-lg font-semibold text-foreground">{meta.title}</h1>
-      </div>
+      {reportPicker ? (
+        <div className="px-6 pt-4">{reportPicker}</div>
+      ) : (
+        <div className="px-6 pt-4 flex items-center gap-3">
+          <Link href="/dashboard/reports" className="text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-lg font-semibold text-foreground">{meta.title}</h1>
+        </div>
+      )}
       <PageHeader
         search={search}
         onSearchChange={setSearch}

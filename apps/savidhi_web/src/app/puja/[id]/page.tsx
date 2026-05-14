@@ -6,28 +6,49 @@ import { ArrowLeft, MapPin, Calendar, Loader2, Clock, Repeat, Sparkles } from 'l
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
-import { pujaService } from '@/lib/services';
+import { CountdownTimer } from '@/components/shared/CountdownTimer';
+import { DevoteeProof } from '@/components/shared/DevoteeProof';
+import { pujaService, pujaEventService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
 import type { Puja } from '@/data/models';
 import { useT, useLocale } from '@/lib/i18n';
 import { getRepeatLabel } from '@/lib/repeatLabel';
+
+const DEVOTEE_PACKAGE_TIERS = [
+  { count: 1, field: 'price_for_1' },
+  { count: 2, field: 'price_for_2' },
+  { count: 4, field: 'price_for_4' },
+  { count: 6, field: 'price_for_6' },
+] as const;
 
 export default function PujaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const t = useT();
   const { locale } = useLocale();
   const [puja, setPuja] = useState<Puja | null>(null);
+  const [pujaRaw, setPujaRaw] = useState<any>(null);
+  const [nextEventStart, setNextEventStart] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    pujaService.getById(id)
-      .then((res) => {
-        const raw = res.data?.data ?? res.data;
-        if (raw) setPuja(mapPuja(raw));
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    Promise.allSettled([
+      pujaService.getById(id),
+      pujaEventService.list({ puja_id: id, upcoming: true, limit: 5 }),
+    ]).then(([pujaRes, evRes]) => {
+      if (pujaRes.status === 'fulfilled') {
+        const raw = pujaRes.value.data?.data ?? pujaRes.value.data;
+        if (raw) { setPuja(mapPuja(raw)); setPujaRaw(raw); }
+      }
+      if (evRes.status === 'fulfilled') {
+        const evs: any[] = evRes.value.data?.data ?? [];
+        // Use the next event the customer can actually book against.
+        const future = evs
+          .filter((e) => e.status === 'NOT_STARTED' && e.stage === 'YET_TO_START')
+          .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        if (future[0]) setNextEventStart(future[0].start_time);
+      }
+    }).finally(() => setLoading(false));
   }, [id, locale]);
 
   if (loading) {
@@ -102,43 +123,52 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
               {puja.name}
             </h1>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-6">
+            {/* Meta row — bumped to base size + bold per the May-14 redesign so the
+                temple / deity / duration / repeat values read prominently. */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5">
               {puja.templeName && (
-                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
-                  <MapPin className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <span className="inline-flex items-center gap-1.5 text-base font-semibold text-text-primary">
+                  <MapPin className="w-[18px] h-[18px] text-green-500 flex-shrink-0" />
                   <span>{puja.templeName}{puja.templeLocation ? `, ${puja.templeLocation}` : ''}</span>
                 </span>
               )}
               {puja.deityName && (
-                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
-                  <Sparkles className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                <span className="inline-flex items-center gap-1.5 text-base font-semibold text-text-primary">
+                  <Sparkles className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                   <span>{puja.deityName}</span>
                 </span>
               )}
               {puja.date && (
-                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
-                  <Calendar className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                <span className="inline-flex items-center gap-1.5 text-base font-semibold text-text-primary">
+                  <Calendar className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                   <span>{puja.date}{puja.time ? `, ${puja.time}` : ''}</span>
                 </span>
               )}
               {puja.durationMinutes ? (
-                <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
-                  <Clock className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                <span className="inline-flex items-center gap-1.5 text-base font-semibold text-text-primary">
+                  <Clock className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                   <span>{t('puja.detail.duration', { n: puja.durationMinutes })}</span>
                 </span>
               ) : null}
               {(() => {
                 const label = getRepeatLabel(t, puja);
                 return label ? (
-                  <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
-                    <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <span className="inline-flex items-center gap-1.5 text-base font-semibold text-text-primary">
+                    <Repeat className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                     <span>{label}</span>
                   </span>
                 ) : null;
               })()}
-              <span className="inline-flex lg:hidden items-center bg-primary-100 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-                {puja.countdown}
-              </span>
+            </div>
+
+            {nextEventStart && (
+              <div className="mb-5">
+                <CountdownTimer target={nextEventStart} label={t('puja.detail.pujaStartsIn') || 'Puja starts in'} />
+              </div>
+            )}
+
+            <div className="mb-6">
+              <DevoteeProof rating={{ value: 4.6, total: '1k+' }} />
             </div>
 
             {puja.description ? (
@@ -146,6 +176,33 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
                 {puja.description}
               </p>
             ) : null}
+
+            {(() => {
+              const tiers = pujaRaw
+                ? DEVOTEE_PACKAGE_TIERS
+                    .map((tier) => ({ count: tier.count, price: Number(pujaRaw[tier.field] ?? 0) }))
+                    .filter((tier) => tier.price > 0)
+                : [];
+              if (tiers.length === 0) return null;
+              return (
+                <div className="mb-4 p-4 rounded-2xl bg-white border border-orange-100 shadow-[0_1px_2px_rgba(232,129,58,0.04)]">
+                  <p className="text-sm font-semibold text-text-primary mb-2">
+                    {tiers.length} devotee package{tiers.length > 1 ? 's' : ''} to choose from
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {tiers.map((tier) => (
+                      <span
+                        key={tier.count}
+                        className="inline-flex items-center gap-2 bg-primary-50 border border-orange-100 rounded-full px-3 py-1.5 text-xs font-semibold text-text-primary"
+                      >
+                        <span>{tier.count} {tier.count === 1 ? 'Devotee' : 'Devotees'}</span>
+                        <span className="text-primary-600 tabular-nums">₹{tier.price.toLocaleString()}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-3">
               {puja.benefits.length > 0 && (

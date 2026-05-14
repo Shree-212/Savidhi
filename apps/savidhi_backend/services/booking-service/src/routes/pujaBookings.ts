@@ -44,6 +44,8 @@ pujaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response, nex
               p.repeats_on,
               t.name   AS temple_name,
               pe.start_time AS event_start_time,
+              pe.stage  AS event_stage,
+              pe.status AS event_status,
               d.name   AS devotee_name,
               d.phone  AS devotee_phone
        FROM puja_bookings pb

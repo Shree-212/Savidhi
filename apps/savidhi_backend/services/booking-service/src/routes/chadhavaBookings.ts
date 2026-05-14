@@ -37,6 +37,8 @@ chadhavaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response,
               c.name   AS chadhava_name,
               t.name   AS temple_name,
               ce.start_time AS event_start_time,
+              ce.stage  AS event_stage,
+              ce.status AS event_status,
               d.name   AS devotee_name,
               d.phone  AS devotee_phone
        FROM chadhava_bookings cb

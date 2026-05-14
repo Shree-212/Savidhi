@@ -7,7 +7,9 @@ import { ArrowLeft, MapPin, Minus, Plus, Loader2, Clock, Repeat, Sparkles } from
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
-import { chadhavaService } from '@/lib/services';
+import { CountdownTimer } from '@/components/shared/CountdownTimer';
+import { DevoteeProof } from '@/components/shared/DevoteeProof';
+import { chadhavaService, chadhavaEventService } from '@/lib/services';
 import { mapChadhava } from '@/lib/mappers';
 import type { Chadhava } from '@/data/models';
 import { normaliseMediaUrl } from '@/lib/utils';
@@ -19,18 +21,28 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
   const t = useT();
   const { locale } = useLocale();
   const [chadhava, setChadhava] = useState<Chadhava | null>(null);
+  const [nextEventStart, setNextEventStart] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setLoading(true);
-    chadhavaService.getById(id)
-      .then((res) => {
-        const raw = res.data?.data ?? res.data;
+    Promise.allSettled([
+      chadhavaService.getById(id),
+      chadhavaEventService.list({ chadhava_id: id, upcoming: true, limit: 5 }),
+    ]).then(([chRes, evRes]) => {
+      if (chRes.status === 'fulfilled') {
+        const raw = chRes.value.data?.data ?? chRes.value.data;
         if (raw) setChadhava(mapChadhava(raw));
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      }
+      if (evRes.status === 'fulfilled') {
+        const evs: any[] = evRes.value.data?.data ?? [];
+        const future = evs
+          .filter((e) => e.status === 'NOT_STARTED' && e.stage === 'YET_TO_START')
+          .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        if (future[0]) setNextEventStart(future[0].start_time);
+      }
+    }).finally(() => setLoading(false));
   }, [id, locale]);
 
   if (loading) {
@@ -113,22 +125,23 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
               {chadhava.name}
             </h1>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-text-secondary mb-4 sm:mb-6">
+            {/* Meta row — bumped to base size + bold per the May-14 redesign. */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-base font-semibold text-text-primary mb-4 sm:mb-5">
               {chadhava.templeName && (
                 <span className="inline-flex items-center gap-1.5">
-                  <MapPin className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  <MapPin className="w-[18px] h-[18px] text-green-500 flex-shrink-0" />
                   <span className="line-clamp-2">{chadhava.templeName}{chadhava.templeLocation ? `, ${chadhava.templeLocation}` : ''}</span>
                 </span>
               )}
               {chadhava.deityName && (
                 <span className="inline-flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <Sparkles className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                   <span>{chadhava.deityName}</span>
                 </span>
               )}
               {chadhava.durationMinutes ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                  <Clock className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                   <span>{chadhava.durationMinutes} min</span>
                 </span>
               ) : null}
@@ -136,37 +149,27 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                 const label = getRepeatLabel(t, chadhava);
                 return label ? (
                   <span className="inline-flex items-center gap-1.5">
-                    <Repeat className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                    <Repeat className="w-[18px] h-[18px] text-primary-500 flex-shrink-0" />
                     <span>{label}</span>
                   </span>
                 ) : null;
               })()}
             </div>
 
-            <div className="space-y-3">
-              {chadhava.benefits.length > 0 && (
-                <ExpandableSection title={t('chadhava.detail.benefits')} initiallyExpanded>
-                  {chadhava.benefits.map((b, i) => <p key={i}>• {b}</p>)}
-                </ExpandableSection>
-              )}
+            {nextEventStart && (
+              <div className="mb-5">
+                <CountdownTimer target={nextEventStart} label="Chadhava starts in" />
+              </div>
+            )}
 
-              {chadhava.ritualsIncluded.length > 0 && (
-                <ExpandableSection title={t('chadhava.detail.rituals')}>
-                  {chadhava.ritualsIncluded.map((r, i) => <p key={i}>• {r}</p>)}
-                </ExpandableSection>
-              )}
-
-              {chadhava.itemsUsed && chadhava.itemsUsed.length > 0 && (
-                <ExpandableSection title={t('chadhava.detail.itemsUsed')}>
-                  {chadhava.itemsUsed.map((it, i) => <p key={i}>• {it}</p>)}
-                </ExpandableSection>
-              )}
+            <div className="mb-6">
+              <DevoteeProof label="Devotees have offered Chadhava" rating={{ value: 4.6, total: '1k+' }} />
             </div>
 
-            {/* Offerings */}
+            {/* Offerings — moved ABOVE Benefits per the May-14 redesign. */}
             {chadhava.offerings.length > 0 && (
-              <>
-                <h3 className="font-semibold text-text-primary text-sm sm:text-[15px] mb-3 mt-6">{t('chadhava.detail.selectOfferings')}</h3>
+              <div className="mb-6">
+                <h3 className="font-bold text-text-primary text-base sm:text-lg mb-3">{t('chadhava.detail.selectOfferings')}</h3>
                 <div className="space-y-2.5">
                   {chadhava.offerings.map((off) => (
                     <div
@@ -225,8 +228,28 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                   ))}
                 </div>
-              </>
+              </div>
             )}
+
+            <div className="space-y-3">
+              {chadhava.benefits.length > 0 && (
+                <ExpandableSection title={t('chadhava.detail.benefits')} initiallyExpanded>
+                  {chadhava.benefits.map((b, i) => <p key={i}>• {b}</p>)}
+                </ExpandableSection>
+              )}
+
+              {chadhava.ritualsIncluded.length > 0 && (
+                <ExpandableSection title={t('chadhava.detail.rituals')}>
+                  {chadhava.ritualsIncluded.map((r, i) => <p key={i}>• {r}</p>)}
+                </ExpandableSection>
+              )}
+
+              {chadhava.itemsUsed && chadhava.itemsUsed.length > 0 && (
+                <ExpandableSection title={t('chadhava.detail.itemsUsed')}>
+                  {chadhava.itemsUsed.map((it, i) => <p key={i}>• {it}</p>)}
+                </ExpandableSection>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { FloatingWhatsApp } from "@/components/layout/FloatingWhatsApp";
 import { AuthProvider } from "@/lib/AuthContext";
 import { LocaleProvider } from "@/lib/i18n";
 import { Toaster } from "react-hot-toast";
@@ -71,6 +72,7 @@ export default function RootLayout({
             <Header />
             <main className="flex-1">{children}</main>
             <Footer />
+            <FloatingWhatsApp />
             <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
           </AuthProvider>
         </LocaleProvider>

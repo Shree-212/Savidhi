@@ -123,6 +123,7 @@ export const paymentService = {
 // ─── Settings ────────────────────────────────────────────────────────────────
 export const settingsService = {
   get: () => api.get('/catalog/settings'),
+  getHomeBanners: () => api.get('/catalog/settings/home-banners'),
 };
 
 // ─── Media ───────────────────────────────────────────────────────────────────

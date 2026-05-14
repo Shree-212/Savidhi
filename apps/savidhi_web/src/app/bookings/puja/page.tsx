@@ -17,27 +17,29 @@ function mapPujaBooking(b: any): PujaBooking {
     templeName: b.temple_name ?? b.templeName ?? '',
     bookedOn: b.created_at ? new Date(b.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
     pujaOn: b.event_start_time ? new Date(b.event_start_time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
-    status: mapStatus(b.status),
+    status: deriveBookingStatus(b),
     eventRepeats: !!b.event_repeats,
     repeatDuration: (b.repeat_duration ?? undefined) as RepeatDuration | undefined,
     repeatsOn: Array.isArray(b.repeats_on) ? b.repeats_on : [],
   };
 }
 
-function mapStatus(s: string): PujaBooking['status'] {
-  const map: Record<string, PujaBooking['status']> = {
-    CONFIRMED: 'YET_TO_START',
-    PENDING: 'YET_TO_START',
-    INPROGRESS: 'ONGOING',
-    LIVE_ADDED: 'ONGOING',
-    SHORT_VIDEO_ADDED: 'VIDEO_PROCESSING',
-    SANKALP_VIDEO_ADDED: 'VIDEO_PROCESSING',
-    TO_BE_SHIPPED: 'PRASAD_SHIPPED',
-    SHIPPED: 'PRASAD_SHIPPED',
-    COMPLETED: 'COMPLETE',
-    CANCELLED: 'CANCELLED',
-  };
-  return map[s] ?? 'YET_TO_START';
+// Reflect the event's actual progress on the booking card, not the booking
+// row's frozen status. Without this, a card shows "Yet to Start" even after
+// the admin has moved the puja into INPROGRESS / video-uploaded states.
+function deriveBookingStatus(b: any): PujaBooking['status'] {
+  if (b.status === 'CANCELLED' || b.event_status === 'CANCELLED') return 'CANCELLED';
+  if (b.status === 'COMPLETED' || b.event_status === 'COMPLETED') return 'COMPLETE';
+  const stage = b.event_stage as string | undefined;
+  if (stage === 'SHORT_VIDEO_ADDED' || stage === 'SANKALP_VIDEO_ADDED') return 'VIDEO_PROCESSING';
+  if (stage === 'TO_BE_SHIPPED' || stage === 'SHIPPED') return 'PRASAD_SHIPPED';
+  if (
+    b.event_status === 'INPROGRESS' ||
+    (stage && stage !== 'YET_TO_START')
+  ) {
+    return 'ONGOING';
+  }
+  return 'YET_TO_START';
 }
 
 const filterMap: Record<string, (b: PujaBooking) => boolean> = {

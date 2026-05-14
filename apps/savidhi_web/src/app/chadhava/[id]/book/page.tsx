@@ -87,8 +87,11 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
         const chRaw = chRes.data?.data ?? chRes.data;
         if (chRaw) setChadhava({ mapped: mapChadhava(chRaw), raw: chRaw });
         const evs = (evRes.data?.data ?? []) as ChadhavaEvent[];
-        evs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-        setEvents(evs);
+        // Only show events that haven't started yet — once status flips to
+        // INPROGRESS (or COMPLETED), no new bookings should be accepted.
+        const bookable = evs.filter((e) => e.status === 'NOT_STARTED' && e.stage === 'YET_TO_START');
+        bookable.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        setEvents(bookable);
       } catch (err: any) {
         if (!cancelled) setError(err.response?.data?.message || 'Failed to load');
       } finally {
