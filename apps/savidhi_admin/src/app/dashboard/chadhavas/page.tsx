@@ -16,6 +16,7 @@ type RepeatDuration = 'WEEK_DAYS' | 'MONTH_DATE' | 'LUNAR_PHASE';
 type BookingMode = 'ONE_TIME' | 'SUBSCRIPTION' | 'BOTH';
 
 interface Offering {
+  id?: string;        // present when the offering already exists; absent for new rows
   item_name: string;
   benefit: string;
   price: number;
@@ -157,6 +158,7 @@ export default function ChadhavasPage() {
     const offeringsRaw = Array.isArray(c.offerings) ? c.offerings : [];
     const offerings: Offering[] = offeringsRaw.length
       ? offeringsRaw.map((o: any) => ({
+          id: o.id ?? undefined,
           item_name: o.item_name ?? '',
           benefit: o.benefit ?? '',
           price: Number(o.price ?? 0),

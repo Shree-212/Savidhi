@@ -99,6 +99,7 @@ type ChadhavaField = (typeof CHADHAVA_FIELDS)[number];
 const NULLABLE_FK_FIELDS: ChadhavaField[] = ['deity_id', 'default_pujari_id', 'hamper_id'];
 
 interface OfferingInput {
+  id?: string;
   item_name?: string;
   benefit?: string;
   price?: number | string;
@@ -358,9 +359,62 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
       updatedRow = exists.rows[0];
     }
 
+    // Smart-merge offerings: UPDATE existing ones by id, INSERT new ones (no id),
+    // and remove offerings the admin dropped IF they're not referenced by any
+    // chadhava_booking_offerings row (otherwise we'd FK-violate and fail the save).
+    // Offerings that ARE booked stay in the table even if the admin "removed"
+    // them in the UI — they need to remain for historical bookings to resolve.
     if (Array.isArray(req.body.offerings)) {
-      await client.query('DELETE FROM chadhava_offerings WHERE chadhava_id = $1', [id]);
-      await insertOfferings(client, id, req.body.offerings as OfferingInput[]);
+      const incoming = req.body.offerings as OfferingInput[];
+      const incomingIds = incoming.map((o) => o.id).filter((x): x is string => !!x);
+
+      // 1. UPDATE existing offerings the admin kept.
+      let order = 0;
+      for (const o of incoming) {
+        if (!o.item_name) { order++; continue; }
+        if (o.id) {
+          await client.query(
+            `UPDATE chadhava_offerings
+                SET item_name = $1, benefit = $2, price = $3, images = $4, sort_order = $5
+              WHERE id = $6 AND chadhava_id = $7`,
+            [
+              o.item_name,
+              o.benefit ?? '',
+              Number(o.price) || 0,
+              o.image_url ? [o.image_url] : [],
+              order,
+              o.id,
+              id,
+            ],
+          );
+        }
+        order++;
+      }
+
+      // 2. INSERT new offerings (no id supplied).
+      const newOnes = incoming.filter((o) => !o.id && o.item_name);
+      if (newOnes.length > 0) {
+        await insertOfferings(client, id, newOnes);
+      }
+
+      // 3. Remove offerings the admin dropped — only those NOT referenced from
+      //    any chadhava_booking_offerings row. Booked ones survive.
+      const removable = await client.query(
+        `SELECT co.id
+           FROM chadhava_offerings co
+          WHERE co.chadhava_id = $1
+            ${incomingIds.length > 0 ? `AND co.id <> ALL($2::uuid[])` : ''}
+            AND NOT EXISTS (
+              SELECT 1 FROM chadhava_booking_offerings cbo WHERE cbo.offering_id = co.id
+            )`,
+        incomingIds.length > 0 ? [id, incomingIds] : [id],
+      );
+      if (removable.rows.length > 0) {
+        await client.query(
+          `DELETE FROM chadhava_offerings WHERE id = ANY($1::uuid[])`,
+          [removable.rows.map((r) => r.id)],
+        );
+      }
     }
 
     // Translate any updated English fields + (re)translate offerings if they changed.
