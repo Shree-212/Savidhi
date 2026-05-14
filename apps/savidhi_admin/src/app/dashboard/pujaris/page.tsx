@@ -5,6 +5,7 @@ import { pujariService, templeService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, ScheduleButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle } from '@/components/shared/MediaUpload';
@@ -261,6 +262,17 @@ export default function PujarisPage() {
     { key: 'name', label: 'Name' },
     { key: 'temple', label: 'Temple' },
     { key: 'pujaInQueue', label: 'Puja in Queue', render: () => <span>-</span> },
+    {
+      key: 'status', label: 'Status', render: (r: PujariAdmin) => (
+        <StatusToggle
+          active={r.isActive}
+          onChange={async (next) => {
+            await pujariService.update(r.id, { is_active: next });
+            setPujaris(prev => prev.map(p => p.id === r.id ? { ...p, isActive: next } : p));
+          }}
+        />
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: PujariAdmin) => (
       <div className="flex items-center gap-1">
         <ScheduleButton

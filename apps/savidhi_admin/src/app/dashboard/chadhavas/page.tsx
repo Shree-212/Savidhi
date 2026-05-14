@@ -390,7 +390,12 @@ export default function ChadhavasPage() {
             />
             <StatusToggle
               active={editing.is_active !== false}
-              onChange={(next) => update('is_active', next)}
+              onChange={async (next) => {
+                if (!editing.id) { update('is_active', next); return; }
+                await chadhavaService.update(editing.id, { is_active: next });
+                update('is_active', next);
+                setChadhavas(prev => prev.map(c => c.id === editing.id ? { ...c, is_active: next } : c));
+              }}
             />
           </div>
         ) : undefined}

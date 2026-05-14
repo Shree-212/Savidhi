@@ -11,8 +11,12 @@ pujarisRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     const offset = (page - 1) * limit;
     const templeId = req.query.temple_id as string;
 
-    let query = 'SELECT p.*, t.name AS temple_name FROM pujaris p LEFT JOIN temples t ON p.temple_id = t.id WHERE p.is_active = true';
+    let query = 'SELECT p.*, t.name AS temple_name FROM pujaris p LEFT JOIN temples t ON p.temple_id = t.id WHERE 1=1';
     const params: any[] = [];
+
+    if (req.query.include_inactive !== 'true') {
+      query += ' AND p.is_active = true';
+    }
 
     if (templeId) {
       params.push(templeId);
@@ -36,7 +40,7 @@ pujarisRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
     const result = await pool.query(
       `SELECT p.*, t.name AS temple_name
        FROM pujaris p LEFT JOIN temples t ON p.temple_id = t.id
-       WHERE p.id = $1 AND p.is_active = true`,
+       WHERE p.id = $1${req.query.include_inactive === 'true' ? '' : ' AND p.is_active = true'}`,
       [req.params.id]
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Pujari not found' }); return; }
@@ -73,6 +77,7 @@ pujarisRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
       'name', 'designation', 'profile_pic', 'temple_id', 'start_date',
       'aadhar_number', 'pan_number', 'aadhar_pic', 'pan_pic',
       'bank_name', 'ifsc', 'account_number', 'rating',
+      'is_active',
     ];
     const updates: string[] = [];
     const values: any[] = [];
@@ -92,7 +97,7 @@ pujarisRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE pujaris SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+      `UPDATE pujaris SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     );
 

@@ -139,7 +139,10 @@ export default function TempleEditPage({ params }: { params: Promise<{ id: strin
           <StatusBadge status={temple.is_active ? 'ACTIVE' : 'INACTIVE'} />
           <StatusToggle
             active={temple.is_active}
-            onChange={(next) => setTemple({ ...temple, is_active: next })}
+            onChange={async (next) => {
+              await templeService.update(temple.id, { is_active: next });
+              setTemple({ ...temple, is_active: next });
+            }}
           />
         </div>
       </div>

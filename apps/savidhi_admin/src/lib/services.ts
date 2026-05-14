@@ -73,8 +73,8 @@ export const chadhavaService = {
 
 export const pujariService = {
   list: (params?: { page?: number; limit?: number; search?: string; temple_id?: string }) =>
-    apiClient.get('/catalog/pujaris', { params }),
-  getById: (id: string) => apiClient.get(`/catalog/pujaris/${id}`),
+    apiClient.get('/catalog/pujaris', { params: { ...(params ?? {}), include_inactive: 'true' } }),
+  getById: (id: string) => apiClient.get(`/catalog/pujaris/${id}`, { params: { include_inactive: 'true' } }),
   create: (data: any) => apiClient.post('/catalog/pujaris', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/pujaris/${id}`, data),
@@ -87,8 +87,8 @@ export const pujariService = {
 
 export const astrologerService = {
   list: (params?: { page?: number; limit?: number; search?: string }) =>
-    apiClient.get('/catalog/astrologers', { params }),
-  getById: (id: string) => apiClient.get(`/catalog/astrologers/${id}`),
+    apiClient.get('/catalog/astrologers', { params: { ...(params ?? {}), include_inactive: 'true' } }),
+  getById: (id: string) => apiClient.get(`/catalog/astrologers/${id}`, { params: { include_inactive: 'true' } }),
   create: (data: any) => apiClient.post('/catalog/astrologers', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/astrologers/${id}`, data),
@@ -245,7 +245,7 @@ export const devoteeService = {
 };
 
 export const adminUserService = {
-  list: () => apiClient.get('/users/admin-users'),
+  list: () => apiClient.get('/users/admin-users', { params: { include_inactive: 'true' } }),
   create: (data: {
     email: string;
     name: string;

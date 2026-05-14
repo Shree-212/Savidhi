@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 import { PrimaryButton, OutlineButton, EditButton, DeleteButton } from '@/components/shared/ActionButtons';
 
 interface AdminUser {
@@ -92,7 +93,17 @@ export default function AdminUsersPage() {
     { key: 'email', label: 'Email' },
     { key: 'name', label: 'Name' },
     { key: 'role', label: 'Role', render: (r: AdminUser) => <StatusBadge status={r.role} /> },
-    { key: 'is_active', label: 'Status', render: (r: AdminUser) => <StatusBadge status={r.is_active ? 'ACTIVE' : 'INACTIVE'} /> },
+    {
+      key: 'is_active', label: 'Status', render: (r: AdminUser) => (
+        <StatusToggle
+          active={r.is_active}
+          onChange={async (next) => {
+            await adminUserService.update(r.id, { is_active: next });
+            setUsers(prev => prev.map(u => u.id === r.id ? { ...u, is_active: next } : u));
+          }}
+        />
+      ),
+    },
     { key: 'created_at', label: 'Created', render: (r: AdminUser) => new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) },
     { key: 'action', label: 'Action', render: (r: AdminUser) => (
       <div className="flex items-center gap-1">

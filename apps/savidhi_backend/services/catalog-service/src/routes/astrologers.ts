@@ -14,8 +14,12 @@ astrologersRouter.get('/', async (req: Request, res: Response, next: NextFunctio
     const offset = (page - 1) * limit;
     const search = req.query.search as string;
 
-    let query = 'SELECT * FROM astrologers WHERE is_active = true';
+    let query = 'SELECT * FROM astrologers WHERE 1=1';
     const params: any[] = [];
+
+    if (req.query.include_inactive !== 'true') {
+      query += ' AND is_active = true';
+    }
 
     if (search) {
       params.push(`%${search}%`);
@@ -37,7 +41,8 @@ astrologersRouter.get('/:identifier', async (req: Request, res: Response, next: 
   try {
     const { identifier } = req.params;
     const where = isUuid(identifier) ? 'id = $1' : 'slug = $1';
-    const result = await pool.query(`SELECT * FROM astrologers WHERE ${where} AND is_active = true`, [identifier]);
+    const activeFilter = req.query.include_inactive === 'true' ? '' : ' AND is_active = true';
+    const result = await pool.query(`SELECT * FROM astrologers WHERE ${where}${activeFilter}`, [identifier]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
     res.json({ success: true, data: result.rows[0], message: 'Astrologer details' });
   } catch (err) { next(err); }
@@ -80,6 +85,7 @@ astrologersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: 
       'aadhar_number', 'pan_number', 'aadhar_pic', 'pan_pic',
       'price_15min', 'price_30min', 'price_1hour', 'price_2hour',
       'bank_name', 'ifsc', 'account_number', 'rating',
+      'is_active',
     ];
     const updates: string[] = [];
     const values: any[] = [];
@@ -99,7 +105,7 @@ astrologersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: 
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE astrologers SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+      `UPDATE astrologers SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     );
 

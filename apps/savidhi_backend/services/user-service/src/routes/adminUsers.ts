@@ -157,10 +157,11 @@ adminUsersRouter.get(
   '/admin-users',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const includeInactive = req.query.include_inactive === 'true';
       const result = await pool.query(
         `SELECT id, email, name, role, is_active, created_at, updated_at
          FROM admin_users
-         WHERE is_active = true
+         ${includeInactive ? '' : 'WHERE is_active = true'}
          ORDER BY created_at DESC`,
       );
 
@@ -237,7 +238,7 @@ adminUsersRouter.patch(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const { email, name, password, role } = req.body;
+      const { email, name, password, role, is_active } = req.body;
 
       const fields: string[] = [];
       const values: unknown[] = [];
@@ -282,6 +283,11 @@ adminUsersRouter.patch(
         values.push(role);
       }
 
+      if (is_active !== undefined) {
+        fields.push(`is_active = $${paramIndex++}`);
+        values.push(!!is_active);
+      }
+
       if (fields.length === 0) {
         res.status(400).json({ success: false, message: 'No fields to update' });
         return;
@@ -292,7 +298,7 @@ adminUsersRouter.patch(
 
       const result = await pool.query(
         `UPDATE admin_users SET ${fields.join(', ')}
-         WHERE id = $${paramIndex} AND is_active = true
+         WHERE id = $${paramIndex}
          RETURNING id, email, name, role, is_active, created_at, updated_at`,
         values,
       );

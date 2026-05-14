@@ -399,7 +399,12 @@ function PujasPageInner() {
             />
             <StatusToggle
               active={editing.is_active !== false}
-              onChange={(next) => update('is_active', next)}
+              onChange={async (next) => {
+                if (!editing.id) { update('is_active', next); return; }
+                await pujaService.update(editing.id, { is_active: next });
+                update('is_active', next);
+                setPujas(prev => prev.map(p => p.id === editing.id ? { ...p, is_active: next } : p));
+              }}
             />
           </div>
         ) : undefined}

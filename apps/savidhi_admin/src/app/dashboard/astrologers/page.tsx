@@ -5,6 +5,7 @@ import { astrologerService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, ScheduleButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
@@ -294,6 +295,17 @@ export default function AstrologersPage() {
     { key: 'rating', label: 'Rating', render: (r: AstrologerAdmin) => <span>{r.rating ?? '-'} Star</span> },
     { key: 'unsettled', label: 'Unsettled', render: (r: AstrologerAdmin) => <span className="text-primary">₹{r.unsettled ?? 0}</span> },
     { key: 'appointmentsInQueue', label: 'Appointments in Queue', render: () => <span>-</span> },
+    {
+      key: 'status', label: 'Status', render: (r: AstrologerAdmin) => (
+        <StatusToggle
+          active={r.isActive}
+          onChange={async (next) => {
+            await astrologerService.update(r.id, { is_active: next });
+            setAstrologers(prev => prev.map(a => a.id === r.id ? { ...a, isActive: next } : a));
+          }}
+        />
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: AstrologerAdmin) => (
       <div className="flex items-center gap-1">
         <ScheduleButton
