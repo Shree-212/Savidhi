@@ -81,7 +81,7 @@ pujaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Response, 
               pe.live_link AS event_live_link,
               pe.short_video_url AS event_short_video_url,
               pe.sankalp_video_url AS event_sankalp_video_url,
-              pe.has_prasad AS event_has_prasad,
+              p.send_hamper AS event_has_prasad,
               d.name AS devotee_name, d.phone AS devotee_phone
        FROM puja_bookings pb
        JOIN puja_events pe ON pe.id = pb.puja_event_id

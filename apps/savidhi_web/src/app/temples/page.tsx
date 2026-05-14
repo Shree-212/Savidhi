@@ -4,15 +4,11 @@ import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { SearchBar } from '@/components/shared/SearchBar';
 import { TempleCard } from '@/components/shared/TempleCard';
-import { ChipToggle } from '@/components/shared/ChipToggle';
 import { templeService } from '@/lib/services';
 import { mapTemple } from '@/lib/mappers';
 import type { Temple } from '@/data/models';
 
-const TABS = ['Temples', 'Deities', 'Near You'];
-
 export default function TempleListPage() {
-  const [tab, setTab] = useState('Temples');
   const [search, setSearch] = useState('');
   const [temples, setTemples] = useState<Temple[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +38,6 @@ export default function TempleListPage() {
   return (
     <div className="section-container py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-4">Explore Temples</h1>
-      <ChipToggle options={TABS} selected={tab} onSelect={setTab} />
       <div className="max-w-md my-4">
         <SearchBar value={search} onChange={setSearch} placeholder="Search temples..." />
       </div>

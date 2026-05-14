@@ -17,7 +17,7 @@ interface Props {
 export function SankalpTimestamps({ timestamps, onSeek }: Props) {
   return (
     <div className="mt-3 space-y-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">Skip to devotee</p>
+      <p className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">Skip to Your Name &amp; Gotra</p>
       <div className="flex flex-wrap gap-2">
         {timestamps.map((t, i) => {
           const seconds = Math.max(0, Math.floor(t.minute) * 60 + Math.floor(t.second));

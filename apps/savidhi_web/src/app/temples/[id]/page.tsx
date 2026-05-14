@@ -3,7 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, MapPin, User, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Loader2 } from 'lucide-react';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
 import { VideoPlayer } from '@/components/shared/VideoPlayer';
@@ -85,26 +85,6 @@ export default function TempleDetailPage({ params }: { params: Promise<{ id: str
             </div>
 
             <div className="space-y-3">
-              {temple.pujaris.length > 0 && (
-                <ExpandableSection title="Registered Pujari Here" initiallyExpanded>
-                  <div className="flex gap-4 flex-wrap">
-                    {temple.pujaris.map((p) => (
-                      <div key={p.id} className="flex flex-col items-center w-16">
-                        <div className="w-12 h-12 rounded-full bg-orange-50 ring-1 ring-orange-100 flex items-center justify-center mb-1.5 overflow-hidden relative">
-                          {p.imageUrl ? (
-                            <Image src={normaliseMediaUrl(p.imageUrl)} alt={p.name} fill className="object-cover" unoptimized sizes="48px" />
-                          ) : (
-                            <User className="w-5 h-5 text-text-muted" />
-                          )}
-                        </div>
-                        <span className="text-[11px] font-semibold text-text-primary text-center leading-tight">{p.name}</span>
-                        <span className="text-[10px] text-primary-500">{p.role}</span>
-                      </div>
-                    ))}
-                  </div>
-                </ExpandableSection>
-              )}
-
               {temple.about && (
                 <ExpandableSection title="About Temple" initiallyExpanded>
                   <p>{temple.about}</p>

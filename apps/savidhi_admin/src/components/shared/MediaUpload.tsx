@@ -179,9 +179,9 @@ export function MediaUploadMulti({ value, onChange, label }: MediaUploadMultiPro
   return (
     <div className="border border-border rounded-lg p-3">
       <p className="text-[10px] font-bold mb-2">{label}</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
         {(value ?? []).map((url, idx) => (
-          <div key={idx} className="relative w-14 h-14 rounded-md overflow-hidden border border-border group">
+          <div key={idx} className="relative w-14 h-14 shrink-0 rounded-md overflow-hidden border border-border group">
             <Image src={normaliseUrl(url)} alt="" fill className="object-cover" unoptimized sizes="56px" />
             <button
               className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
@@ -192,7 +192,7 @@ export function MediaUploadMulti({ value, onChange, label }: MediaUploadMultiPro
           </div>
         ))}
         <div
-          className="w-14 h-14 bg-accent rounded-md flex flex-col items-center justify-center cursor-pointer hover:bg-accent/80 transition border border-dashed border-border"
+          className="w-14 h-14 shrink-0 bg-accent rounded-md flex flex-col items-center justify-center cursor-pointer hover:bg-accent/80 transition border border-dashed border-border"
           onClick={() => !uploading && inputRef.current?.click()}
         >
           {uploading ? (

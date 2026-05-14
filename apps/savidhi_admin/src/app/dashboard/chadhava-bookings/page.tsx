@@ -787,7 +787,10 @@ function ChadhavaBookingsPageInner() {
           {((selectedEvent as any)?.bookingsData ?? []).map((b: any) => (
             <div key={b.id} className="flex items-center gap-3">
               <div className="min-w-[12rem] flex-1">
-                <p className="text-xs text-foreground leading-tight">{b.devotee_name ?? (b.devotees?.[0]?.name ?? 'Devotee')}</p>
+                <p className="text-xs text-foreground leading-tight">
+                  {b.devotees?.[0]?.name ?? 'Devotee'}
+                  {b.devotees?.[0]?.gotra ? ` · ${b.devotees[0].gotra}` : ''}
+                </p>
                 <p className="text-[10px] text-muted-foreground leading-tight">Booking: {b.id?.slice(0, 8)}</p>
               </div>
               <input

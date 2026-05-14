@@ -325,7 +325,7 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
             {step === 0 && (
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Select an upcoming event</h2>
-                <p className="text-sm text-text-secondary mb-5">Choose a date and pujari to book this puja.</p>
+                <p className="text-sm text-text-secondary mb-5">Choose a date to book this puja.</p>
 
                 {/* Booking type picker: only when the admin allowed BOTH modes */}
                 {puja.raw.booking_mode === 'BOTH' && (
@@ -395,7 +395,6 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                               </p>
                               <p className="text-xs text-text-secondary mt-0.5">
                                 {d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                                {e.pujari_name && ` · Pujari: ${e.pujari_name}`}
                               </p>
                             </div>
                             <span className="text-[10px] uppercase tracking-wider text-primary-600 font-bold flex-shrink-0">

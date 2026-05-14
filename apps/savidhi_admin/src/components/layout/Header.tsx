@@ -6,10 +6,8 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  Bell,
   ChevronDown,
   LogOut,
-  MessageSquare,
   Settings,
   UserCircle,
 } from 'lucide-react';
@@ -216,12 +214,6 @@ export function Header() {
       </nav>
 
       <div className="flex items-center gap-2 shrink-0">
-        <button className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center hover:bg-border transition-colors" aria-label="Notifications">
-          <Bell size={16} className="text-muted-foreground" />
-        </button>
-        <button className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center hover:bg-border transition-colors" aria-label="Messages">
-          <MessageSquare size={16} className="text-muted-foreground" />
-        </button>
         <Link
           href="/dashboard/settings"
           className={cn(

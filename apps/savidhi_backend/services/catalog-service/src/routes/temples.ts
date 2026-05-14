@@ -35,6 +35,10 @@ templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     let query = 'SELECT * FROM temples WHERE 1=1';
     const params: any[] = [];
 
+    if (req.query.include_inactive !== 'true') {
+      query += ' AND is_active = true';
+    }
+
     if (search) {
       params.push(`%${search}%`);
       query += ` AND name ILIKE $${params.length}`;
@@ -70,7 +74,8 @@ templesRouter.get('/:identifier', async (req: Request, res: Response, next: Next
   try {
     const { identifier } = req.params;
     const where = isUuid(identifier) ? 'id = $1' : 'slug = $1';
-    const temple = await pool.query(`SELECT * FROM temples WHERE ${where}`, [identifier]);
+    const activeFilter = req.query.include_inactive === 'true' ? '' : ' AND is_active = true';
+    const temple = await pool.query(`SELECT * FROM temples WHERE ${where}${activeFilter}`, [identifier]);
     if (temple.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
     const id = temple.rows[0].id;
 
@@ -128,6 +133,7 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
       'name', 'slug', 'address', 'pincode', 'google_map_link', 'about', 'history_and_significance',
       'sample_video_url', 'slider_images',
       'sample_video_url_raw', 'slider_images_raw', 'raw_media_audit_note',
+      'is_active',
     ];
     const updates: string[] = [];
     const values: any[] = [];

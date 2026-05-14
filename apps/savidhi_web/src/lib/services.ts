@@ -130,9 +130,10 @@ export const mediaService = {
   uploadLocal: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post('/media/upload/local', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    // Do NOT set Content-Type explicitly — the browser must inject the
+    // multipart boundary automatically. Setting "multipart/form-data" without
+    // a boundary breaks the server-side parser.
+    return api.post('/media/upload/local', formData);
   },
 };
 

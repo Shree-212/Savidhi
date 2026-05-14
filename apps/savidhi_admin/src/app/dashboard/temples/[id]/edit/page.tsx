@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api';
 import { PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 
 /**
  * Full-page Temple Edit matching the Figma wireframe (142:3801).
@@ -90,6 +91,7 @@ export default function TempleEditPage({ params }: { params: Promise<{ id: strin
         slider_images: temple.slider_images ?? [],
         sample_video_url_raw: temple.sample_video_url_raw,
         slider_images_raw: temple.slider_images_raw ?? [],
+        is_active: temple.is_active,
         deity_ids: selectedDeities,
       });
       // Optimistic redirect back to list
@@ -133,7 +135,13 @@ export default function TempleEditPage({ params }: { params: Promise<{ id: strin
             <p className="text-xs text-muted-foreground">{temple.id.slice(0, 8)}</p>
           </div>
         </div>
-        <StatusBadge status={temple.is_active ? 'ACTIVE' : 'INACTIVE'} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={temple.is_active ? 'ACTIVE' : 'INACTIVE'} />
+          <StatusToggle
+            active={temple.is_active}
+            onChange={(next) => setTemple({ ...temple, is_active: next })}
+          />
+        </div>
       </div>
 
       {/* Basic info */}
@@ -226,33 +234,10 @@ export default function TempleEditPage({ params }: { params: Promise<{ id: strin
         </div>
       </section>
 
-      {/* Raw (unedited) media */}
+      {/* Media shown to devotees */}
       <section className="border border-border rounded-lg p-5 bg-card space-y-4">
         <div>
-          <h2 className="text-sm font-semibold">Unedited Media (Admin-Only Archive)</h2>
-          <p className="text-xs text-muted-foreground">Original uploads — kept for audit. Not shown to devotees.</p>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <MediaUploadSingle
-            label="Raw Puja Video"
-            type="video"
-            accept="video/*"
-            value={temple.sample_video_url_raw ?? ''}
-            onChange={(url) => setTemple({ ...temple, sample_video_url_raw: url })}
-          />
-          <MediaUploadMulti
-            label="Raw Temple Photos (min 5)"
-            value={temple.slider_images_raw ?? []}
-            onChange={(urls) => setTemple({ ...temple, slider_images_raw: urls })}
-          />
-        </div>
-      </section>
-
-      {/* Post-edit media */}
-      <section className="border border-border rounded-lg p-5 bg-card space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold">Post-Edit Media (Shown to Devotees)</h2>
-          <p className="text-xs text-muted-foreground">Polished versions used on web + mobile temple pages.</p>
+          <h2 className="text-sm font-semibold">Media (Shown to Devotees)</h2>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <MediaUploadSingle

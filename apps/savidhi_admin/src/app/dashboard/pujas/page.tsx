@@ -4,10 +4,11 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { pujaService, templeService, deityService, hamperService, pujariService } from '@/lib/services';
+import { pujaService, templeService, deityService, hamperService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
@@ -47,6 +48,7 @@ interface PujaForm {
   shlok: string;
   hamper_id: string;
   send_hamper: boolean;
+  is_active: boolean;
 }
 
 interface SelectOption {
@@ -64,6 +66,7 @@ const EMPTY_FORM: PujaForm = {
   benefits: '', rituals_included: '', items_used: [], how_will_it_happen: [],
   shlok: '',
   hamper_id: '', send_hamper: false,
+  is_active: true,
 };
 
 const WEEKDAYS: { code: string; label: string }[] = [
@@ -99,7 +102,6 @@ function PujasPageInner() {
   const [temples, setTemples] = useState<SelectOption[]>([]);
   const [deities, setDeities] = useState<SelectOption[]>([]);
   const [hampers, setHampers] = useState<SelectOption[]>([]);
-  const [pujaris, setPujaris] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<PujaForm | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -144,13 +146,6 @@ function PujasPageInner() {
     }
   };
 
-  // Load pujaris filtered by selected temple whenever temple_id changes
-  useEffect(() => {
-    if (!editing?.temple_id) { setPujaris([]); return; }
-    pujariService.list({ temple_id: editing.temple_id, limit: 200 })
-      .then(r => setPujaris(r.data?.data || []))
-      .catch(err => console.error('Failed to load pujaris', err));
-  }, [editing?.temple_id]);
 
   useEffect(() => { loadData(); loadDropdowns(); }, []);
   useEffect(() => { loadData(); }, [search, filterTempleId]);
@@ -202,6 +197,7 @@ function PujasPageInner() {
       shlok: p.shlok ?? '',
       hamper_id: p.hamper_id ?? '',
       send_hamper: !!p.send_hamper,
+      is_active: p.is_active !== false,
     });
   };
 
@@ -224,7 +220,6 @@ function PujasPageInner() {
         name: editing.name,
         temple_id: editing.temple_id,
         deity_id: editing.deity_id || null,
-        default_pujari_id: editing.default_pujari_id || null,
         description: editing.description,
         schedule_day: editing.schedule_day,
         schedule_time: editing.schedule_time,
@@ -249,6 +244,7 @@ function PujasPageInner() {
         shlok: editing.shlok,
         hamper_id: editing.hamper_id || null,
         send_hamper: editing.send_hamper,
+        is_active: editing.is_active,
       };
       if (isNew) await pujaService.create(payload);
       else await pujaService.update(editing.id, payload);
@@ -338,6 +334,17 @@ function PujasPageInner() {
         </button>
       ),
     },
+    {
+      key: 'status', label: 'Status', render: (r: any) => (
+        <StatusToggle
+          active={r.is_active}
+          onChange={async (next) => {
+            await pujaService.update(r.id, { is_active: next });
+            setPujas(prev => prev.map(p => p.id === r.id ? { ...p, is_active: next } : p));
+          }}
+        />
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => handleEdit(r)} />
@@ -384,7 +391,18 @@ function PujasPageInner() {
         open={!!editing}
         onClose={() => { setEditing(null); setIsNew(false); setError(null); }}
         title={isNew ? 'New Puja' : `Edit Puja ${editing?.id?.slice(0, 8)}`}
-        statusBadge={!isNew ? <StatusBadge status="ACTIVE" className="text-status-completed" /> : undefined}
+        statusBadge={!isNew && editing ? (
+          <div className="flex items-center gap-2">
+            <StatusBadge
+              status={editing.is_active === false ? 'INACTIVE' : 'ACTIVE'}
+              className={editing.is_active === false ? 'text-status-cancelled' : 'text-status-completed'}
+            />
+            <StatusToggle
+              active={editing.is_active !== false}
+              onChange={(next) => update('is_active', next)}
+            />
+          </div>
+        ) : undefined}
         wide
       >
         {editing && (
@@ -405,7 +423,7 @@ function PujasPageInner() {
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={editing.temple_id}
-                onChange={(e) => { update('temple_id', e.target.value); update('default_pujari_id', ''); }}
+                onChange={(e) => update('temple_id', e.target.value)}
                 className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground"
               >
                 <option value="">Temple *</option>
@@ -420,7 +438,7 @@ function PujasPageInner() {
                 {deities.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <input
                 type="number"
                 value={editing.max_devotee || ''}
@@ -428,15 +446,6 @@ function PujasPageInner() {
                 placeholder="Max Devotee Per Event"
                 className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
               />
-              <select
-                value={editing.default_pujari_id}
-                onChange={(e) => update('default_pujari_id', e.target.value)}
-                disabled={!editing.temple_id}
-                className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground disabled:opacity-50"
-              >
-                <option value="">{editing.temple_id ? 'Default Pujari' : 'Select temple first'}</option>
-                {pujaris.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
               <input
                 type="number"
                 value={editing.duration_minutes || ''}

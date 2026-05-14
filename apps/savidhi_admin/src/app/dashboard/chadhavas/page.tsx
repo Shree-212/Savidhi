@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { chadhavaService, templeService, deityService, hamperService, pujariService } from '@/lib/services';
+import { chadhavaService, templeService, deityService, hamperService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
@@ -49,6 +50,7 @@ interface ChadhavaForm {
   offerings: Offering[];
   hamper_id: string;
   send_hamper: boolean;
+  is_active: boolean;
 }
 
 interface SelectOption { id: string; name: string; }
@@ -63,6 +65,7 @@ const EMPTY_FORM: ChadhavaForm = {
   shlok: '',
   offerings: [],
   hamper_id: '', send_hamper: false,
+  is_active: true,
 };
 
 const WEEKDAYS: { code: string; label: string }[] = [
@@ -85,7 +88,6 @@ export default function ChadhavasPage() {
   const [temples, setTemples] = useState<SelectOption[]>([]);
   const [deities, setDeities] = useState<SelectOption[]>([]);
   const [hampers, setHampers] = useState<SelectOption[]>([]);
-  const [pujaris, setPujaris] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<ChadhavaForm | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -125,13 +127,6 @@ export default function ChadhavasPage() {
     }
   };
 
-  useEffect(() => {
-    if (!editing?.temple_id) { setPujaris([]); return; }
-    pujariService.list({ temple_id: editing.temple_id, limit: 200 })
-      .then(r => setPujaris(r.data?.data || []))
-      .catch(err => console.error('Failed to load pujaris', err));
-  }, [editing?.temple_id]);
-
   useEffect(() => { loadData(); loadDropdowns(); }, []);
   useEffect(() => { loadData(); }, [search]);
 
@@ -148,9 +143,17 @@ export default function ChadhavasPage() {
     setEditing({ ...EMPTY_FORM, offerings: [{ item_name: '', benefit: '', price: 0, image_url: '' }] });
   };
 
-  const handleEdit = (c: any) => {
+  const handleEdit = async (row: any) => {
     setIsNew(false);
     setError(null);
+    // List endpoint omits offerings; refetch detail so the editor populates them.
+    let c = row;
+    try {
+      const detail = await chadhavaService.getById(row.id);
+      c = detail.data?.data ?? detail.data ?? row;
+    } catch (err) {
+      console.error('Failed to load chadhava detail', err);
+    }
     const offeringsRaw = Array.isArray(c.offerings) ? c.offerings : [];
     const offerings: Offering[] = offeringsRaw.length
       ? offeringsRaw.map((o: any) => ({
@@ -188,6 +191,7 @@ export default function ChadhavasPage() {
       offerings,
       hamper_id: c.hamper_id ?? '',
       send_hamper: !!c.send_hamper,
+      is_active: c.is_active !== false,
     });
   };
 
@@ -224,7 +228,6 @@ export default function ChadhavasPage() {
         name: editing.name,
         temple_id: editing.temple_id,
         deity_id: editing.deity_id || null,
-        default_pujari_id: editing.default_pujari_id || null,
         schedule_day: editing.schedule_day,
         schedule_time: editing.schedule_time,
         lunar_phase: editing.lunar_phase,
@@ -242,6 +245,7 @@ export default function ChadhavasPage() {
         shlok: editing.shlok,
         hamper_id: editing.hamper_id || null,
         send_hamper: editing.send_hamper,
+        is_active: editing.is_active,
         offerings,
       };
       if (isNew) await chadhavaService.create(payload);
@@ -330,6 +334,17 @@ export default function ChadhavasPage() {
         </button>
       ),
     },
+    {
+      key: 'status', label: 'Status', render: (r: any) => (
+        <StatusToggle
+          active={r.is_active}
+          onChange={async (next) => {
+            await chadhavaService.update(r.id, { is_active: next });
+            setChadhavas(prev => prev.map(c => c.id === r.id ? { ...c, is_active: next } : c));
+          }}
+        />
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => handleEdit(r)} />
@@ -367,7 +382,18 @@ export default function ChadhavasPage() {
         open={!!editing}
         onClose={() => { setEditing(null); setIsNew(false); setError(null); }}
         title={isNew ? 'New Chadhava' : `Edit Chadhava ${editing?.id?.slice(0, 8)}`}
-        statusBadge={!isNew ? <StatusBadge status="ACTIVE" className="text-status-completed" /> : undefined}
+        statusBadge={!isNew && editing ? (
+          <div className="flex items-center gap-2">
+            <StatusBadge
+              status={editing.is_active === false ? 'INACTIVE' : 'ACTIVE'}
+              className={editing.is_active === false ? 'text-status-cancelled' : 'text-status-completed'}
+            />
+            <StatusToggle
+              active={editing.is_active !== false}
+              onChange={(next) => update('is_active', next)}
+            />
+          </div>
+        ) : undefined}
         wide
       >
         {editing && (
@@ -387,7 +413,7 @@ export default function ChadhavasPage() {
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={editing.temple_id}
-                onChange={(e) => { update('temple_id', e.target.value); update('default_pujari_id', ''); }}
+                onChange={(e) => update('temple_id', e.target.value)}
                 className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground"
               >
                 <option value="">Temple *</option>
@@ -402,7 +428,7 @@ export default function ChadhavasPage() {
                 {deities.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <input
                 type="number"
                 value={editing.max_bookings_per_event || ''}
@@ -410,15 +436,6 @@ export default function ChadhavasPage() {
                 placeholder="Max Devotee Per Event"
                 className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
               />
-              <select
-                value={editing.default_pujari_id}
-                onChange={(e) => update('default_pujari_id', e.target.value)}
-                disabled={!editing.temple_id}
-                className="h-9 bg-accent border border-border rounded-md px-3 text-xs text-foreground disabled:opacity-50"
-              >
-                <option value="">{editing.temple_id ? 'Default Pujari' : 'Select temple first'}</option>
-                {pujaris.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
               <input
                 type="number"
                 value={editing.duration_minutes || ''}

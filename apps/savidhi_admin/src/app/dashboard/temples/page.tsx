@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { templeService } from '@/lib/services';
+import { templeService, deityService } from '@/lib/services';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
 import { ViewButton, EditButton, DeleteButton, PrimaryButton, OutlineButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle, MediaUploadMulti } from '@/components/shared/MediaUpload';
+import { StatusToggle } from '@/components/shared/StatusToggle';
 
 interface Temple {
   id: string;
@@ -31,6 +32,8 @@ export default function TemplesPage() {
   const [editing, setEditing] = useState<Temple | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deities, setDeities] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedDeities, setSelectedDeities] = useState<string[]>([]);
 
   const nameRef = useRef<HTMLInputElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
@@ -55,8 +58,21 @@ export default function TemplesPage() {
     loadData();
   }, [search]);
 
+  useEffect(() => {
+    deityService.list({ limit: 200 })
+      .then(r => setDeities(r.data?.data ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  const toggleDeity = (deityId: string) => {
+    setSelectedDeities(prev =>
+      prev.includes(deityId) ? prev.filter(x => x !== deityId) : [...prev, deityId],
+    );
+  };
+
   const handleAdd = () => {
     setIsNew(true);
+    setSelectedDeities([]);
     setEditing({
       id: '', name: '', address: '', pincode: '', about: '',
       history_and_significance: '', sample_video_url: '', slider_images: [],
@@ -79,7 +95,11 @@ export default function TemplesPage() {
         slider_images: editing.slider_images || [],
       };
       if (isNew) {
-        await templeService.create(payload);
+        const created = await templeService.create(payload);
+        const createdId = created.data?.data?.id ?? created.data?.id;
+        if (createdId && selectedDeities.length > 0) {
+          await templeService.update(createdId, { deity_ids: selectedDeities });
+        }
       } else {
         await templeService.update(editing.id, payload);
       }
@@ -152,6 +172,17 @@ export default function TemplesPage() {
         </button>
       ),
     },
+    {
+      key: 'status', label: 'Status', render: (r: Temple) => (
+        <StatusToggle
+          active={r.is_active}
+          onChange={async (next) => {
+            await templeService.update(r.id, { is_active: next });
+            setTemples(prev => prev.map(t => t.id === r.id ? { ...t, is_active: next } : t));
+          }}
+        />
+      ),
+    },
     { key: 'action', label: 'Action', render: (r: Temple) => (
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => { setIsNew(false); setEditing(r); }} title="Quick View (modal)" />
@@ -181,6 +212,29 @@ export default function TemplesPage() {
             <textarea ref={aboutRef} defaultValue={editing.about} placeholder="About temple description..." className="w-full h-20 px-3 py-2 bg-accent border border-border rounded-md text-xs text-foreground resize-none" />
             <h4 className="text-[10px] font-bold uppercase tracking-wider">History & Significance</h4>
             <textarea ref={historyRef} defaultValue={editing.history_and_significance} placeholder="Type Here" className="w-full h-20 px-3 py-2 bg-accent border border-border rounded-md text-xs text-foreground resize-none" />
+
+            {isNew && deities.length > 0 && (
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider mb-2">Presiding Deities</h4>
+                <div className="flex flex-wrap gap-2">
+                  {deities.map(d => {
+                    const active = selectedDeities.includes(d.id);
+                    return (
+                      <button
+                        type="button"
+                        key={d.id}
+                        onClick={() => toggleDeity(d.id)}
+                        className={`px-3 py-1.5 rounded-full text-xs border transition ${
+                          active ? 'bg-primary text-white border-primary' : 'bg-accent border-border hover:border-primary'
+                        }`}
+                      >
+                        {d.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <MediaUploadSingle

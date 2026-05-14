@@ -90,6 +90,7 @@ const PUJA_FIELDS = [
   'shlok',
   'hamper_id',
   'send_hamper',
+  'is_active',
 ] as const;
 
 type PujaField = (typeof PUJA_FIELDS)[number];
@@ -133,16 +134,22 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
 
     let query = `
       SELECT p.*, t.name AS temple_name,
-             COALESCE(ec.upcoming_events_count, 0)::int AS upcoming_events_count
+             COALESCE(ec.upcoming_events_count, 0)::int AS upcoming_events_count,
+             ec.next_event_at
       FROM pujas p
       LEFT JOIN temples t ON p.temple_id = t.id
       LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS upcoming_events_count
+        SELECT COUNT(*)::int AS upcoming_events_count,
+               MIN(pe.start_time) FILTER (WHERE pe.start_time >= NOW() AND pe.status != 'COMPLETED') AS next_event_at
         FROM puja_events pe
         WHERE pe.puja_id = p.id AND pe.start_time >= NOW() AND pe.status != 'COMPLETED'
       ) ec ON true
-      WHERE p.is_active = true`;
+      WHERE 1=1`;
     const params: unknown[] = [];
+
+    if (req.query.include_inactive !== 'true') {
+      query += ` AND p.is_active = true`;
+    }
 
     if (templeId) {
       params.push(templeId);
@@ -161,7 +168,7 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
     const countResult = await pool.query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
 
-    query += ` ORDER BY p.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    query += ` ORDER BY ec.next_event_at ASC NULLS LAST, p.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
@@ -188,7 +195,7 @@ pujasRouter.get('/:identifier', async (req: Request, res: Response, next: NextFu
        FROM pujas p
        LEFT JOIN temples t ON p.temple_id = t.id
        LEFT JOIN deities d ON p.deity_id = d.id
-       WHERE ${where} AND p.is_active = true`,
+       WHERE ${where}${req.query.include_inactive === 'true' ? '' : ' AND p.is_active = true'}`,
       [identifier],
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Puja not found' }); return; }
@@ -278,7 +285,7 @@ pujasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
 
     await client.query('BEGIN');
     const result = await client.query(
-      `UPDATE pujas SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+      `UPDATE pujas SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
       values,
     );
     if (result.rows.length === 0) {

@@ -364,7 +364,6 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
                               </p>
                               <p className="text-xs text-text-secondary mt-0.5">
                                 {d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                                {e.pujari_name && ` · Pujari: ${e.pujari_name}`}
                               </p>
                             </div>
                             <span className="text-[10px] uppercase tracking-wider text-primary-600 font-bold flex-shrink-0">

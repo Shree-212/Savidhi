@@ -91,6 +91,7 @@ const CHADHAVA_FIELDS = [
   'shlok',
   'hamper_id',
   'send_hamper',
+  'is_active',
 ] as const;
 
 type ChadhavaField = (typeof CHADHAVA_FIELDS)[number];
@@ -155,7 +156,10 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
     const templeId = req.query.temple_id as string;
     const search = req.query.search as string;
 
-    const conds: string[] = ['c.is_active = true'];
+    const conds: string[] = [];
+    if (req.query.include_inactive !== 'true') {
+      conds.push('c.is_active = true');
+    }
     const params: unknown[] = [];
     if (templeId) {
       params.push(templeId);
@@ -165,7 +169,7 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
       params.push(`%${search}%`);
       conds.push(`c.name ILIKE $${params.length}`);
     }
-    const whereClause = `WHERE ${conds.join(' AND ')}`;
+    const whereClause = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM chadhavas c ${whereClause}`,
@@ -179,17 +183,19 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
               t.address AS temple_address, t.address_hi AS temple_address_hi,
               d.name AS deity_name, d.name_hi AS deity_name_hi,
               (SELECT MIN(co.price) FROM chadhava_offerings co WHERE co.chadhava_id = c.id) AS min_price,
-              COALESCE(ec.upcoming_events_count, 0)::int AS upcoming_events_count
+              COALESCE(ec.upcoming_events_count, 0)::int AS upcoming_events_count,
+              ec.next_event_at
        FROM chadhavas c
        LEFT JOIN temples t ON c.temple_id = t.id
        LEFT JOIN deities d ON c.deity_id = d.id
        LEFT JOIN LATERAL (
-         SELECT COUNT(*)::int AS upcoming_events_count
+         SELECT COUNT(*)::int AS upcoming_events_count,
+                MIN(ce.start_time) FILTER (WHERE ce.start_time >= NOW() AND ce.status != 'COMPLETED') AS next_event_at
          FROM chadhava_events ce
          WHERE ce.chadhava_id = c.id AND ce.start_time >= NOW() AND ce.status != 'COMPLETED'
        ) ec ON true
        ${whereClause}
-       ORDER BY c.created_at DESC
+       ORDER BY ec.next_event_at ASC NULLS LAST, c.created_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       dataParams,
     );
@@ -216,7 +222,7 @@ chadhavasRouter.get('/:identifier', async (req: Request, res: Response, next: Ne
        FROM chadhavas c
        LEFT JOIN temples t ON c.temple_id = t.id
        LEFT JOIN deities d ON c.deity_id = d.id
-       WHERE ${where} AND c.is_active = true`,
+       WHERE ${where}${req.query.include_inactive === 'true' ? '' : ' AND c.is_active = true'}`,
       [identifier],
     );
     if (chadhava.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
@@ -332,7 +338,7 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
       updates.push(`updated_at = NOW()`);
       values.push(id);
       const result = await client.query(
-        `UPDATE chadhavas SET ${updates.join(', ')} WHERE id = $${idx} AND is_active = true RETURNING *`,
+        `UPDATE chadhavas SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
         values,
       );
       if (result.rows.length === 0) {
@@ -343,7 +349,7 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
       updatedRow = result.rows[0];
     } else {
       // No scalar updates — verify the chadhava exists for the offerings update
-      const exists = await client.query('SELECT * FROM chadhavas WHERE id = $1 AND is_active = true', [id]);
+      const exists = await client.query('SELECT * FROM chadhavas WHERE id = $1', [id]);
       if (exists.rows.length === 0) {
         await client.query('ROLLBACK');
         res.status(404).json({ success: false, message: 'Chadhava not found' });

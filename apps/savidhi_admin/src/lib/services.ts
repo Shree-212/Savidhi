@@ -19,8 +19,8 @@ export const authService = {
 
 export const templeService = {
   list: (params?: { page?: number; limit?: number; search?: string }) =>
-    apiClient.get('/catalog/temples', { params }),
-  getById: (id: string) => apiClient.get(`/catalog/temples/${id}`),
+    apiClient.get('/catalog/temples', { params: { ...(params ?? {}), include_inactive: 'true' } }),
+  getById: (id: string) => apiClient.get(`/catalog/temples/${id}`, { params: { include_inactive: 'true' } }),
   create: (data: any) => apiClient.post('/catalog/temples', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/temples/${id}`, data),
@@ -41,8 +41,8 @@ export const deityService = {
 
 export const pujaService = {
   list: (params?: { page?: number; limit?: number; search?: string; temple_id?: string }) =>
-    apiClient.get('/catalog/pujas', { params }),
-  getById: (id: string) => apiClient.get(`/catalog/pujas/${id}`),
+    apiClient.get('/catalog/pujas', { params: { ...(params ?? {}), include_inactive: 'true' } }),
+  getById: (id: string) => apiClient.get(`/catalog/pujas/${id}`, { params: { include_inactive: 'true' } }),
   create: (data: any) => apiClient.post('/catalog/pujas', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/pujas/${id}`, data),
@@ -57,8 +57,8 @@ export const pujaService = {
 
 export const chadhavaService = {
   list: (params?: { page?: number; limit?: number; search?: string; temple_id?: string }) =>
-    apiClient.get('/catalog/chadhavas', { params }),
-  getById: (id: string) => apiClient.get(`/catalog/chadhavas/${id}`),
+    apiClient.get('/catalog/chadhavas', { params: { ...(params ?? {}), include_inactive: 'true' } }),
+  getById: (id: string) => apiClient.get(`/catalog/chadhavas/${id}`, { params: { include_inactive: 'true' } }),
   create: (data: any) => apiClient.post('/catalog/chadhavas', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/catalog/chadhavas/${id}`, data),
