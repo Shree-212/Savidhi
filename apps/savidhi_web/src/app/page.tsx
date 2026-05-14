@@ -6,7 +6,6 @@ import Link from 'next/link';
 import {
   ChevronLeft,
   ChevronRight,
-  Play,
   BookOpen,
   Gift,
   Users,
@@ -14,6 +13,8 @@ import {
   CalendarDays,
   Gem,
   ArrowUpRight,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { PujaCard } from '@/components/shared/PujaCard';
 import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
@@ -155,17 +156,35 @@ function CarouselNav({ onLeft, onRight }: { onLeft: () => void; onRight: () => v
 
 function HowToVideoThumbnail() {
   const t = useT();
-  return (
-    <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-xl ring-1 ring-black/5 group cursor-pointer">
-      <Image
-        src="https://images.unsplash.com/photo-1757308530438-4e2340a6475f?w=1200&q=85&auto=format&fit=crop"
-        alt="How to book puja with Savidhi — brass aarti lamp at Ganga Ghat, Varanasi"
-        fill
-        className="object-cover transition-transform duration-700 group-hover:scale-105"
-        sizes="(max-width: 1024px) 100vw, 45vw"
-      />
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [muted, setMuted] = useState(true);
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/30 group-hover:via-black/5 transition-colors" />
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    const next = !v.muted;
+    v.muted = next;
+    setMuted(next);
+    // Some browsers pause when toggling muted programmatically — keep it playing.
+    if (v.paused) v.play().catch(() => undefined);
+  };
+
+  return (
+    <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-xl ring-1 ring-black/5 bg-black">
+      {/* Source preserves original quality — served directly from GCS, no transcoding. */}
+      <video
+        ref={videoRef}
+        src="https://storage.googleapis.com/savidhi-media-prod/marketing/how-to-book-puja.mp4"
+        className="absolute inset-0 w-full h-full object-cover"
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="auto"
+        // Intentionally NOT setting `controls` — only the mute/unmute button below is visible.
+        disablePictureInPicture
+        controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
+      />
 
       <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-md px-2.5 py-1 shadow-md">
         <p className="text-[9px] font-semibold text-text-muted uppercase tracking-wide leading-none">
@@ -176,20 +195,20 @@ function HowToVideoThumbnail() {
         </p>
       </div>
 
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative">
-          <span className="absolute inset-0 rounded-full bg-white/40 animate-ping" />
-          <div className="relative w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
-            <Play className="w-5 h-5 text-primary-500 ml-0.5 fill-primary-500" />
-          </div>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={toggleMute}
+        aria-label={muted ? 'Unmute video' : 'Mute video'}
+        className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white flex items-center justify-center transition-colors shadow-lg z-10"
+      >
+        {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+      </button>
 
-      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
         <p className="text-white text-sm font-bold leading-tight drop-shadow">
           {t('home.bookingMadeSimple')}
         </p>
-        <span className="bg-primary-500 hover:bg-primary-600 text-white text-[11px] font-semibold rounded-full px-3 py-1 shadow-lg transition-colors flex-shrink-0">
+        <span className="bg-primary-500 text-white text-[11px] font-semibold rounded-full px-3 py-1 shadow-lg flex-shrink-0">
           {t('home.learnMore')}
         </span>
       </div>
