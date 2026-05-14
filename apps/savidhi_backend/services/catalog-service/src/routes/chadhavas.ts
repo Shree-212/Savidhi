@@ -391,14 +391,10 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
         order++;
       }
 
-      // 2. INSERT new offerings (no id supplied).
-      const newOnes = incoming.filter((o) => !o.id && o.item_name);
-      if (newOnes.length > 0) {
-        await insertOfferings(client, id, newOnes);
-      }
-
-      // 3. Remove offerings the admin dropped — only those NOT referenced from
+      // 2. Remove offerings the admin dropped — only those NOT referenced from
       //    any chadhava_booking_offerings row. Booked ones survive.
+      //    Done BEFORE the INSERT below so a freshly-inserted row (whose new
+      //    id is obviously not in `incomingIds`) doesn't get deleted by mistake.
       const removable = await client.query(
         `SELECT co.id
            FROM chadhava_offerings co
@@ -414,6 +410,12 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
           `DELETE FROM chadhava_offerings WHERE id = ANY($1::uuid[])`,
           [removable.rows.map((r) => r.id)],
         );
+      }
+
+      // 3. INSERT new offerings (no id supplied).
+      const newOnes = incoming.filter((o) => !o.id && o.item_name);
+      if (newOnes.length > 0) {
+        await insertOfferings(client, id, newOnes);
       }
     }
 
