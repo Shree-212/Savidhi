@@ -72,12 +72,13 @@ async function fetchPujaSankalpEvents(query: Record<string, unknown>) {
 }
 
 async function fetchPujaEventDevotees(eventId: string) {
-  // Bookings -> devotees, plus the additional devotee rows captured per booking.
+  // Earliest booking first so report devotee rows match the admin modal.
   const { rows } = await pool.query(
     `SELECT d.name AS name, COALESCE(d.gotra, '') AS gotra
        FROM puja_bookings pb
        JOIN devotees d ON d.id = pb.devotee_id
-      WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'`,
+      WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'
+      ORDER BY pb.created_at ASC`,
     [eventId],
   );
   // puja_booking_devotees (multiple devotees per booking)
@@ -87,7 +88,8 @@ async function fetchPujaEventDevotees(eventId: string) {
       `SELECT pbd.name AS name, COALESCE(pbd.gotra, '') AS gotra
          FROM puja_booking_devotees pbd
          JOIN puja_bookings pb ON pb.id = pbd.puja_booking_id
-        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'`,
+        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'
+        ORDER BY pb.created_at ASC`,
       [eventId],
     );
     extras = r.rows;
@@ -99,7 +101,7 @@ reportsRouter.get('/puja-sankalp', requireAdmin, async (req: Request, res: Respo
   try {
     const rows = await fetchPujaSankalpEvents(req.query as Record<string, unknown>);
     const data = rows.map((r) => ({
-      id:          fmtShortId(r.event_id),
+      id:          r.event_id,
       event_id:    r.event_id,
       pujaName:    r.puja_name,
       temple:      r.temple_name,
@@ -145,7 +147,11 @@ reportsRouter.get('/puja-sankalp', requireAdmin, async (req: Request, res: Respo
   } catch (err) { next(err); }
 });
 
-/** Per-row download: zip wrapping a single excel file for one puja_event. */
+/**
+ * Per-row download for one puja_event. `?format=xlsx` (default) returns the
+ * raw xlsx file; `?format=json` returns the devotee list + event meta as JSON
+ * so the admin can build a PDF client-side.
+ */
 reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { eventId } = req.params;
@@ -165,6 +171,22 @@ reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Req
     }
     const meta = eventInfo.rows[0];
     const devotees = await fetchPujaEventDevotees(eventId);
+    const format = String(req.query.format ?? 'xlsx');
+    const label = `${meta.puja_name}${meta.start_time ? ' - ' + fmtDate(meta.start_time) : ''}`;
+
+    if (format === 'json') {
+      res.json({
+        success: true,
+        data: {
+          puja_name: meta.puja_name,
+          start_time: meta.start_time,
+          label,
+          devotees: devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '' })),
+        },
+      });
+      return;
+    }
+
     const xlsx = await buildExcel(
       devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
       [
@@ -174,8 +196,7 @@ reportsRouter.get('/puja-sankalp/:eventId/export', requireAdmin, async (req: Req
       ],
       'Sankalp Devotees',
     );
-    const zip = await buildZip([{ name: `${meta.puja_name} - ${fmtDate(meta.start_time)}.xlsx`, buffer: xlsx }]);
-    sendFile(res, zip, `Puja Sankalp - ${meta.puja_name}.zip`, MIME_ZIP);
+    sendFile(res, xlsx, `Puja Sankalp - ${label}.xlsx`, MIME_XLSX);
   } catch (err: any) {
     console.error('[puja-sankalp/export]', err);
     res.status(500).json({ success: false, message: `Export failed: ${err?.message ?? String(err)}` });
@@ -217,11 +238,13 @@ async function fetchChadhavaSankalpEvents(query: Record<string, unknown>) {
 }
 
 async function fetchChadhavaEventDevotees(eventId: string) {
+  // Earliest booking first so report devotee rows match the admin modal.
   const { rows } = await pool.query(
     `SELECT d.name AS name, COALESCE(d.gotra, '') AS gotra
        FROM chadhava_bookings cb
        JOIN devotees d ON d.id = cb.devotee_id
-      WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'`,
+      WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'
+      ORDER BY cb.created_at ASC`,
     [eventId],
   );
   let extras: any[] = [];
@@ -230,7 +253,8 @@ async function fetchChadhavaEventDevotees(eventId: string) {
       `SELECT cbd.name AS name, COALESCE(cbd.gotra, '') AS gotra
          FROM chadhava_booking_devotees cbd
          JOIN chadhava_bookings cb ON cb.id = cbd.chadhava_booking_id
-        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'`,
+        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'
+        ORDER BY cb.created_at ASC`,
       [eventId],
     );
     extras = r.rows;
@@ -242,7 +266,7 @@ reportsRouter.get('/chadhava-sankalp', requireAdmin, async (req: Request, res: R
   try {
     const rows = await fetchChadhavaSankalpEvents(req.query as Record<string, unknown>);
     const data = rows.map((r) => ({
-      id:           fmtShortId(r.event_id),
+      id:           r.event_id,
       event_id:     r.event_id,
       chadhavaName: r.chadhava_name,
       temple:       r.temple_name,
@@ -306,6 +330,22 @@ reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req:
     }
     const meta = info.rows[0];
     const devotees = await fetchChadhavaEventDevotees(eventId);
+    const format = String(req.query.format ?? 'xlsx');
+    const label = `${meta.chadhava_name}${meta.start_time ? ' - ' + fmtDate(meta.start_time) : ''}`;
+
+    if (format === 'json') {
+      res.json({
+        success: true,
+        data: {
+          chadhava_name: meta.chadhava_name,
+          start_time: meta.start_time,
+          label,
+          devotees: devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '' })),
+        },
+      });
+      return;
+    }
+
     const xlsx = await buildExcel(
       devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
       [
@@ -315,8 +355,7 @@ reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req:
       ],
       'Sankalp Devotees',
     );
-    const zip = await buildZip([{ name: `${meta.chadhava_name} - ${fmtDate(meta.start_time)}.xlsx`, buffer: xlsx }]);
-    sendFile(res, zip, `Chadhava Sankalp - ${meta.chadhava_name}.zip`, MIME_ZIP);
+    sendFile(res, xlsx, `Chadhava Sankalp - ${label}.xlsx`, MIME_XLSX);
   } catch (err: any) {
     console.error('[chadhava-sankalp/export]', err);
     res.status(500).json({ success: false, message: `Export failed: ${err?.message ?? String(err)}` });
@@ -369,7 +408,7 @@ reportsRouter.get('/chadhava-offerings', requireAdmin, async (req: Request, res:
         ? items.map((o) => `${o.item} — ${o.qty}X`).join('\n')
         : '—';
       return {
-        id:                  fmtShortId(r.event_id),
+        id:                  r.event_id,
         chadhavaName:        r.chadhava_name,
         temple:              r.temple_name,
         startTime:           fmtDate(r.event_date),
@@ -447,7 +486,7 @@ reportsRouter.get('/appointments', requireAdmin, async (req: Request, res: Respo
   try {
     const rows = await fetchAppointmentsByAstrologer(req.query as Record<string, unknown>);
     const data = rows.map((r) => ({
-      id:                fmtShortId(r.astrologer_id),
+      id:                r.astrologer_id,
       astrologer_id:     r.astrologer_id,
       astrologerName:    r.astrologer_name,
       bookings:          r.bookings,
@@ -515,15 +554,28 @@ reportsRouter.get('/appointments/:astrologerId/export', requireAdmin, async (req
     const from = req.query.from_date as string | undefined;
     const to   = req.query.to_date as string | undefined;
     const appts = await fetchAstrologerAppointments(astrologerId, from, to);
+    const format = String(req.query.format ?? 'xlsx');
+    const astrologerName = ast.rows[0].name;
+
+    const rows = appts.map((a, i) => ({
+      sl: i + 1,
+      name: a.devotee_name,
+      gotra: a.gotra || '',
+      start: fmtDate(a.scheduled_at),
+      duration: a.duration,
+      link: a.meet_link || 'Not generated',
+    }));
+
+    if (format === 'json') {
+      res.json({
+        success: true,
+        data: { astrologer_name: astrologerName, label: astrologerName, appointments: rows },
+      });
+      return;
+    }
+
     const xlsx = await buildExcel(
-      appts.map((a, i) => ({
-        sl: i + 1,
-        name: a.devotee_name,
-        gotra: a.gotra || '—',
-        start: fmtDate(a.scheduled_at),
-        duration: a.duration,
-        link: a.meet_link || 'Not generated',
-      })),
+      rows.map((r) => ({ ...r, gotra: r.gotra || '—' })),
       [
         { header: 'SL', key: 'sl', width: 6 },
         { header: 'Devotee Name', key: 'name', width: 28 },
@@ -534,8 +586,7 @@ reportsRouter.get('/appointments/:astrologerId/export', requireAdmin, async (req
       ],
       'Appointments',
     );
-    const zip = await buildZip([{ name: `${ast.rows[0].name}.xlsx`, buffer: xlsx }]);
-    sendFile(res, zip, `Appointments - ${ast.rows[0].name}.zip`, MIME_ZIP);
+    sendFile(res, xlsx, `Appointments - ${astrologerName}.xlsx`, MIME_XLSX);
   } catch (err: any) {
     console.error('[appointments/export]', err);
     res.status(500).json({ success: false, message: `Export failed: ${err?.message ?? String(err)}` });
@@ -641,7 +692,7 @@ reportsRouter.get('/all-bookings', requireAdmin, async (req: Request, res: Respo
   try {
     const rows = await fetchAllBookings(req.query as Record<string, unknown>);
     const data = rows.map((r) => ({
-      id:          fmtShortId(r.id),
+      id:          r.id,
       devoteeName: r.devotee_name,
       type:        r.type,
       service:     r.temple_name ? `${r.service_name} — ${r.temple_name}` : r.service_name,
@@ -675,7 +726,7 @@ reportsRouter.get('/summary', requireAdmin, async (req: Request, res: Response, 
     const dateWhere = fromTo.conditions.length ? `WHERE ${fromTo.conditions.join(' AND ')}` : '';
     const dateParams = fromTo.params;
 
-    const [pujas, chadhavas, appts, ledger] = await Promise.all([
+    const [pujas, chadhavas, appts] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(cost), 0)::numeric AS sum
            FROM puja_bookings ${dateWhere}`,
@@ -691,18 +742,16 @@ reportsRouter.get('/summary', requireAdmin, async (req: Request, res: Response, 
            FROM appointments ${dateWhere}`,
         dateParams,
       ),
-      pool.query(`SELECT COALESCE(SUM(fee), 0)::numeric AS sum FROM ledger_entries`),
     ]);
 
-    const totalFee = Number(ledger.rows[0].sum);
     const totalCost = Number(pujas.rows[0].sum) + Number(chadhavas.rows[0].sum) + Number(appts.rows[0].sum);
 
     const rows = [
-      { variable: 'PUJAS',         totalNumber: pujas.rows[0].cnt,     totalCost: Number(pujas.rows[0].sum),     totalFee: 0, netProfit: Number(pujas.rows[0].sum) },
-      { variable: 'CHADHAVAS',     totalNumber: chadhavas.rows[0].cnt, totalCost: Number(chadhavas.rows[0].sum), totalFee: 0, netProfit: Number(chadhavas.rows[0].sum) },
-      { variable: 'APPOINTMENTS',  totalNumber: appts.rows[0].cnt,     totalCost: Number(appts.rows[0].sum),     totalFee: 0, netProfit: Number(appts.rows[0].sum) },
+      { variable: 'PUJAS',         totalNumber: pujas.rows[0].cnt,     totalCost: Number(pujas.rows[0].sum) },
+      { variable: 'CHADHAVAS',     totalNumber: chadhavas.rows[0].cnt, totalCost: Number(chadhavas.rows[0].sum) },
+      { variable: 'APPOINTMENTS',  totalNumber: appts.rows[0].cnt,     totalCost: Number(appts.rows[0].sum) },
       { variable: 'TOTAL',         totalNumber: pujas.rows[0].cnt + chadhavas.rows[0].cnt + appts.rows[0].cnt,
-        totalCost, totalFee, netProfit: totalCost - totalFee },
+        totalCost },
     ];
 
     if (req.query.format === 'xlsx') {
@@ -710,8 +759,6 @@ reportsRouter.get('/summary', requireAdmin, async (req: Request, res: Response, 
         { header: 'Variable', key: 'variable', width: 18 },
         { header: 'Total Number', key: 'totalNumber' },
         { header: 'Total Cost', key: 'totalCost' },
-        { header: 'Total Fee', key: 'totalFee' },
-        { header: 'Net Profit', key: 'netProfit' },
       ], 'Summary');
       return sendFile(res, buf, 'Summary Report.xlsx', MIME_XLSX);
     }

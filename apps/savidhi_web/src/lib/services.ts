@@ -131,10 +131,12 @@ export const mediaService = {
   uploadLocal: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    // Do NOT set Content-Type explicitly — the browser must inject the
-    // multipart boundary automatically. Setting "multipart/form-data" without
-    // a boundary breaks the server-side parser.
-    return api.post('/media/upload/local', formData);
+    // The api instance defaults Content-Type to application/json — must override
+    // for FormData. Axios v1 sees the multipart value + FormData body and lets
+    // the browser inject the boundary, so multer parses it correctly.
+    return api.post('/media/upload/local', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   },
 };
 

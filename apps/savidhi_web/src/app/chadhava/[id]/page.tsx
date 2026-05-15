@@ -174,7 +174,7 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                   {chadhava.offerings.map((off) => (
                     <div
                       key={off.id}
-                      className="flex items-center bg-white border border-orange-100 rounded-xl px-3 sm:px-4 py-3 hover:border-primary-200 transition shadow-[0_1px_2px_rgba(232,129,58,0.04)]"
+                      className="flex items-start bg-white border border-orange-100 rounded-xl px-3 sm:px-4 py-3 hover:border-primary-200 transition shadow-[0_1px_2px_rgba(232,129,58,0.04)]"
                     >
                       {off.imageUrl && (
                         <div className="relative w-11 h-11 rounded-lg overflow-hidden mr-3 shrink-0 ring-1 ring-orange-100">
@@ -191,7 +191,7 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-text-primary text-sm leading-snug">{off.name}</p>
                         {off.description && (
-                          <p className="text-xs text-text-muted truncate mt-0.5">{off.description}</p>
+                          <p className="text-xs text-text-muted mt-0.5 leading-snug">{off.description}</p>
                         )}
                       </div>
                       <div className="flex flex-col items-end ml-3 shrink-0">

@@ -302,11 +302,20 @@ export const reportService = {
       params: { ...(params ?? {}), format },
       responseType: 'blob',
     }),
-  /** Download one row of a grouped report (event or astrologer). */
-  downloadRow: (key: string, rowId: string, params?: any) =>
+  /**
+   * Download one row of a grouped report (event or astrologer). Backend
+   * `format=xlsx` returns a raw .xlsx; `format=json` returns the inner data
+   * shape used by the client-side PDF builder.
+   */
+  downloadRow: (key: string, rowId: string, format: 'xlsx' = 'xlsx', params?: any) =>
     apiClient.get(`/bookings/reports/${key}/${rowId}/export`, {
-      params,
+      params: { ...(params ?? {}), format },
       responseType: 'blob',
+    }),
+  /** Fetch one row of a grouped report as JSON (for client-side PDF). */
+  rowJson: (key: string, rowId: string, params?: any) =>
+    apiClient.get(`/bookings/reports/${key}/${rowId}/export`, {
+      params: { ...(params ?? {}), format: 'json' },
     }),
 };
 

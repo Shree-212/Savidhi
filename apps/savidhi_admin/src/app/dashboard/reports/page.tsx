@@ -8,7 +8,6 @@ const REPORT_OPTIONS: { key: ReportKey; label: string }[] = [
   { key: 'chadhava-sankalp',   label: 'Chadhava Sankalp Report' },
   { key: 'chadhava-offerings', label: 'Chadhava Offerings Report' },
   { key: 'appointments',       label: 'Appointments Report' },
-  { key: 'ledger',             label: 'Ledger' },
   { key: 'all-bookings',       label: 'All Bookings Report' },
   { key: 'summary',            label: 'Summary Report' },
   { key: 'temple-wise',        label: 'Temple Wise Bookings Report' },

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Calendar, ChevronLeft, ChevronRight, SlidersHorizontal, Download } from 'lucide-react';
+import { Plus, Calendar, ChevronLeft, ChevronRight, SlidersHorizontal, Download, RefreshCw } from 'lucide-react';
 import { SearchBar } from './SearchBar';
 import { TabToggle } from './TabToggle';
 
@@ -31,6 +31,12 @@ interface PageHeaderProps {
 
   // Export the whole report (top-right download icon).
   onExport?: () => void;
+  /** Optional second export button — when set, renders a PDF download icon next to the Excel one. */
+  onExportPdf?: () => void;
+  /** Refresh data from the source. Shows a refresh icon when provided. */
+  onRefresh?: () => void;
+  /** When true, the refresh icon spins (data is reloading). */
+  refreshing?: boolean;
 }
 
 function todayIso() {
@@ -66,6 +72,9 @@ export function PageHeader({
   filterValues,
   onFilterChange,
   onExport,
+  onExportPdf,
+  onRefresh,
+  refreshing,
 }: PageHeaderProps) {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -214,14 +223,35 @@ export function PageHeader({
             )}
           </div>
         )}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="h-8 w-8 bg-accent border border-border rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : undefined} />
+          </button>
+        )}
         {showExport && (
           <button
             onClick={onExport}
             disabled={!onExport}
-            className="h-8 w-8 bg-accent border border-border rounded-md flex items-center justify-center text-primary hover:bg-primary/10 disabled:opacity-40 disabled:hover:bg-accent"
+            className="h-8 px-2 bg-accent border border-border rounded-md flex items-center gap-1 text-[11px] text-primary hover:bg-primary/10 disabled:opacity-40 disabled:hover:bg-accent"
             title="Export to Excel"
           >
             <Download size={14} />
+            <span className="font-semibold tracking-wider">XLSX</span>
+          </button>
+        )}
+        {onExportPdf && (
+          <button
+            onClick={onExportPdf}
+            className="h-8 px-2 bg-accent border border-border rounded-md flex items-center gap-1 text-[11px] text-primary hover:bg-primary/10"
+            title="Export to PDF"
+          >
+            <Download size={14} />
+            <span className="font-semibold tracking-wider">PDF</span>
           </button>
         )}
         {onAdd && (

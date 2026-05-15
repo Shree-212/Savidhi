@@ -112,11 +112,13 @@ pujaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, ne
     }
 
     const bookingsResult = await pool.query(
+      // Earliest booking first so the admin sankalp-video modal and the
+      // puja sankalp report list devotees in booking order.
       `SELECT pb.*, d.name AS devotee_name, d.phone AS devotee_phone
        FROM puja_bookings pb
        JOIN devotees d ON d.id = pb.devotee_id
        WHERE pb.puja_event_id = $1
-       ORDER BY pb.created_at DESC`,
+       ORDER BY pb.created_at ASC`,
       [id],
     );
 
@@ -140,8 +142,8 @@ pujaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, ne
 pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { puja_id, pujari_id, start_time, has_prasad } = req.body;
-    if (!puja_id || !start_time) {
-      return res.status(400).json({ success: false, message: 'puja_id and start_time are required' });
+    if (!puja_id) {
+      return res.status(400).json({ success: false, message: 'puja_id is required' });
     }
 
     // Fetch max_devotee from puja definition
@@ -155,7 +157,7 @@ pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, nex
     const { rows } = await pool.query(
       `INSERT INTO puja_events (puja_id, pujari_id, start_time, max_bookings, has_prasad)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [puja_id, pujari_id ?? null, start_time, maxBookings, has_prasad ?? true],
+      [puja_id, pujari_id ?? null, start_time ?? null, maxBookings, has_prasad ?? true],
     );
 
     res.status(201).json({ success: true, data: rows[0] });

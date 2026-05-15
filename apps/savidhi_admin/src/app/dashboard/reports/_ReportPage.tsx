@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, FileText } from 'lucide-react';
+import JSZip from 'jszip';
 import { reportService, downloadBlob } from '@/lib/services';
+import { buildPdf, downloadPdfBlob } from '@/lib/reportPdf';
 import { PageHeader } from '@/components/shared/PageHeader';
-import { DataTable } from '@/components/shared/DataTable';
+import { DataTable, type SortDir } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { DownloadButton } from '@/components/shared/ActionButtons';
 
 /**
  * Shared page body used by each /dashboard/reports/<slug> route.
@@ -142,8 +143,6 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
       { key: 'variable', label: 'Variable' },
       { key: 'totalNumber', label: 'Total Number' },
       { key: 'totalCost', label: 'Total Cost', render: (r: any) => <span className="text-status-not-started">₹{r.totalCost}</span> },
-      { key: 'totalFee', label: 'Total Fee', render: (r: any) => <span className="text-primary">₹{r.totalFee}</span> },
-      { key: 'netProfit', label: 'Net Profit', render: (r: any) => <span className="text-status-completed">₹{r.netProfit}</span> },
     ],
   },
   'temple-wise': {
@@ -187,12 +186,75 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
   },
 };
 
+/** Column spec used by the per-row PDF export for grouped reports. */
+function innerColumnsFor(key: ReportKey): { key: string; label: string }[] {
+  if (key === 'puja-sankalp' || key === 'chadhava-sankalp') {
+    return [
+      { key: 'sl', label: 'SL' },
+      { key: 'name', label: 'Devotee Name' },
+      { key: 'gotra', label: 'Gotra' },
+    ];
+  }
+  if (key === 'appointments') {
+    return [
+      { key: 'sl', label: 'SL' },
+      { key: 'name', label: 'Devotee Name' },
+      { key: 'gotra', label: 'Gotra' },
+      { key: 'start', label: 'Start Time' },
+      { key: 'duration', label: 'Duration' },
+      { key: 'link', label: 'Meeting Link' },
+    ];
+  }
+  return [];
+}
+
+/** Strip filesystem-hostile characters from a string for use as a filename. */
+function sanitizeFilename(name: string): string {
+  return name.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 200) || 'export';
+}
+
 function filterRows(rows: any[], search: string) {
   if (!search) return rows;
   const q = search.toLowerCase();
   return rows.filter((r) =>
     Object.values(r).some((v) => v !== null && v !== undefined && String(v).toLowerCase().includes(q)),
   );
+}
+
+/**
+ * Sort a list of plain rows by a key in ascending or descending order. Numbers
+ * are compared numerically, parseable date strings by their timestamp, and
+ * everything else as case-insensitive strings. Null/undefined values sink to
+ * the end regardless of direction.
+ */
+function sortRows(rows: any[], key: string | null, dir: SortDir): any[] {
+  if (!key) return rows;
+  const out = [...rows];
+  out.sort((a, b) => {
+    const va = a?.[key];
+    const vb = b?.[key];
+    const aMissing = va === null || va === undefined || va === '';
+    const bMissing = vb === null || vb === undefined || vb === '';
+    if (aMissing && bMissing) return 0;
+    if (aMissing) return 1;
+    if (bMissing) return -1;
+
+    if (typeof va === 'number' && typeof vb === 'number') {
+      return dir === 'asc' ? va - vb : vb - va;
+    }
+    // Try date comparison if both look like parseable dates.
+    const da = Date.parse(String(va));
+    const db = Date.parse(String(vb));
+    if (!Number.isNaN(da) && !Number.isNaN(db) && /[-/:]/.test(String(va))) {
+      return dir === 'asc' ? da - db : db - da;
+    }
+    const sa = String(va).toLowerCase();
+    const sb = String(vb).toLowerCase();
+    if (sa < sb) return dir === 'asc' ? -1 : 1;
+    if (sa > sb) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return out;
 }
 
 export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; reportPicker?: React.ReactNode }) {
@@ -205,6 +267,17 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
   const [error, setError] = useState<string | null>(null);
   const [downloadingRow, setDownloadingRow] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const handleSortChange = (key: string) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -262,7 +335,52 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
     }
   };
 
-  const handleRowDownload = async (row: any) => {
+  /**
+   * Top-of-report PDF export.
+   * Single-file reports → render `visible` rows directly using `meta.columns`.
+   * Multi-file reports (per-row download) → fetch the inner data per row as
+   * JSON, build one PDF per row, zip them with JSZip, save as `.zip`.
+   */
+  const handleExportPdf = async () => {
+    try {
+      setExporting(true);
+      const pdfCols = meta.columns.map((c: any) => ({ key: c.key, label: c.label }));
+
+      if (!meta.rowDownloadKey) {
+        const blob = buildPdf(meta.title, visible, pdfCols);
+        downloadPdfBlob(blob, `${meta.title}.pdf`);
+        return;
+      }
+
+      // Multi-file: build one PDF per row in-browser, then zip.
+      const zip = new JSZip();
+      const params: any = {};
+      if (fromDate) params.from_date = fromDate;
+      if (toDate)   params.to_date   = toDate;
+
+      for (const row of visible) {
+        const rowId = row[meta.rowDownloadKey];
+        if (!rowId) continue;
+        const res = await reportService.rowJson(reportKey, rowId, params);
+        const payload = res.data?.data ?? {};
+        const label = payload.label ?? rowId;
+        const inner: any[] = payload.devotees ?? payload.appointments ?? [];
+        const innerCols = innerColumnsFor(reportKey);
+        const blob = buildPdf(`${meta.title} — ${label}`, inner, innerCols);
+        const arr = await blob.arrayBuffer();
+        zip.file(`${sanitizeFilename(label)}.pdf`, arr);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      downloadPdfBlob(zipBlob, `${meta.title}.zip`);
+    } catch (err: any) {
+      alert(err?.message ?? 'PDF export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRowDownloadXlsx = async (row: any) => {
     if (!meta.rowDownloadKey) return;
     const rowId = row[meta.rowDownloadKey];
     if (!rowId) return;
@@ -271,8 +389,8 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
       const params: any = {};
       if (fromDate) params.from_date = fromDate;
       if (toDate)   params.to_date   = toDate;
-      const res = await reportService.downloadRow(reportKey, rowId, params);
-      downloadBlob(res, `${meta.title} - ${rowId}.zip`);
+      const res = await reportService.downloadRow(reportKey, rowId, 'xlsx', params);
+      downloadBlob(res, `${meta.title} - ${rowId}.xlsx`);
     } catch (err: any) {
       alert(await extractBlobError(err));
     } finally {
@@ -280,26 +398,69 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
     }
   };
 
+  const handleRowDownloadPdf = async (row: any) => {
+    if (!meta.rowDownloadKey) return;
+    const rowId = row[meta.rowDownloadKey];
+    if (!rowId) return;
+    try {
+      setDownloadingRow(rowId);
+      const params: any = {};
+      if (fromDate) params.from_date = fromDate;
+      if (toDate)   params.to_date   = toDate;
+      const res = await reportService.rowJson(reportKey, rowId, params);
+      const payload = res.data?.data ?? {};
+      const label = payload.label ?? rowId;
+      const inner: any[] = payload.devotees ?? payload.appointments ?? [];
+      const innerCols = innerColumnsFor(reportKey);
+      const blob = buildPdf(`${meta.title} — ${label}`, inner, innerCols);
+      downloadPdfBlob(blob, `${meta.title} - ${label}.pdf`);
+    } catch (err: any) {
+      alert(err?.response?.data?.message ?? err?.message ?? 'PDF export failed');
+    } finally {
+      setDownloadingRow(null);
+    }
+  };
+
   // Build the columns we'll actually render, appending the action column when
-  // the report supports per-row download.
+  // the report supports per-row download. Two icons per row: XLSX + PDF.
   const columns = meta.rowDownloadKey
     ? [
         ...meta.columns,
         {
           key: 'action',
           label: '',
-          render: (row: any) => (
-            <DownloadButton
-              onClick={() => handleRowDownload(row)}
-              disabled={downloadingRow === row[meta.rowDownloadKey!]}
-              title="Download for this row"
-            />
-          ),
+          sortable: false as const,
+          render: (row: any) => {
+            const rowId = row[meta.rowDownloadKey!];
+            const busy = downloadingRow === rowId;
+            return (
+              <div className="flex items-center gap-1.5 justify-end">
+                <button
+                  type="button"
+                  onClick={() => handleRowDownloadXlsx(row)}
+                  disabled={busy}
+                  title="Download XLSX"
+                  className="h-7 w-7 rounded-md border border-border bg-accent text-primary hover:bg-primary/10 flex items-center justify-center disabled:opacity-40"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRowDownloadPdf(row)}
+                  disabled={busy}
+                  title="Download PDF"
+                  className="h-7 w-7 rounded-md border border-border bg-accent text-primary hover:bg-primary/10 flex items-center justify-center disabled:opacity-40"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          },
         },
       ]
     : meta.columns;
 
-  const visible = filterRows(data, search);
+  const visible = sortRows(filterRows(data, search), sortKey, sortDir);
 
   return (
     <div>
@@ -322,6 +483,9 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
         toDate={toDate}
         onDateChange={({ from, to }) => { setFromDate(from); setToDate(to); }}
         onExport={meta.exportFormat ? handleExport : undefined}
+        onExportPdf={handleExportPdf}
+        onRefresh={fetchData}
+        refreshing={loading}
       />
       {loading && <div className="px-6 pb-6 text-sm text-muted-foreground">Loading report…</div>}
       {error && <div className="px-6 pb-6 text-sm text-red-500">{error}</div>}
@@ -330,7 +494,13 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
           {visible.length === 0 ? (
             <div className="px-6 pb-6 text-sm text-muted-foreground">No data for the selected filters.</div>
           ) : (
-            <DataTable columns={columns} data={visible} />
+            <DataTable
+              columns={columns}
+              data={visible}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSortChange={handleSortChange}
+            />
           )}
           {exporting && <div className="px-6 pb-6 text-xs text-muted-foreground">Preparing export…</div>}
         </>

@@ -165,7 +165,8 @@ function ChadhavaBookingsPageInner() {
       const res = await chadhavaEventService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       setChadhavaEvents(raw.map(mapEvent));
-      setTimelineEvents(raw.map(toTimelineEvent));
+      // Calendar can only place events that have a real start_time.
+      setTimelineEvents(raw.filter((e: any) => e.start_time).map(toTimelineEvent));
     } catch (err: any) {
       setError(err.message || 'Failed to load chadhava events');
     } finally {
@@ -267,13 +268,19 @@ function ChadhavaBookingsPageInner() {
   };
 
   const handleCreateEvent = async () => {
-    if (!newEventChadhavaId || !newEventDate || !newEventTime) {
-      alert('Please select a chadhava, date, and time');
+    if (!newEventChadhavaId) {
+      alert('Please select a chadhava');
+      return;
+    }
+    if ((newEventDate && !newEventTime) || (!newEventDate && newEventTime)) {
+      alert('Please provide both date and time, or leave both empty');
       return;
     }
     try {
       setCreating(true);
-      const start_time = new Date(`${newEventDate}T${newEventTime}`).toISOString();
+      const start_time = newEventDate && newEventTime
+        ? new Date(`${newEventDate}T${newEventTime}`).toISOString()
+        : null;
       await chadhavaEventService.create({
         chadhava_id: newEventChadhavaId,
         pujari_id: newEventPujariId || undefined,
@@ -694,8 +701,10 @@ function ChadhavaBookingsPageInner() {
                 if (editEventPujariId !== ((selectedEvent as any).pujari_id ?? '')) {
                   data.pujari_id = editEventPujariId || null;
                 }
-                if (editEventStartTime && (selectedEvent.bookingsData?.length ?? 0) === 0) {
-                  data.start_time = new Date(editEventStartTime).toISOString();
+                if ((selectedEvent.bookingsData?.length ?? 0) === 0) {
+                  data.start_time = editEventStartTime
+                    ? new Date(editEventStartTime).toISOString()
+                    : null;
                 }
                 if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
                   data.max_bookings = editEventMaxBookings;

@@ -21,8 +21,9 @@ export function SupportActions({ shareTitle, shareUrl }: SupportActionsProps) {
     settingsService.get()
       .then((res) => {
         const d = res.data?.data ?? res.data ?? {};
-        const phone = d.support_phone ?? d.supportPhone ?? d.contact_phone ?? d.phone ?? null;
-        if (phone) setSupportPhone(String(phone));
+        // Backend column is `call_support_number` (catalog-service app_settings).
+        const phone = d.call_support_number ?? d.support_phone ?? d.phone ?? null;
+        if (typeof phone === 'string' && phone.trim()) setSupportPhone(phone.trim());
       })
       .catch(() => { /* keep fallback */ });
   }, []);

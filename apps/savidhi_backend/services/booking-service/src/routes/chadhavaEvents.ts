@@ -109,11 +109,13 @@ chadhavaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response
     }
 
     const bookingsResult = await pool.query(
+      // Earliest booking first so the admin sankalp-video modal and the
+      // chadhava sankalp report list devotees in booking order.
       `SELECT cb.*, d.name AS devotee_name, d.phone AS devotee_phone
        FROM chadhava_bookings cb
        JOIN devotees d ON d.id = cb.devotee_id
        WHERE cb.chadhava_event_id = $1
-       ORDER BY cb.created_at DESC`,
+       ORDER BY cb.created_at ASC`,
       [id],
     );
 
@@ -145,8 +147,8 @@ chadhavaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response
 chadhavaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chadhava_id, pujari_id, start_time, has_prasad } = req.body;
-    if (!chadhava_id || !start_time) {
-      return res.status(400).json({ success: false, message: 'chadhava_id and start_time are required' });
+    if (!chadhava_id) {
+      return res.status(400).json({ success: false, message: 'chadhava_id is required' });
     }
 
     const chResult = await pool.query(`SELECT max_bookings_per_event FROM chadhavas WHERE id = $1`, [chadhava_id]);
@@ -159,7 +161,7 @@ chadhavaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response,
     const { rows } = await pool.query(
       `INSERT INTO chadhava_events (chadhava_id, pujari_id, start_time, max_bookings, has_prasad)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [chadhava_id, pujari_id ?? null, start_time, maxBookings, has_prasad ?? true],
+      [chadhava_id, pujari_id ?? null, start_time ?? null, maxBookings, has_prasad ?? true],
     );
 
     res.status(201).json({ success: true, data: rows[0] });

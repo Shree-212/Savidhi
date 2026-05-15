@@ -150,6 +150,7 @@ export interface PujaBooking {
 export type ChadhavaBookingStatus =
   | 'YET_TO_START'
   | 'ONGOING'
+  | 'VIDEO_PROCESSING'
   | 'PRASAD_SHIPPED'
   | 'COMPLETE'
   | 'CANCELLED';

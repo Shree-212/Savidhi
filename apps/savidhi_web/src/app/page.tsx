@@ -372,24 +372,26 @@ export default function HomePage() {
       <HomeBannerCarousel />
 
       {/* ═══════════ UPCOMING PUJAS ═══════════ */}
-      <section className="section-container py-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingPujas')}</h2>
-          <Link href="/puja" className="text-xs text-primary-500 font-medium hover:underline">
-            View All
-          </Link>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {pujas.slice(0, pujaReveal.limit).map((puja) => (
-            <PujaCard key={puja.id} puja={puja} />
-          ))}
-        </div>
-        {pujas.length > pujaReveal.limit && (
-          <div ref={pujaReveal.sentinelRef} className="h-12 flex items-center justify-center mt-2">
-            <span className="text-xs text-text-muted">Loading more pujas…</span>
+      {pujas.length > 0 && (
+        <section className="section-container py-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingPujas')}</h2>
+            <Link href="/puja" className="text-xs text-primary-500 font-medium hover:underline">
+              View All
+            </Link>
           </div>
-        )}
-      </section>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {pujas.slice(0, pujaReveal.limit).map((puja) => (
+              <PujaCard key={puja.id} puja={puja} />
+            ))}
+          </div>
+          {pujas.length > pujaReveal.limit && (
+            <div ref={pujaReveal.sentinelRef} className="h-12 flex items-center justify-center mt-2">
+              <span className="text-xs text-text-muted">Loading more pujas…</span>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ═══════════ HOW TO BOOK ═══════════ */}
       <section className="relative bg-gradient-to-br from-orange-100/70 via-orange-50 to-amber-50/60 border-y border-orange-200/60 py-10 sm:py-12 overflow-hidden">
@@ -450,24 +452,26 @@ export default function HomePage() {
       </section>
 
       {/* ═══════════ DAILY CHADHAVA ═══════════ */}
-      <section className="section-container py-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingChadhavas')}</h2>
-          <Link href="/chadhava" className="text-xs text-primary-500 font-medium hover:underline">
-            View All
-          </Link>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {chadhavas.slice(0, chadhavaReveal.limit).map((c) => (
-            <ChadhavaCard key={c.id} chadhava={c} />
-          ))}
-        </div>
-        {chadhavas.length > chadhavaReveal.limit && (
-          <div ref={chadhavaReveal.sentinelRef} className="h-12 flex items-center justify-center mt-2">
-            <span className="text-xs text-text-muted">Loading more chadhavas…</span>
+      {chadhavas.length > 0 && (
+        <section className="section-container py-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg sm:text-xl font-bold text-text-primary">{t('home.upcomingChadhavas')}</h2>
+            <Link href="/chadhava" className="text-xs text-primary-500 font-medium hover:underline">
+              View All
+            </Link>
           </div>
-        )}
-      </section>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {chadhavas.slice(0, chadhavaReveal.limit).map((c) => (
+              <ChadhavaCard key={c.id} chadhava={c} />
+            ))}
+          </div>
+          {chadhavas.length > chadhavaReveal.limit && (
+            <div ref={chadhavaReveal.sentinelRef} className="h-12 flex items-center justify-center mt-2">
+              <span className="text-xs text-text-muted">Loading more chadhavas…</span>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ═══════════ OUR SERVICES ═══════════ */}
       <section className="bg-white py-10">
@@ -495,27 +499,29 @@ export default function HomePage() {
       </section>
 
       {/* ═══════════ EXPLORE PARTNERED TEMPLES ═══════════ */}
-      <section className="section-container py-8 pb-12">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-bold text-text-primary">
-            {t('home.featuredTemples')}
-          </h2>
-          <CarouselNav
-            onLeft={() => templeScroll.scroll('left')}
-            onRight={() => templeScroll.scroll('right')}
-          />
-        </div>
-        <div
-          ref={templeScroll.ref}
-          className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
-        >
-          {temples.map((temple) => (
-            <div key={temple.id} className="min-w-[260px] sm:min-w-[300px] snap-start">
-              <TempleCard temple={temple} />
-            </div>
-          ))}
-        </div>
-      </section>
+      {temples.length > 0 && (
+        <section className="section-container py-8 pb-12">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg sm:text-xl font-bold text-text-primary">
+              {t('home.featuredTemples')}
+            </h2>
+            <CarouselNav
+              onLeft={() => templeScroll.scroll('left')}
+              onRight={() => templeScroll.scroll('right')}
+            />
+          </div>
+          <div
+            ref={templeScroll.ref}
+            className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
+          >
+            {temples.map((temple) => (
+              <div key={temple.id} className="min-w-[260px] sm:min-w-[300px] snap-start">
+                <TempleCard temple={temple} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

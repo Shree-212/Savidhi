@@ -157,7 +157,8 @@ function PujaBookingsPageInner() {
       const res = await pujaEventService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       setPujaEvents(raw.map(mapEvent));
-      setTimelineEvents(raw.map(toTimelineEvent));
+      // Calendar can only place events that have a real start_time.
+      setTimelineEvents(raw.filter((e: any) => e.start_time).map(toTimelineEvent));
     } catch (err: any) {
       setError(err.message || 'Failed to load puja events');
     } finally {
@@ -227,13 +228,21 @@ function PujaBookingsPageInner() {
   };
 
   const handleCreateEvent = async () => {
-    if (!newEventPujaId || !newEventDate || !newEventTime) {
-      alert('Please select a puja, date, and time');
+    if (!newEventPujaId) {
+      alert('Please select a puja');
+      return;
+    }
+    // Both date and time are required together; either both filled or both
+    // left blank (null start_time persisted — reports render it as empty).
+    if ((newEventDate && !newEventTime) || (!newEventDate && newEventTime)) {
+      alert('Please provide both date and time, or leave both empty');
       return;
     }
     try {
       setCreating(true);
-      const start_time = new Date(`${newEventDate}T${newEventTime}`).toISOString();
+      const start_time = newEventDate && newEventTime
+        ? new Date(`${newEventDate}T${newEventTime}`).toISOString()
+        : null;
       await pujaEventService.create({
         puja_id: newEventPujaId,
         pujari_id: newEventPujariId || undefined,
@@ -713,8 +722,11 @@ function PujaBookingsPageInner() {
                 if (editEventPujariId !== ((selectedEvent as any).pujari_id ?? '')) {
                   data.pujari_id = editEventPujariId || null;
                 }
-                if (editEventStartTime && (selectedEvent.bookingsData?.length ?? 0) === 0) {
-                  data.start_time = new Date(editEventStartTime).toISOString();
+                if ((selectedEvent.bookingsData?.length ?? 0) === 0) {
+                  // Admin can either set a new start time or clear it (null).
+                  data.start_time = editEventStartTime
+                    ? new Date(editEventStartTime).toISOString()
+                    : null;
                 }
                 if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
                   data.max_bookings = editEventMaxBookings;
