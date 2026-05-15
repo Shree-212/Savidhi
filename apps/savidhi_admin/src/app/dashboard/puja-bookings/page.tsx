@@ -61,9 +61,10 @@ function mapBooking(b: any): PujaBooking {
   return {
     id: b.id,
     bookedBy: b.devotee_name ?? b.bookedBy ?? '',
+    bookedByPhone: b.devotee_phone ?? b.bookedByPhone ?? '',
     devoteeCount: b.devotee_count ?? b.devoteeCount ?? 0,
-    bookingTime: b.event_start_time
-      ? new Date(b.event_start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    bookingTime: b.created_at
+      ? new Date(b.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
       : b.bookingTime ?? '',
     cost: Number(b.cost ?? 0),
     status: b.status,
@@ -109,6 +110,8 @@ function PujaBookingsPageInner() {
   const [tab, setTab] = useState('List');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedPage, setExpandedPage] = useState(1);
+  const EXPANDED_PAGE_SIZE = 5;
   const [selectedBooking, setSelectedBooking] = useState<PujaBooking | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<(PujaEvent & { stage: PujaEventStage; bookingsData?: any[] }) | null>(null);
   const [showLiveModal, setShowLiveModal] = useState(false);
@@ -259,8 +262,12 @@ function PujaBookingsPageInner() {
   };
 
   useEffect(() => {
-    if (expandedId) fetchBookings(expandedId);
-    else setPujaBookings([]);
+    if (expandedId) {
+      fetchBookings(expandedId);
+      setExpandedPage(1);
+    } else {
+      setPujaBookings([]);
+    }
   }, [expandedId, fetchBookings]);
 
   // ── Stage advance handler ────────────────────────────────
@@ -363,6 +370,9 @@ function PujaBookingsPageInner() {
         ? <button onClick={() => router.push(`/dashboard/devotees?id=${(r as any).devotee_id}`)} className="text-primary hover:underline">{r.bookedBy}</button>
         : <span>{r.bookedBy}</span>
     ) },
+    { key: 'bookedByPhone', label: 'Phone', render: (r: PujaBooking) => (
+      r.bookedByPhone ? <span className="font-mono text-[11px]">+91 {r.bookedByPhone}</span> : <span className="text-muted-foreground">—</span>
+    ) },
     { key: 'devoteeCount', label: 'Devotee' },
     { key: 'bookingTime', label: 'Booking Time' },
     { key: 'cost', label: 'Cost', render: (r: PujaBooking) => <span className="text-primary">₹{r.cost}</span> },
@@ -370,10 +380,18 @@ function PujaBookingsPageInner() {
     { key: 'action', label: 'Action', render: (r: PujaBooking) => (
       <div className="flex items-center gap-1">
         <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
-        <DeleteButton onClick={() => handleCancelBooking(r.id)} />
+        <DeleteButton onClick={() => handleCancelBooking(r.id)} title="Cancel this booking" />
       </div>
     )},
   ];
+
+  // Paginated slice of bookings for the inline expanded panel.
+  const expandedTotalPages = Math.max(1, Math.ceil(pujaBookings.length / EXPANDED_PAGE_SIZE));
+  const expandedPageClamped = Math.min(expandedPage, expandedTotalPages);
+  const expandedSlice = pujaBookings.slice(
+    (expandedPageClamped - 1) * EXPANDED_PAGE_SIZE,
+    expandedPageClamped * EXPANDED_PAGE_SIZE,
+  );
 
   // Filter banner shown when scoped by puja_id or pujari_id query
   const filteredPuja = useMemo(
@@ -456,14 +474,39 @@ function PujaBookingsPageInner() {
               )}
             </div>
           ) : (
-            <DataTable columns={eventColumns} data={pujaEvents} />
-          )}
-
-          {/* Expanded booking rows */}
-          {expandedId && (
-            <div className="mt-2 ml-4 border-l-2 border-primary/30 pl-4">
-              <DataTable columns={bookingColumns} data={pujaBookings} />
-            </div>
+            <DataTable
+              columns={eventColumns}
+              data={pujaEvents}
+              expandedKey={expandedId}
+              renderExpanded={() => (
+                <div className="px-4 py-3 border-l-2 border-primary/40 bg-background">
+                  {pujaBookings.length === 0 ? (
+                    <div className="text-xs text-muted-foreground py-2">No bookings yet for this event.</div>
+                  ) : (
+                    <>
+                      <DataTable columns={bookingColumns} data={expandedSlice} />
+                      {expandedTotalPages > 1 && (
+                        <div className="flex items-center justify-end gap-2 mt-2 text-[11px] text-muted-foreground">
+                          <button
+                            onClick={() => setExpandedPage((p) => Math.max(1, p - 1))}
+                            disabled={expandedPageClamped <= 1}
+                            className="h-6 w-6 rounded border border-border bg-accent hover:text-foreground disabled:opacity-40 flex items-center justify-center"
+                            title="Previous page"
+                          >‹</button>
+                          <span>Page {expandedPageClamped}/{expandedTotalPages}</span>
+                          <button
+                            onClick={() => setExpandedPage((p) => Math.min(expandedTotalPages, p + 1))}
+                            disabled={expandedPageClamped >= expandedTotalPages}
+                            className="h-6 w-6 rounded border border-border bg-accent hover:text-foreground disabled:opacity-40 flex items-center justify-center"
+                            title="Next page"
+                          >›</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            />
           )}
         </div>
       ) : (

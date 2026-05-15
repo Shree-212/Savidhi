@@ -64,12 +64,16 @@ function mapBooking(b: any): ChadhavaBooking {
   return {
     id:                   b.id,
     bookedBy:             b.devotee_name ?? b.bookedBy ?? '',
+    bookedByPhone:        b.devotee_phone ?? b.bookedByPhone ?? '',
     devoteeCount:         b.devotees?.length ?? b.devoteeCount ?? 0,
-    bookingTime:          b.event_start_time
-      ? new Date(b.event_start_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    bookingTime:          b.created_at
+      ? new Date(b.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
       : b.bookingTime ?? '',
-    offerings:            b.offerings
-      ? b.offerings.map((o: any) => o.item_name ?? o.name).join(', ')
+    offerings:            b.offerings && b.offerings.length
+      ? b.offerings
+          .map((o: any) => `${o.quantity ?? 1}X ${o.item_name ?? o.name ?? ''}`.trim())
+          .filter(Boolean)
+          .join(', ')
       : b.offerings_summary ?? '',
     cost:                 Number(b.cost ?? 0),
     status:               b.status,
@@ -119,6 +123,8 @@ function ChadhavaBookingsPageInner() {
   const [tab,        setTab]        = useState('List');
   const [search,     setSearch]     = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedPage, setExpandedPage] = useState(1);
+  const EXPANDED_PAGE_SIZE = 5;
 
   const [selectedBooking, setSelectedBooking] = useState<ChadhavaBooking | null>(null);
   const [selectedEvent,   setSelectedEvent]   = useState<(ChadhavaEvent & { stage: ChadhavaEventStage; bookingsData?: any[] }) | null>(null);
@@ -210,10 +216,14 @@ function ChadhavaBookingsPageInner() {
   const clearFilter = () => router.push('/dashboard/chadhava-bookings');
 
   /* ── Fetch bookings for expanded event ── */
+  // We hit the event-detail endpoint instead of the bookings list because the
+  // list query does NOT return offerings — we need offerings + quantities for
+  // the sub-row's "Offerings" column.
   const fetchBookings = useCallback(async (eventId: string) => {
     try {
-      const res = await chadhavaBookingService.list({ chadhava_event_id: eventId });
-      const raw = res.data?.data ?? res.data ?? [];
+      const res = await chadhavaEventService.getById(eventId);
+      const data = res.data?.data ?? res.data ?? {};
+      const raw = data.bookings ?? [];
       setChadhavaBookings(raw.map(mapBooking));
     } catch {
       setChadhavaBookings([]);
@@ -297,8 +307,12 @@ function ChadhavaBookingsPageInner() {
   };
 
   useEffect(() => {
-    if (expandedId) fetchBookings(expandedId);
-    else setChadhavaBookings([]);
+    if (expandedId) {
+      fetchBookings(expandedId);
+      setExpandedPage(1);
+    } else {
+      setChadhavaBookings([]);
+    }
   }, [expandedId, fetchBookings]);
 
   /* ── Stage advance ── */
@@ -359,17 +373,31 @@ function ChadhavaBookingsPageInner() {
   const bookingColumns = [
     { key: 'id',       label: 'ID',       render: (r: any) => <span className="text-[10px] font-mono">{r.id.slice(0, 8)}</span> },
     { key: 'bookedBy', label: 'Booked By' },
+    { key: 'bookedByPhone', label: 'Phone', render: (r: ChadhavaBooking) => (
+      r.bookedByPhone ? <span className="font-mono text-[11px]">+91 {r.bookedByPhone}</span> : <span className="text-muted-foreground">—</span>
+    ) },
     { key: 'bookingTime', label: 'Booking Time' },
-    { key: 'offerings',   label: 'Offerings' },
+    { key: 'offerings',   label: 'Offerings', render: (r: ChadhavaBooking) => (
+      <span className="whitespace-pre-wrap">{r.offerings || '—'}</span>
+    ) },
+    { key: 'devoteeCount', label: 'Devotees' },
     { key: 'cost',        label: 'Cost', render: (r: ChadhavaBooking) => <span className="text-primary">₹{r.cost}</span> },
     { key: 'status',      label: 'Status', render: (r: ChadhavaBooking) => <StatusBadge status={r.status} /> },
     { key: 'action',      label: 'Action', render: (r: ChadhavaBooking) => (
       <div className="flex items-center gap-1">
         <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
-        <DeleteButton onClick={() => handleCancelBooking(r.id)} />
+        <DeleteButton onClick={() => handleCancelBooking(r.id)} title="Cancel this booking" />
       </div>
     )},
   ];
+
+  // Paginated slice of bookings for the inline expanded panel.
+  const expandedTotalPages = Math.max(1, Math.ceil(chadhavaBookings.length / EXPANDED_PAGE_SIZE));
+  const expandedPageClamped = Math.min(expandedPage, expandedTotalPages);
+  const expandedSlice = chadhavaBookings.slice(
+    (expandedPageClamped - 1) * EXPANDED_PAGE_SIZE,
+    expandedPageClamped * EXPANDED_PAGE_SIZE,
+  );
 
   /* ── Derived for event modal ── */
   const eventStage   = (selectedEvent as any)?.stage as ChadhavaEventStage | undefined;
@@ -441,12 +469,39 @@ function ChadhavaBookingsPageInner() {
               )}
             </div>
           ) : (
-            <DataTable columns={eventColumns} data={chadhavaEvents} />
-          )}
-          {expandedId && (
-            <div className="mt-2 ml-4 border-l-2 border-primary/30 pl-4">
-              <DataTable columns={bookingColumns} data={chadhavaBookings} />
-            </div>
+            <DataTable
+              columns={eventColumns}
+              data={chadhavaEvents}
+              expandedKey={expandedId}
+              renderExpanded={() => (
+                <div className="px-4 py-3 border-l-2 border-primary/40 bg-background">
+                  {chadhavaBookings.length === 0 ? (
+                    <div className="text-xs text-muted-foreground py-2">No bookings yet for this event.</div>
+                  ) : (
+                    <>
+                      <DataTable columns={bookingColumns} data={expandedSlice} />
+                      {expandedTotalPages > 1 && (
+                        <div className="flex items-center justify-end gap-2 mt-2 text-[11px] text-muted-foreground">
+                          <button
+                            onClick={() => setExpandedPage((p) => Math.max(1, p - 1))}
+                            disabled={expandedPageClamped <= 1}
+                            className="h-6 w-6 rounded border border-border bg-accent hover:text-foreground disabled:opacity-40 flex items-center justify-center"
+                            title="Previous page"
+                          >‹</button>
+                          <span>Page {expandedPageClamped}/{expandedTotalPages}</span>
+                          <button
+                            onClick={() => setExpandedPage((p) => Math.min(expandedTotalPages, p + 1))}
+                            disabled={expandedPageClamped >= expandedTotalPages}
+                            className="h-6 w-6 rounded border border-border bg-accent hover:text-foreground disabled:opacity-40 flex items-center justify-center"
+                            title="Next page"
+                          >›</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            />
           )}
         </div>
       ) : (

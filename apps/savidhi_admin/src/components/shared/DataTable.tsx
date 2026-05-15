@@ -1,5 +1,6 @@
 'use client';
 
+import { Fragment } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -14,7 +15,8 @@ interface Column<T> {
 
 export type SortDir = 'asc' | 'desc';
 
-interface DataTableProps<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface DataTableProps<T extends Record<string, any>> {
   columns: Column<T>[];
   data: T[];
   onRowClick?: (row: T, index: number) => void;
@@ -25,6 +27,15 @@ interface DataTableProps<T> {
   sortDir?: SortDir;
   /** Fired when the user clicks a sortable header. */
   onSortChange?: (key: string) => void;
+  /**
+   * Identifier extractor for a row — used to match against `expandedKey`.
+   * Defaults to `row.id`. Pass a string field name or a custom function.
+   */
+  rowKey?: keyof T | ((row: T) => string);
+  /** When set, the row whose extracted key matches gets an inline expansion. */
+  expandedKey?: string | null;
+  /** Renders inside the expansion `<tr>` (spans all columns). */
+  renderExpanded?: (row: T) => React.ReactNode;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,7 +47,16 @@ export function DataTable<T extends Record<string, any>>({
   sortKey,
   sortDir = 'asc',
   onSortChange,
+  rowKey,
+  expandedKey,
+  renderExpanded,
 }: DataTableProps<T>) {
+  const getRowKey = (row: T): string => {
+    if (typeof rowKey === 'function') return rowKey(row);
+    const k = (rowKey ?? 'id') as keyof T;
+    return String(row[k] ?? '');
+  };
+
   return (
     <div className={cn('overflow-x-auto', className)}>
       <table className="w-full text-xs">
@@ -73,22 +93,34 @@ export function DataTable<T extends Record<string, any>>({
           </tr>
         </thead>
         <tbody>
-          {data.map((row, i) => (
-            <tr
-              key={i}
-              onClick={() => onRowClick?.(row, i)}
-              className={cn(
-                'border-b border-border/50 transition-colors',
-                onRowClick && 'cursor-pointer hover:bg-accent/50'
-              )}
-            >
-              {columns.map((col) => (
-                <td key={col.key} className={cn('py-2.5 px-3 text-foreground/80', col.className)}>
-                  {col.render ? col.render(row, i) : String(row[col.key] ?? '')}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {data.map((row, i) => {
+            const isExpanded = renderExpanded && expandedKey != null && getRowKey(row) === expandedKey;
+            return (
+              <Fragment key={i}>
+                <tr
+                  onClick={() => onRowClick?.(row, i)}
+                  className={cn(
+                    'border-b border-border/50 transition-colors',
+                    onRowClick && 'cursor-pointer hover:bg-accent/50',
+                    isExpanded && 'bg-accent/30',
+                  )}
+                >
+                  {columns.map((col) => (
+                    <td key={col.key} className={cn('py-2.5 px-3 text-foreground/80', col.className)}>
+                      {col.render ? col.render(row, i) : String(row[col.key] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+                {isExpanded && (
+                  <tr className="bg-accent/20 border-b border-border/50">
+                    <td colSpan={columns.length} className="p-0">
+                      {renderExpanded!(row)}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

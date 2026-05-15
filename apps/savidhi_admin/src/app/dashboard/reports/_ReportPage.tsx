@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, FileSpreadsheet, FileText } from 'lucide-react';
 import JSZip from 'jszip';
 import { reportService, downloadBlob } from '@/lib/services';
-import { buildPdf, downloadPdfBlob } from '@/lib/reportPdf';
+import { buildPdf, downloadBlob as downloadFileBlob } from '@/lib/reportPdf';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable, type SortDir } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -347,8 +347,8 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
       const pdfCols = meta.columns.map((c: any) => ({ key: c.key, label: c.label }));
 
       if (!meta.rowDownloadKey) {
-        const blob = buildPdf(meta.title, visible, pdfCols);
-        downloadPdfBlob(blob, `${meta.title}.pdf`);
+        const blob = await buildPdf(meta.title, visible, pdfCols);
+        downloadFileBlob(blob, `${meta.title}.pdf`);
         return;
       }
 
@@ -366,13 +366,13 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
         const label = payload.label ?? rowId;
         const inner: any[] = payload.devotees ?? payload.appointments ?? [];
         const innerCols = innerColumnsFor(reportKey);
-        const blob = buildPdf(`${meta.title} — ${label}`, inner, innerCols);
+        const blob = await buildPdf(`${meta.title} — ${label}`, inner, innerCols);
         const arr = await blob.arrayBuffer();
         zip.file(`${sanitizeFilename(label)}.pdf`, arr);
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
-      downloadPdfBlob(zipBlob, `${meta.title}.zip`);
+      downloadFileBlob(zipBlob, `${meta.title}.zip`);
     } catch (err: any) {
       alert(err?.message ?? 'PDF export failed');
     } finally {
@@ -412,8 +412,8 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
       const label = payload.label ?? rowId;
       const inner: any[] = payload.devotees ?? payload.appointments ?? [];
       const innerCols = innerColumnsFor(reportKey);
-      const blob = buildPdf(`${meta.title} — ${label}`, inner, innerCols);
-      downloadPdfBlob(blob, `${meta.title} - ${label}.pdf`);
+      const blob = await buildPdf(`${meta.title} — ${label}`, inner, innerCols);
+      downloadFileBlob(blob, `${meta.title} - ${label}.pdf`);
     } catch (err: any) {
       alert(err?.response?.data?.message ?? err?.message ?? 'PDF export failed');
     } finally {

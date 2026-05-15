@@ -60,6 +60,7 @@ export interface DevoteeDetail {
 export interface PujaBooking {
   id: string;
   bookedBy: string;
+  bookedByPhone?: string;
   devoteeCount: number;
   bookingTime: string;
   cost: number;
@@ -104,6 +105,7 @@ export interface ChadhavaDevoteeDetail {
 export interface ChadhavaBooking {
   id: string;
   bookedBy: string;
+  bookedByPhone?: string;
   devoteeCount: number;
   bookingTime: string;
   offerings: string;
