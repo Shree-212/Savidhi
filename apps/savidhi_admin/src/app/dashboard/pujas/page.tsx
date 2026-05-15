@@ -349,17 +349,15 @@ function PujasPageInner() {
       <div className="flex items-center gap-1">
         <ViewButton onClick={() => handleEdit(r)} />
         <EditButton onClick={() => handleEdit(r)} />
-        {r.event_repeats && (
-          <button
-            type="button"
-            onClick={() => handleGenerate(r.id)}
-            disabled={generating === r.id}
-            title="Generate next 60 days of events"
-            className="text-xs px-2 py-1 border border-border rounded hover:bg-accent disabled:opacity-50"
-          >
-            {generating === r.id ? '…' : '⚡'}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => handleGenerate(r.id)}
+          disabled={generating === r.id}
+          title={r.event_repeats ? 'Generate next 60 days of events' : 'Generate the one-time event from the start date'}
+          className="text-xs px-2 py-1 border border-border rounded hover:bg-accent disabled:opacity-50"
+        >
+          {generating === r.id ? '…' : '⚡'}
+        </button>
         <button
           type="button"
           onClick={() => openCleanup(r)}

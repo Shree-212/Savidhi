@@ -12,7 +12,12 @@ function toDateInputValue(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8 AM – 8 PM
+// Full 24-hour window so events at any time of day (early-morning brahma
+// muhurta pujas, late-night aartis, etc.) render in the strip. Labels are
+// sparse (every 2 hours) to keep the header readable at the existing width.
+const HOUR_LABELS = Array.from({ length: 12 }, (_, i) => i * 2); // 0,2,4…22
+const WINDOW_START_HOUR = 0;
+const WINDOW_HOURS = 24;
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const COLOR_MAP: Record<string, string> = {
@@ -176,11 +181,11 @@ export function TimelineView({ events, onEventClick }: TimelineViewProps) {
         </div>
       </div>
 
-      {/* ── Hour labels ── */}
+      {/* ── Hour labels (sparse, every 2 hours across a full 24h window) ── */}
       <div className="flex border-b border-border/50 mb-1">
-        {HOURS.map(h => (
+        {HOUR_LABELS.map(h => (
           <div key={h} className="flex-1 text-[10px] text-muted-foreground text-center py-1">
-            {h > 12 ? `${h - 12} PM` : h === 12 ? '12 PM' : `${h} AM`}
+            {h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`}
           </div>
         ))}
       </div>
@@ -188,8 +193,12 @@ export function TimelineView({ events, onEventClick }: TimelineViewProps) {
       {/* ── Event grid: each event in its own row on the selected day ── */}
       <div style={{ minHeight: `${maxRows * ROW_H + 20}px` }} className="relative">
         {dayEvents.map((event, idx) => {
-          const leftPct  = ((event.startHour - 8) / 12) * 100;
-          const widthPct = Math.max((event.durationHours / 12) * 100, 10);
+          // Position events on the full 24h window. Clamp so off-day artefacts
+          // (e.g. a start_time stored in a wildly wrong year) at least stay
+          // visible on the strip rather than disappear off-screen.
+          const rawLeftPct  = ((event.startHour - WINDOW_START_HOUR) / WINDOW_HOURS) * 100;
+          const leftPct     = Math.max(0, Math.min(rawLeftPct, 97));
+          const widthPct    = Math.max((event.durationHours / WINDOW_HOURS) * 100, 5);
           const top      = idx * ROW_H + 4;
 
           return (

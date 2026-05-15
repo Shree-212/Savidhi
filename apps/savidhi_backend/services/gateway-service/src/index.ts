@@ -32,7 +32,10 @@ const isProd = process.env.NODE_ENV === 'production';
 
 app.use(rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max:       isProd ? (Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 600) : 10_000,
+  // 2500/15min is generous enough that a logged-in devotee browsing the
+  // catalog + viewing images + refreshing tokens won't trip it, while still
+  // capping runaway scripts. Env-override via RATE_LIMIT_MAX_REQUESTS.
+  max:       isProd ? (Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 2500) : 10_000,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) =>

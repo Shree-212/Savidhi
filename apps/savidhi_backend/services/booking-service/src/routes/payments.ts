@@ -18,6 +18,19 @@ function razorpayConfigured(): boolean {
   return !!razorpayClient;
 }
 
+/**
+ * Soft-launch escape hatch. When `PAYMENTS_FORCE_STUB=true` is set on the
+ * booking-service deployment, every booking goes through the stub path —
+ * Razorpay is never called, the order id is `order_stub_…`, and the verify
+ * step accepts the stub signature so the booking is auto-confirmed. Useful
+ * when we want users to complete the full booking flow before live payments
+ * are switched on. Flip the env back to unset (or "false") to resume normal
+ * Razorpay processing.
+ */
+function paymentsForceStub(): boolean {
+  return String(process.env.PAYMENTS_FORCE_STUB ?? '').toLowerCase() === 'true';
+}
+
 function tableForBookingType(bookingType: string): string {
   if (bookingType === 'PUJA') return 'puja_bookings';
   if (bookingType === 'CHADHAVA') return 'chadhava_bookings';
@@ -48,12 +61,20 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       [idempotencyKey, userId],
     );
     if (dup.rows.length > 0) {
+      // Treat the existing order as a stub if force-stub is on, OR if the
+      // stored gateway_order_id starts with `order_stub_`, OR if Razorpay
+      // isn't configured. The frontend uses this flag to skip the checkout
+      // modal and verify directly.
+      const existing = dup.rows[0];
+      const existingIsStub = paymentsForceStub()
+        || String(existing.gateway_order_id ?? '').startsWith('order_stub_')
+        || !razorpayConfigured();
       return res.json({
         success: true,
         data: {
-          ...dup.rows[0],
-          razorpay_key_id: RAZORPAY_KEY_ID || null,
-          stub: !razorpayConfigured(),
+          ...existing,
+          razorpay_key_id: existingIsStub ? null : RAZORPAY_KEY_ID || null,
+          stub: existingIsStub,
           reused: true,
         },
       });
@@ -95,10 +116,14 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
     // either the keys are missing OR the gateway rejects them (e.g. invalid
     // test keys), so booking flows remain testable end-to-end without a live
     // Razorpay account. In production a Razorpay failure stays a hard error.
+    // Soft-launch override: PAYMENTS_FORCE_STUB=true forces stub even in prod.
     let gatewayOrderId: string;
     let usedStub = false;
 
-    if (razorpayConfigured()) {
+    if (paymentsForceStub()) {
+      gatewayOrderId = `order_stub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      usedStub = true;
+    } else if (razorpayConfigured()) {
       try {
         const rzpOrder = await razorpayClient!.orders.create({
           amount: amountPaise,

@@ -35,7 +35,7 @@ app.use(
 const _isProd = process.env.NODE_ENV === 'production';
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: _isProd ? 200 : 10_000,
+  max: _isProd ? 500 : 10_000,
   standardHeaders: true,
   legacyHeaders: false,
 }));

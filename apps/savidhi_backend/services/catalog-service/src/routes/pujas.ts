@@ -381,32 +381,38 @@ pujasRouter.post('/:id/generate-events', requireAuth, requireAdmin('ADMIN', 'BOO
     if (pujaRes.rows.length === 0) { res.status(404).json({ success: false, message: 'Puja not found' }); return; }
     const puja = pujaRes.rows[0];
 
-    if (!puja.event_repeats) {
-      res.status(400).json({ success: false, message: 'Puja is not set to repeat (event_repeats=false)' });
-      return;
-    }
-    if (!REPEAT_DURATIONS.has(puja.repeat_duration)) {
-      res.status(400).json({ success: false, message: 'Puja has no valid repeat_duration' });
-      return;
-    }
-    if (!Array.isArray(puja.repeats_on) || puja.repeats_on.length === 0) {
-      res.status(400).json({ success: false, message: 'Puja has empty repeats_on' });
-      return;
-    }
-
-    const startDate = puja.start_date ? new Date(puja.start_date) : new Date();
-    const fromDate = startDate.getTime() < Date.now() ? new Date() : startDate;
-
-    const dates = await nextEventDates(
-      puja.repeat_duration as RepeatDuration,
-      puja.repeats_on as string[],
-      fromDate,
-      days,
-    );
-
     const { h, m } = parseTimeOfDayIST(puja.schedule_time);
     const maxBookings = Number(puja.max_devotee) || 100;
     const pujariId = puja.default_pujari_id || null;
+
+    // Decide which dates to materialize:
+    //   event_repeats=true  → use repeat config (next `days` worth of occurrences).
+    //   event_repeats=false → one event at the puja's start_date (one-time).
+    let dates: Date[];
+    if (puja.event_repeats) {
+      if (!REPEAT_DURATIONS.has(puja.repeat_duration)) {
+        res.status(400).json({ success: false, message: 'Puja has no valid repeat_duration' });
+        return;
+      }
+      if (!Array.isArray(puja.repeats_on) || puja.repeats_on.length === 0) {
+        res.status(400).json({ success: false, message: 'Puja has empty repeats_on' });
+        return;
+      }
+      const startDate = puja.start_date ? new Date(puja.start_date) : new Date();
+      const fromDate = startDate.getTime() < Date.now() ? new Date() : startDate;
+      dates = await nextEventDates(
+        puja.repeat_duration as RepeatDuration,
+        puja.repeats_on as string[],
+        fromDate,
+        days,
+      );
+    } else {
+      if (!puja.start_date) {
+        res.status(400).json({ success: false, message: 'Set a start date on the puja before generating its one-time event.' });
+        return;
+      }
+      dates = [new Date(puja.start_date)];
+    }
 
     let generated = 0;
     let skipped = 0;
@@ -425,7 +431,7 @@ pujasRouter.post('/:id/generate-events', requireAuth, requireAdmin('ADMIN', 'BOO
 
     res.json({
       success: true,
-      data: { generated, skipped, total_dates: dates.length, days },
+      data: { generated, skipped, total_dates: dates.length, days: puja.event_repeats ? days : 1 },
       message: `Generated ${generated} events (${skipped} already existed)`,
     });
   } catch (err) { next(err); }

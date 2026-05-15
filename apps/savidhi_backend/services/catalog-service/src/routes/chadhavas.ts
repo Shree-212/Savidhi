@@ -513,32 +513,38 @@ chadhavasRouter.post('/:id/generate-events', requireAuth, requireAdmin('ADMIN', 
     if (chRes.rows.length === 0) { res.status(404).json({ success: false, message: 'Chadhava not found' }); return; }
     const ch = chRes.rows[0];
 
-    if (!ch.event_repeats) {
-      res.status(400).json({ success: false, message: 'Chadhava is not set to repeat (event_repeats=false)' });
-      return;
-    }
-    if (!REPEAT_DURATIONS.has(ch.repeat_duration)) {
-      res.status(400).json({ success: false, message: 'Chadhava has no valid repeat_duration' });
-      return;
-    }
-    if (!Array.isArray(ch.repeats_on) || ch.repeats_on.length === 0) {
-      res.status(400).json({ success: false, message: 'Chadhava has empty repeats_on' });
-      return;
-    }
-
-    const startDate = ch.start_date ? new Date(ch.start_date) : new Date();
-    const fromDate = startDate.getTime() < Date.now() ? new Date() : startDate;
-
-    const dates = await nextEventDates(
-      ch.repeat_duration as RepeatDuration,
-      ch.repeats_on as string[],
-      fromDate,
-      days,
-    );
-
     const { h, m } = parseTimeOfDayIST(ch.schedule_time);
     const maxBookings = Number(ch.max_bookings_per_event) || 100;
     const pujariId = ch.default_pujari_id || null;
+
+    // Decide which dates to materialize:
+    //   event_repeats=true  → use repeat config (next `days` worth of occurrences).
+    //   event_repeats=false → one event at the chadhava's start_date (one-time).
+    let dates: Date[];
+    if (ch.event_repeats) {
+      if (!REPEAT_DURATIONS.has(ch.repeat_duration)) {
+        res.status(400).json({ success: false, message: 'Chadhava has no valid repeat_duration' });
+        return;
+      }
+      if (!Array.isArray(ch.repeats_on) || ch.repeats_on.length === 0) {
+        res.status(400).json({ success: false, message: 'Chadhava has empty repeats_on' });
+        return;
+      }
+      const startDate = ch.start_date ? new Date(ch.start_date) : new Date();
+      const fromDate = startDate.getTime() < Date.now() ? new Date() : startDate;
+      dates = await nextEventDates(
+        ch.repeat_duration as RepeatDuration,
+        ch.repeats_on as string[],
+        fromDate,
+        days,
+      );
+    } else {
+      if (!ch.start_date) {
+        res.status(400).json({ success: false, message: 'Set a start date on the chadhava before generating its one-time event.' });
+        return;
+      }
+      dates = [new Date(ch.start_date)];
+    }
 
     let generated = 0;
     let skipped = 0;
@@ -557,7 +563,7 @@ chadhavasRouter.post('/:id/generate-events', requireAuth, requireAdmin('ADMIN', 
 
     res.json({
       success: true,
-      data: { generated, skipped, total_dates: dates.length, days },
+      data: { generated, skipped, total_dates: dates.length, days: ch.event_repeats ? days : 1 },
       message: `Generated ${generated} events (${skipped} already existed)`,
     });
   } catch (err) { next(err); }

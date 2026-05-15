@@ -22,7 +22,11 @@ app.use(helmet());
 app.use(cors({ origin: (process.env.CORS_ORIGIN ?? 'http://localhost:3001').split(','), credentials: true }));
 app.use(express.json());
 const _isProd = process.env.NODE_ENV === 'production';
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: _isProd ? 100 : 10_000, standardHeaders: true, legacyHeaders: false }));
+// Catalog is mostly cacheable public reads (settings, banners, pujas, chadhavas,
+// temples, panchang) — a single page load fans out to 6-10 endpoints, and an
+// active session can easily exceed 100/15min. 1000/15min gives normal browsing
+// room while still capping runaway scripts.
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: _isProd ? 1000 : 10_000, standardHeaders: true, legacyHeaders: false }));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'catalog-service', timestamp: new Date().toISOString() });
