@@ -294,14 +294,19 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     const signature = req.headers['x-razorpay-signature'] as string | undefined;
     const raw = (req as any).rawBody as Buffer | undefined;
 
-    if (secret && raw && signature) {
+    if (secret) {
+      // Once the secret is configured, treat signature verification as mandatory.
+      // Razorpay always sends `x-razorpay-signature` on every webhook, so any
+      // request missing it is either misrouted or forged.
+      if (!signature || !raw) {
+        console.warn('[razorpay webhook] missing signature or raw body', { hasSignature: !!signature, hasRaw: !!raw });
+        return res.status(400).json({ success: false, message: 'Missing webhook signature' });
+      }
       const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
       if (expected !== signature) {
         console.warn('[razorpay webhook] invalid signature');
         return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
       }
-    } else if (secret && !signature) {
-      console.warn('[razorpay webhook] received without x-razorpay-signature header');
     }
 
     const body = req.body as any;

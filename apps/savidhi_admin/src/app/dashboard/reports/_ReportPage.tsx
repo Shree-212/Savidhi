@@ -23,7 +23,9 @@ export type ReportKey =
   | 'puja-sankalp'
   | 'chadhava-sankalp'
   | 'chadhava-offerings'
+  | 'chadhava-offerings-detail'
   | 'appointments'
+  | 'payments'
   | 'ledger'
   | 'all-bookings'
   | 'summary'
@@ -127,12 +129,15 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
     exportFormat: 'xlsx',
     columns: [
       { key: 'id', label: 'ID' },
-      { key: 'devoteeName', label: 'Devotee Name' },
+      { key: 'devoteeName', label: 'Devotee' },
+      { key: 'phone', label: 'Phone', render: (r: any) => r.phone ? <span className="font-mono text-[11px]">+91 {r.phone}</span> : <span className="text-muted-foreground">—</span> },
+      { key: 'sankalpDevotees', label: 'Sankalp Names' },
       { key: 'type', label: 'Type', render: (r: any) => <StatusBadge status={r.type} /> },
       { key: 'service', label: 'Service' },
       { key: 'dateTime', label: 'Date & Time' },
       { key: 'cost', label: 'Cost', render: (r: any) => <span className="text-primary">₹{r.cost}</span> },
       { key: 'status', label: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
+      { key: 'paymentStatus', label: 'Payment', render: (r: any) => r.paymentStatus ? <StatusBadge status={r.paymentStatus} /> : <span className="text-muted-foreground">—</span> },
     ],
   },
   'summary': {
@@ -141,8 +146,46 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
     exportFormat: 'xlsx',
     columns: [
       { key: 'variable', label: 'Variable' },
-      { key: 'totalNumber', label: 'Total Number' },
-      { key: 'totalCost', label: 'Total Cost', render: (r: any) => <span className="text-status-not-started">₹{r.totalCost}</span> },
+      { key: 'totalNumber', label: 'Total' },
+      { key: 'completed', label: 'Completed', render: (r: any) => <span className="text-status-completed">{r.completed}</span> },
+      { key: 'cancelled', label: 'Cancelled', render: (r: any) => <span className="text-destructive">{r.cancelled}</span> },
+      { key: 'active', label: 'Active' },
+      { key: 'totalCost', label: 'Revenue (₹)', render: (r: any) => <span className="text-primary">₹{r.totalCost}</span> },
+    ],
+  },
+  'payments': {
+    title: 'Payments Report',
+    fetcher: reportService.payments,
+    exportFormat: 'xlsx',
+    columns: [
+      { key: 'createdAt', label: 'Created' },
+      { key: 'bookingType', label: 'Type', render: (r: any) => <StatusBadge status={r.bookingType} /> },
+      { key: 'serviceName', label: 'Service' },
+      { key: 'devoteeName', label: 'Devotee' },
+      { key: 'phone', label: 'Phone', render: (r: any) => r.phone ? <span className="font-mono text-[11px]">+91 {r.phone}</span> : <span className="text-muted-foreground">—</span> },
+      { key: 'amount', label: 'Amount', render: (r: any) => <span className="text-primary">₹{r.amount}</span> },
+      { key: 'status', label: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
+      { key: 'isStub', label: 'Stub?', render: (r: any) => r.isStub === 'Yes' ? <span className="text-status-not-started">Stub</span> : <span className="text-status-completed">Live</span> },
+      { key: 'orderId', label: 'Order ID', render: (r: any) => <span className="font-mono text-[10px]">{r.orderId}</span> },
+      { key: 'paymentId', label: 'Payment ID', render: (r: any) => r.paymentId ? <span className="font-mono text-[10px]">{r.paymentId}</span> : <span className="text-muted-foreground">—</span> },
+      { key: 'capturedAt', label: 'Captured' },
+    ],
+  },
+  'chadhava-offerings-detail': {
+    title: 'Chadhava Offerings Detail',
+    fetcher: reportService.chadhavaOfferingsDetail,
+    exportFormat: 'xlsx',
+    columns: [
+      { key: 'eventDate', label: 'Event Date' },
+      { key: 'chadhavaName', label: 'Chadhava' },
+      { key: 'temple', label: 'Temple' },
+      { key: 'bookedBy', label: 'Booked By' },
+      { key: 'phone', label: 'Phone', render: (r: any) => r.phone ? <span className="font-mono text-[11px]">+91 {r.phone}</span> : <span className="text-muted-foreground">—</span> },
+      { key: 'sankalpDevotees', label: 'Sankalp Names' },
+      { key: 'offering', label: 'Offering' },
+      { key: 'quantity', label: 'Qty' },
+      { key: 'unitPrice', label: 'Unit Price', render: (r: any) => <span className="text-primary">₹{r.unitPrice}</span> },
+      { key: 'lineTotal', label: 'Line Total', render: (r: any) => <span className="text-primary">₹{r.lineTotal}</span> },
     ],
   },
   'temple-wise': {

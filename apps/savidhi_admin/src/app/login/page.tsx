@@ -62,15 +62,6 @@ export default function LoginPage() {
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="mt-6 pt-4 border-t border-border/50">
-          <p className="text-[10px] text-muted-foreground text-center">Test Credentials</p>
-          <div className="mt-2 space-y-1 text-[10px] text-muted-foreground">
-            <p><strong>Admin:</strong> admin@savidhi.com / admin123</p>
-            <p><strong>Manager:</strong> booking@savidhi.in / admin123</p>
-            <p><strong>Viewer:</strong> viewer@savidhi.in / admin123</p>
-          </div>
-        </div>
       </div>
     </div>
   );

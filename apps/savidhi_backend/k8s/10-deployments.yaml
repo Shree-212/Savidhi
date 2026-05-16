@@ -203,19 +203,12 @@ spec:
       serviceAccountName: savidhi-eso
       containers:
         - name: booking
-          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v17
+          image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v19
           ports: [{ containerPort: 4004 }]
           envFrom:
             - configMapRef: { name: savidhi-config }
             - secretRef: { name: savidhi-env }
-          # PAYMENTS_FORCE_STUB=true bypasses Razorpay for the soft launch —
-          # bookings auto-confirm without going through the gateway. Flip to
-          # "false" (or remove) once live keys are switched on.
-          env:
-            - name: PORT
-              value: "4004"
-            - name: PAYMENTS_FORCE_STUB
-              value: "true"
+          env: [{ name: PORT, value: "4004" }]
           readinessProbe: { httpGet: { path: /health, port: 4004 }, initialDelaySeconds: 5 }
           resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
 ---

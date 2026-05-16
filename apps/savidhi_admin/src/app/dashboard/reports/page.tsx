@@ -4,15 +4,17 @@ import { useState } from 'react';
 import { ReportPage, type ReportKey } from './_ReportPage';
 
 const REPORT_OPTIONS: { key: ReportKey; label: string }[] = [
-  { key: 'puja-sankalp',       label: 'Puja Sankalp Report' },
-  { key: 'chadhava-sankalp',   label: 'Chadhava Sankalp Report' },
-  { key: 'chadhava-offerings', label: 'Chadhava Offerings Report' },
-  { key: 'appointments',       label: 'Appointments Report' },
-  { key: 'all-bookings',       label: 'All Bookings Report' },
-  { key: 'summary',            label: 'Summary Report' },
-  { key: 'temple-wise',        label: 'Temple Wise Bookings Report' },
-  { key: 'deity-wise',         label: 'Deity Wise Bookings Report' },
-  { key: 'devotee-wise',       label: 'Devotee Wise Bookings Report' },
+  { key: 'summary',                    label: 'Summary Report' },
+  { key: 'all-bookings',               label: 'All Bookings Report' },
+  { key: 'payments',                   label: 'Payments Report' },
+  { key: 'puja-sankalp',               label: 'Puja Sankalp Report' },
+  { key: 'chadhava-sankalp',           label: 'Chadhava Sankalp Report' },
+  { key: 'chadhava-offerings',         label: 'Chadhava Offerings (by event)' },
+  { key: 'chadhava-offerings-detail',  label: 'Chadhava Offerings Detail (by booking)' },
+  { key: 'appointments',               label: 'Appointments Report' },
+  { key: 'temple-wise',                label: 'Temple Wise Bookings Report' },
+  { key: 'deity-wise',                 label: 'Deity Wise Bookings Report' },
+  { key: 'devotee-wise',               label: 'Devotee Wise Bookings Report' },
 ];
 
 export default function ReportsPage() {

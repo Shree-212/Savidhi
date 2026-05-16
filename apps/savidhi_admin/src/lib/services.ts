@@ -281,8 +281,12 @@ export const reportService = {
     apiClient.get('/bookings/reports/chadhava-sankalp', { params }),
   chadhavaOfferings: (params?: any) =>
     apiClient.get('/bookings/reports/chadhava-offerings', { params }),
+  chadhavaOfferingsDetail: (params?: any) =>
+    apiClient.get('/bookings/reports/chadhava-offerings-detail', { params }),
   appointments: (params?: any) =>
     apiClient.get('/bookings/reports/appointments', { params }),
+  payments: (params?: any) =>
+    apiClient.get('/bookings/reports/payments', { params }),
   ledger: (params?: any) =>
     apiClient.get('/bookings/reports/ledger', { params }),
   allBookings: (params?: any) =>
