@@ -7,7 +7,8 @@ import JSZip from 'jszip';
 import { reportService, downloadBlob } from '@/lib/services';
 import { buildPdf, downloadBlob as downloadFileBlob } from '@/lib/reportPdf';
 import { PageHeader } from '@/components/shared/PageHeader';
-import { DataTable, type SortDir } from '@/components/shared/DataTable';
+import { DataTable } from '@/components/shared/DataTable';
+import { sortRows, type SortDir } from '@/lib/sort';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 
 /**
@@ -29,6 +30,9 @@ export type ReportKey =
   | 'ledger'
   | 'all-bookings'
   | 'summary'
+  | 'daily-revenue'
+  | 'cancellations'
+  | 'workload'
   | 'temple-wise'
   | 'deity-wise'
   | 'devotee-wise';
@@ -41,6 +45,8 @@ interface ReportMeta {
   exportFormat?: 'xlsx' | 'zip';
   /** Field on each row that holds the row's ID for per-row download (e.g. `event_id`, `astrologer_id`). When undefined the per-row download icon is hidden. */
   rowDownloadKey?: string;
+  /** When true, the report page maintains a page state and reads `meta.totalPages` from the response. */
+  paginated?: boolean;
 }
 
 const REPORTS: Record<ReportKey, ReportMeta> = {
@@ -127,6 +133,7 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
     title: 'All Bookings Report',
     fetcher: reportService.allBookings,
     exportFormat: 'xlsx',
+    paginated: true,
     columns: [
       { key: 'id', label: 'ID' },
       { key: 'devoteeName', label: 'Devotee' },
@@ -157,6 +164,7 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
     title: 'Payments Report',
     fetcher: reportService.payments,
     exportFormat: 'xlsx',
+    paginated: true,
     columns: [
       { key: 'createdAt', label: 'Created' },
       { key: 'bookingType', label: 'Type', render: (r: any) => <StatusBadge status={r.bookingType} /> },
@@ -168,7 +176,56 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
       { key: 'isStub', label: 'Stub?', render: (r: any) => r.isStub === 'Yes' ? <span className="text-status-not-started">Stub</span> : <span className="text-status-completed">Live</span> },
       { key: 'orderId', label: 'Order ID', render: (r: any) => <span className="font-mono text-[10px]">{r.orderId}</span> },
       { key: 'paymentId', label: 'Payment ID', render: (r: any) => r.paymentId ? <span className="font-mono text-[10px]">{r.paymentId}</span> : <span className="text-muted-foreground">—</span> },
-      { key: 'capturedAt', label: 'Captured' },
+      { key: 'lastUpdated', label: 'Last Updated' },
+    ],
+  },
+  'daily-revenue': {
+    title: 'Daily Revenue Report',
+    fetcher: reportService.dailyRevenue,
+    exportFormat: 'xlsx',
+    columns: [
+      { key: 'date', label: 'Date' },
+      { key: 'pujaRevenue', label: 'Puja Revenue', render: (r: any) => <span className="text-primary">₹{r.pujaRevenue}</span> },
+      { key: 'chadhavaRevenue', label: 'Chadhava Revenue', render: (r: any) => <span className="text-primary">₹{r.chadhavaRevenue}</span> },
+      { key: 'apptRevenue', label: 'Appt Revenue', render: (r: any) => <span className="text-primary">₹{r.apptRevenue}</span> },
+      { key: 'totalRevenue', label: 'Total Revenue', render: (r: any) => <span className="text-primary font-semibold">₹{r.totalRevenue}</span> },
+      { key: 'bookings', label: 'Bookings' },
+      { key: 'cancelled', label: 'Cancelled', render: (r: any) => <span className="text-destructive">{r.cancelled}</span> },
+      { key: 'refunded', label: 'Refunded' },
+    ],
+  },
+  'cancellations': {
+    title: 'Cancellations & Refunds',
+    fetcher: reportService.cancellations,
+    exportFormat: 'xlsx',
+    columns: [
+      { key: 'bookingId', label: 'Booking ID', render: (r: any) => <span className="font-mono text-[10px]">{r.bookingId}</span> },
+      { key: 'type', label: 'Type', render: (r: any) => <StatusBadge status={r.type} /> },
+      { key: 'devotee', label: 'Devotee' },
+      { key: 'phone', label: 'Phone', render: (r: any) => r.phone ? <span className="font-mono text-[11px]">+91 {r.phone}</span> : <span className="text-muted-foreground">—</span> },
+      { key: 'service', label: 'Service' },
+      { key: 'eventDate', label: 'Event Date' },
+      { key: 'cost', label: 'Cost', render: (r: any) => <span className="text-primary">₹{r.cost}</span> },
+      { key: 'cancelledAt', label: 'Cancelled At' },
+      { key: 'paymentStatus', label: 'Payment Status', render: (r: any) => <StatusBadge status={r.paymentStatus} /> },
+      { key: 'refundEligible', label: 'Refund Eligible', render: (r: any) => r.refundEligible === 'Yes' ? <span className="text-status-not-started font-semibold">Yes</span> : <span className="text-muted-foreground">No</span> },
+    ],
+  },
+  'workload': {
+    title: 'Pujari & Astrologer Workload',
+    fetcher: reportService.workload,
+    exportFormat: 'xlsx',
+    columns: [
+      { key: 'role', label: 'Role', render: (r: any) => <StatusBadge status={r.role} /> },
+      { key: 'name', label: 'Name' },
+      { key: 'pujaUpcoming', label: 'Puja Up.' },
+      { key: 'pujaCompleted', label: 'Puja Done' },
+      { key: 'chadhavaUpcoming', label: 'Chadh. Up.' },
+      { key: 'chadhavaCompleted', label: 'Chadh. Done' },
+      { key: 'apptUpcoming', label: 'Appt Up.' },
+      { key: 'apptCompleted', label: 'Appt Done' },
+      { key: 'totalUpcoming', label: 'Total Upcoming', render: (r: any) => <span className="font-semibold">{r.totalUpcoming}</span> },
+      { key: 'totalCompleted', label: 'Total Completed', render: (r: any) => <span className="text-status-completed">{r.totalCompleted}</span> },
     ],
   },
   'chadhava-offerings-detail': {
@@ -231,11 +288,19 @@ const REPORTS: Record<ReportKey, ReportMeta> = {
 
 /** Column spec used by the per-row PDF export for grouped reports. */
 function innerColumnsFor(key: ReportKey): { key: string; label: string }[] {
-  if (key === 'puja-sankalp' || key === 'chadhava-sankalp') {
+  if (key === 'puja-sankalp') {
     return [
       { key: 'sl', label: 'SL' },
       { key: 'name', label: 'Devotee Name' },
       { key: 'gotra', label: 'Gotra' },
+    ];
+  }
+  if (key === 'chadhava-sankalp') {
+    return [
+      { key: 'sl', label: 'SL' },
+      { key: 'name', label: 'Devotee Name' },
+      { key: 'gotra', label: 'Gotra' },
+      { key: 'offerings', label: 'Offerings (qty × item)' },
     ];
   }
   if (key === 'appointments') {
@@ -264,41 +329,8 @@ function filterRows(rows: any[], search: string) {
   );
 }
 
-/**
- * Sort a list of plain rows by a key in ascending or descending order. Numbers
- * are compared numerically, parseable date strings by their timestamp, and
- * everything else as case-insensitive strings. Null/undefined values sink to
- * the end regardless of direction.
- */
-function sortRows(rows: any[], key: string | null, dir: SortDir): any[] {
-  if (!key) return rows;
-  const out = [...rows];
-  out.sort((a, b) => {
-    const va = a?.[key];
-    const vb = b?.[key];
-    const aMissing = va === null || va === undefined || va === '';
-    const bMissing = vb === null || vb === undefined || vb === '';
-    if (aMissing && bMissing) return 0;
-    if (aMissing) return 1;
-    if (bMissing) return -1;
-
-    if (typeof va === 'number' && typeof vb === 'number') {
-      return dir === 'asc' ? va - vb : vb - va;
-    }
-    // Try date comparison if both look like parseable dates.
-    const da = Date.parse(String(va));
-    const db = Date.parse(String(vb));
-    if (!Number.isNaN(da) && !Number.isNaN(db) && /[-/:]/.test(String(va))) {
-      return dir === 'asc' ? da - db : db - da;
-    }
-    const sa = String(va).toLowerCase();
-    const sb = String(vb).toLowerCase();
-    if (sa < sb) return dir === 'asc' ? -1 : 1;
-    if (sa > sb) return dir === 'asc' ? 1 : -1;
-    return 0;
-  });
-  return out;
-}
+// sortRows extracted to @/lib/sort so the bookings list pages share the same
+// implementation. Imported above.
 
 export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; reportPicker?: React.ReactNode }) {
   const meta = REPORTS[reportKey];
@@ -312,6 +344,11 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
   const [exporting, setExporting] = useState(false);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Pagination — only consulted when `meta.paginated`. Page resets to 1 when
+  // the report changes or filters change.
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const PAGE_SIZE = 100;
 
   const handleSortChange = (key: string) => {
     if (sortKey === key) {
@@ -329,17 +366,30 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
       const params: any = {};
       if (fromDate) params.from_date = fromDate;
       if (toDate)   params.to_date   = toDate;
+      if (meta.paginated) {
+        params.page = page;
+        params.limit = PAGE_SIZE;
+      }
       const res = await meta.fetcher(params);
       setData(res.data?.data ?? res.data ?? []);
+      if (meta.paginated) {
+        const tp = Number(res.data?.meta?.totalPages ?? 1);
+        setTotalPages(Math.max(1, tp));
+      } else {
+        setTotalPages(1);
+      }
     } catch (err: any) {
       setError(err.response?.data?.message ?? err.message ?? 'Failed to load report');
       setData([]);
     } finally {
       setLoading(false);
     }
-  }, [meta, fromDate, toDate]);
+  }, [meta, fromDate, toDate, page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Reset to page 1 whenever the report key, search, or date range changes.
+  useEffect(() => { setPage(1); }, [reportKey, fromDate, toDate]);
 
   // The download endpoints use responseType:'blob' so axios returns the error
   // body as a Blob. Read it as text and try to parse the JSON message so the
@@ -544,6 +594,23 @@ export function ReportPage({ reportKey, reportPicker }: { reportKey: ReportKey; 
               sortDir={sortDir}
               onSortChange={handleSortChange}
             />
+          )}
+          {meta.paginated && totalPages > 1 && (
+            <div className="px-6 py-3 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="h-7 w-7 rounded border border-border bg-accent hover:text-foreground disabled:opacity-40 flex items-center justify-center"
+                title="Previous page"
+              >‹</button>
+              <span>Page {page} / {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="h-7 w-7 rounded border border-border bg-accent hover:text-foreground disabled:opacity-40 flex items-center justify-center"
+                title="Next page"
+              >›</button>
+            </div>
           )}
           {exporting && <div className="px-6 pb-6 text-xs text-muted-foreground">Preparing export…</div>}
         </>

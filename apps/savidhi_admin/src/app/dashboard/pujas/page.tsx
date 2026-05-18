@@ -335,15 +335,21 @@ function PujasPageInner() {
       ),
     },
     {
-      key: 'status', label: 'Status', render: (r: any) => (
-        <StatusToggle
-          active={r.is_active}
-          onChange={async (next) => {
-            await pujaService.update(r.id, { is_active: next });
-            setPujas(prev => prev.map(p => p.id === r.id ? { ...p, is_active: next } : p));
-          }}
-        />
-      ),
+      key: 'status', label: 'Status', render: (r: any) => {
+        const bookable = (r.upcoming_events_count ?? 0) > 0;
+        return (
+          <span title={bookable ? undefined : 'Generate an upcoming event before activating this puja — until then it stays hidden from the public catalog.'}>
+            <StatusToggle
+              active={bookable && r.is_active}
+              disabled={!bookable}
+              onChange={async (next) => {
+                await pujaService.update(r.id, { is_active: next });
+                setPujas(prev => prev.map(p => p.id === r.id ? { ...p, is_active: next } : p));
+              }}
+            />
+          </span>
+        );
+      },
     },
     { key: 'action', label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">

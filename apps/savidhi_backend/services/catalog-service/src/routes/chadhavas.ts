@@ -160,6 +160,15 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
     const conds: string[] = [];
     if (req.query.include_inactive !== 'true') {
       conds.push('c.is_active = true');
+      // Public callers also hide chadhavas with zero bookable events — they
+      // appear "live" but the booking page shows "No upcoming events scheduled",
+      // which is a dead-end UX. Admin (?include_inactive=true) sees everything.
+      conds.push(`EXISTS (
+        SELECT 1 FROM chadhava_events ce
+         WHERE ce.chadhava_id = c.id
+           AND ce.start_time >= NOW()
+           AND ce.status != 'COMPLETED'
+      )`);
     }
     const params: unknown[] = [];
     if (templeId) {

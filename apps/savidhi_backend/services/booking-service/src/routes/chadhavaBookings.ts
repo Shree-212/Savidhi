@@ -126,6 +126,12 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
     if (!Array.isArray(offerings) || offerings.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one offering is required' });
     }
+    if (!Array.isArray(devotees) || devotees.length < 1 || devotees.length > 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'A chadhava booking must have between 1 and 6 devotees.',
+      });
+    }
 
     // Idempotency: if the client retried (network blip, double-tap, React
     // StrictMode dev double-render), return the row we already created.
@@ -180,7 +186,11 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
       return res.status(400).json({ success: false, message: 'Event is fully booked' });
     }
 
-    // Fetch offering prices and calculate total cost
+    // Fetch offering prices and calculate total cost.
+    // Offerings selected at step 2 apply *per devotee*, so the final cost
+    // multiplies by devotees.length. chadhava_booking_offerings still stores
+    // the per-devotee unit_price + quantity (it documents the selection);
+    // only chadhava_bookings.cost is the multiplied total.
     let totalCost = 0;
     const offeringDetails: { offering_id: string; quantity: number; unit_price: number }[] = [];
 
@@ -198,6 +208,7 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
       totalCost += unitPrice * qty;
       offeringDetails.push({ offering_id: off.offering_id, quantity: qty, unit_price: unitPrice });
     }
+    totalCost = totalCost * devotees.length;
 
     if (!Number.isFinite(totalCost) || totalCost <= 0) {
       await client.query('ROLLBACK');

@@ -130,7 +130,7 @@ export const pujaEventService = {
   }) => apiClient.get('/bookings/puja-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/puja-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/puja-events', data),
-  update: (id: string, data: { pujari_id?: string | null; start_time?: string; max_bookings?: number }) =>
+  update: (id: string, data: { pujari_id?: string | null; start_time?: string | null; max_bookings?: number; short_video_url?: string | null; sankalp_video_url?: string | null }) =>
     apiClient.patch(`/bookings/puja-events/${id}`, data),
   delete: (id: string) => apiClient.delete(`/bookings/puja-events/${id}`),
   cancelAllBookings: (id: string, data: { reason?: string; refund?: boolean }) =>
@@ -169,7 +169,7 @@ export const chadhavaEventService = {
   }) => apiClient.get('/bookings/chadhava-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/chadhava-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/chadhava-events', data),
-  update: (id: string, data: { pujari_id?: string | null; start_time?: string; max_bookings?: number }) =>
+  update: (id: string, data: { pujari_id?: string | null; start_time?: string | null; max_bookings?: number; short_video_url?: string | null; sankalp_video_url?: string | null }) =>
     apiClient.patch(`/bookings/chadhava-events/${id}`, data),
   delete: (id: string) => apiClient.delete(`/bookings/chadhava-events/${id}`),
   cancelAllBookings: (id: string, data: { reason?: string; refund?: boolean }) =>
@@ -287,6 +287,12 @@ export const reportService = {
     apiClient.get('/bookings/reports/appointments', { params }),
   payments: (params?: any) =>
     apiClient.get('/bookings/reports/payments', { params }),
+  dailyRevenue: (params?: any) =>
+    apiClient.get('/bookings/reports/daily-revenue', { params }),
+  cancellations: (params?: any) =>
+    apiClient.get('/bookings/reports/cancellations', { params }),
+  workload: (params?: any) =>
+    apiClient.get('/bookings/reports/workload', { params }),
   ledger: (params?: any) =>
     apiClient.get('/bookings/reports/ledger', { params }),
   allBookings: (params?: any) =>

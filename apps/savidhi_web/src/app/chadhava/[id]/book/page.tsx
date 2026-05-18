@@ -135,7 +135,11 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
     }));
 
   const selectedOfferings = offerings.filter((o) => (offeringsQty[o.id] ?? 0) > 0);
-  const totalPrice = selectedOfferings.reduce((s, o) => s + o.price * (offeringsQty[o.id] ?? 0), 0);
+  // Offerings selected on step 2 apply per-devotee — each additional devotee
+  // duplicates the same offerings list. Total scales linearly with devotees.length.
+  const MAX_DEVOTEES = 6;
+  const perDevoteeTotal = selectedOfferings.reduce((s, o) => s + o.price * (offeringsQty[o.id] ?? 0), 0);
+  const totalPrice = perDevoteeTotal * Math.max(1, devotees.length);
   const sendHamper = !!chadhava.raw.send_hamper;
   const selectedEvent = events.find((e) => e.id === selectedEventId);
 
@@ -160,7 +164,7 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
     });
   };
 
-  const addDevotee = () => setDevotees((prev) => [...prev, { name: '', gotra: '' }]);
+  const addDevotee = () => setDevotees((prev) => (prev.length >= 6 ? prev : [...prev, { name: '', gotra: '' }]));
   const removeDevotee = (i: number) =>
     setDevotees((prev) => (prev.length > 1 ? prev.filter((_, k) => k !== i) : prev));
 
@@ -479,10 +483,17 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
                 </div>
                 <button
                   onClick={addDevotee}
-                  className="text-sm text-primary-600 font-semibold hover:text-primary-700 mb-6 inline-flex items-center gap-1"
+                  disabled={devotees.length >= MAX_DEVOTEES}
+                  className="text-sm text-primary-600 font-semibold hover:text-primary-700 mb-2 inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-primary-600"
                 >
                   <Plus className="w-4 h-4" /> Add another devotee
                 </button>
+                {devotees.length >= MAX_DEVOTEES && (
+                  <p className="text-xs text-text-muted mb-4">Maximum {MAX_DEVOTEES} devotees can be added in one booking. The offerings you selected are applied once per devotee, so the total scales with this number.</p>
+                )}
+                {devotees.length > 1 && devotees.length < MAX_DEVOTEES && (
+                  <p className="text-[11px] text-text-muted mb-4">Same offerings are applied for each devotee — current total reflects {devotees.length} devotees.</p>
+                )}
 
                 {sendHamper && (
                   <>

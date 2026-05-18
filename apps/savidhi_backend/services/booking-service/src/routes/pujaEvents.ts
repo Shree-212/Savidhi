@@ -168,7 +168,9 @@ pujaEventsRouter.post('/', requireAdmin, async (req: Request, res: Response, nex
 pujaEventsRouter.patch('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const allowed = ['pujari_id', 'start_time', 'max_bookings', 'has_prasad'];
+    // short_video_url/sankalp_video_url accept null so admin "Remove video"
+    // can clear them without going through the stage-advance endpoint.
+    const allowed = ['pujari_id', 'start_time', 'max_bookings', 'has_prasad', 'short_video_url', 'sankalp_video_url'];
     const sets: string[] = [];
     const params: unknown[] = [];
     let idx = 1;

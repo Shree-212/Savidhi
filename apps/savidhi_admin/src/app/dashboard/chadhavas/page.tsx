@@ -337,15 +337,21 @@ export default function ChadhavasPage() {
       ),
     },
     {
-      key: 'status', label: 'Status', render: (r: any) => (
-        <StatusToggle
-          active={r.is_active}
-          onChange={async (next) => {
-            await chadhavaService.update(r.id, { is_active: next });
-            setChadhavas(prev => prev.map(c => c.id === r.id ? { ...c, is_active: next } : c));
-          }}
-        />
-      ),
+      key: 'status', label: 'Status', render: (r: any) => {
+        const bookable = (r.upcoming_events_count ?? 0) > 0;
+        return (
+          <span title={bookable ? undefined : 'Generate an upcoming event before activating this chadhava — until then it stays hidden from the public catalog.'}>
+            <StatusToggle
+              active={bookable && r.is_active}
+              disabled={!bookable}
+              onChange={async (next) => {
+                await chadhavaService.update(r.id, { is_active: next });
+                setChadhavas(prev => prev.map(c => c.id === r.id ? { ...c, is_active: next } : c));
+              }}
+            />
+          </span>
+        );
+      },
     },
     { key: 'action', label: 'Action', render: (r: any) => (
       <div className="flex items-center gap-1">

@@ -77,30 +77,35 @@ async function fetchPujaSankalpEvents(query: Record<string, unknown>) {
   return rows;
 }
 
-async function fetchPujaEventDevotees(eventId: string) {
-  // Earliest booking first so report devotee rows match the admin modal.
+async function fetchPujaEventDevotees(eventId: string): Promise<Array<{ name: string; gotra: string; booking_id: string }>> {
+  // Prefer the sankalp names entered during booking (puja_booking_devotees).
+  // Fall back to the devotee account name only when a booking has no
+  // per-booking devotee rows (legacy bookings before the sankalp form).
+  // Previously the report concatenated both sources, producing duplicate
+  // rows where the auto-generated account username ("Devotee_2873") shadowed
+  // the real sankalp name ("Smita Bhardwaj").
   const { rows } = await pool.query(
-    `SELECT d.name AS name, COALESCE(d.gotra, '') AS gotra
-       FROM puja_bookings pb
-       JOIN devotees d ON d.id = pb.devotee_id
-      WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'
-      ORDER BY pb.created_at ASC`,
+    `WITH bookings AS (
+       SELECT pb.id, pb.created_at, d.name AS account_name, COALESCE(d.gotra, '') AS account_gotra
+         FROM puja_bookings pb
+         JOIN devotees d ON d.id = pb.devotee_id
+        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'
+     ),
+     per_booking AS (
+       SELECT pbd.puja_booking_id, pbd.name, COALESCE(pbd.gotra, '') AS gotra
+         FROM puja_booking_devotees pbd
+         JOIN bookings b ON b.id = pbd.puja_booking_id
+     )
+     SELECT
+       b.id::text AS booking_id,
+       COALESCE(pb.name, b.account_name) AS name,
+       COALESCE(NULLIF(pb.gotra, ''), NULLIF(b.account_gotra, ''), '') AS gotra
+     FROM bookings b
+     LEFT JOIN per_booking pb ON pb.puja_booking_id = b.id
+     ORDER BY b.created_at ASC, COALESCE(pb.name, b.account_name) ASC`,
     [eventId],
   );
-  // puja_booking_devotees (multiple devotees per booking)
-  let extras: any[] = [];
-  try {
-    const r = await pool.query(
-      `SELECT pbd.name AS name, COALESCE(pbd.gotra, '') AS gotra
-         FROM puja_booking_devotees pbd
-         JOIN puja_bookings pb ON pb.id = pbd.puja_booking_id
-        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'
-        ORDER BY pb.created_at ASC`,
-      [eventId],
-    );
-    extras = r.rows;
-  } catch { /* table may not exist on older deploys */ }
-  return [...rows, ...extras].filter((r) => r.name);
+  return rows.filter((r) => r.name);
 }
 
 reportsRouter.get('/puja-sankalp', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
@@ -247,29 +252,43 @@ async function fetchChadhavaSankalpEvents(query: Record<string, unknown>) {
   return rows;
 }
 
-async function fetchChadhavaEventDevotees(eventId: string) {
-  // Earliest booking first so report devotee rows match the admin modal.
+async function fetchChadhavaEventDevotees(eventId: string): Promise<Array<{ name: string; gotra: string; booking_id: string; offerings: string }>> {
+  // Prefer the sankalp names entered during booking, fall back to account name
+  // for legacy bookings. Each row also carries the joined offerings string for
+  // that booking ("1× Coconut, 2× Lemon"); per the PDF spec, devotees on the
+  // same booking inherit the same offering list.
   const { rows } = await pool.query(
-    `SELECT d.name AS name, COALESCE(d.gotra, '') AS gotra
-       FROM chadhava_bookings cb
-       JOIN devotees d ON d.id = cb.devotee_id
-      WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'
-      ORDER BY cb.created_at ASC`,
+    `WITH bookings AS (
+       SELECT cb.id, cb.created_at, d.name AS account_name, COALESCE(d.gotra, '') AS account_gotra
+         FROM chadhava_bookings cb
+         JOIN devotees d ON d.id = cb.devotee_id
+        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'
+     ),
+     per_booking AS (
+       SELECT cbd.chadhava_booking_id, cbd.name, COALESCE(cbd.gotra, '') AS gotra
+         FROM chadhava_booking_devotees cbd
+         JOIN bookings b ON b.id = cbd.chadhava_booking_id
+     ),
+     offerings AS (
+       SELECT cbo.chadhava_booking_id,
+              string_agg(cbo.quantity || '× ' || co.item_name, ', ' ORDER BY co.item_name) AS items
+         FROM chadhava_booking_offerings cbo
+         JOIN chadhava_offerings co ON co.id = cbo.offering_id
+         JOIN bookings b ON b.id = cbo.chadhava_booking_id
+        GROUP BY cbo.chadhava_booking_id
+     )
+     SELECT
+       b.id::text AS booking_id,
+       COALESCE(pb.name, b.account_name) AS name,
+       COALESCE(NULLIF(pb.gotra, ''), NULLIF(b.account_gotra, ''), '') AS gotra,
+       COALESCE(o.items, '') AS offerings
+     FROM bookings b
+     LEFT JOIN per_booking pb ON pb.chadhava_booking_id = b.id
+     LEFT JOIN offerings o    ON o.chadhava_booking_id  = b.id
+     ORDER BY b.created_at ASC, COALESCE(pb.name, b.account_name) ASC`,
     [eventId],
   );
-  let extras: any[] = [];
-  try {
-    const r = await pool.query(
-      `SELECT cbd.name AS name, COALESCE(cbd.gotra, '') AS gotra
-         FROM chadhava_booking_devotees cbd
-         JOIN chadhava_bookings cb ON cb.id = cbd.chadhava_booking_id
-        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'
-        ORDER BY cb.created_at ASC`,
-      [eventId],
-    );
-    extras = r.rows;
-  } catch { /* table may not exist */ }
-  return [...rows, ...extras].filter((r) => r.name);
+  return rows.filter((r) => r.name);
 }
 
 reportsRouter.get('/chadhava-sankalp', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
@@ -304,11 +323,17 @@ reportsRouter.get('/chadhava-sankalp', requireAdmin, async (req: Request, res: R
       for (const r of rows) {
         const devotees = await fetchChadhavaEventDevotees(r.event_id);
         const buf = await buildExcel(
-          devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
+          devotees.map((d, i) => ({
+            sl: i + 1,
+            name: d.name,
+            gotra: d.gotra || '—',
+            offerings: d.offerings || '—',
+          })),
           [
             { header: 'SL', key: 'sl', width: 6 },
             { header: 'Devotee Name', key: 'name', width: 30 },
             { header: 'Gotra', key: 'gotra', width: 18 },
+            { header: 'Offerings (qty × item)', key: 'offerings', width: 48 },
           ],
           'Sankalp Devotees',
         );
@@ -350,18 +375,29 @@ reportsRouter.get('/chadhava-sankalp/:eventId/export', requireAdmin, async (req:
           chadhava_name: meta.chadhava_name,
           start_time: meta.start_time,
           label,
-          devotees: devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '' })),
+          devotees: devotees.map((d, i) => ({
+            sl: i + 1,
+            name: d.name,
+            gotra: d.gotra || '',
+            offerings: d.offerings || '',
+          })),
         },
       });
       return;
     }
 
     const xlsx = await buildExcel(
-      devotees.map((d, i) => ({ sl: i + 1, name: d.name, gotra: d.gotra || '—' })),
+      devotees.map((d, i) => ({
+        sl: i + 1,
+        name: d.name,
+        gotra: d.gotra || '—',
+        offerings: d.offerings || '—',
+      })),
       [
         { header: 'SL', key: 'sl', width: 6 },
         { header: 'Devotee Name', key: 'name', width: 30 },
         { header: 'Gotra', key: 'gotra', width: 18 },
+        { header: 'Offerings (qty × item)', key: 'offerings', width: 48 },
       ],
       'Sankalp Devotees',
     );
@@ -715,8 +751,7 @@ async function fetchAllBookings(query: Record<string, unknown>) {
          JOIN devotees    d   ON d.id   = a.devotee_id
         WHERE 1=1 ${apptFilter}
      )
-     ORDER BY event_date DESC NULLS LAST
-     LIMIT 1000`,
+     ORDER BY event_date DESC NULLS LAST`,
     allParams,
   );
   return rows;
@@ -731,7 +766,14 @@ reportsRouter.get('/all-bookings', requireAdmin, async (req: Request, res: Respo
     const statusFilter = String(req.query.status ?? '').toUpperCase();
     if (statusFilter) rows = rows.filter((r) => String(r.status).toUpperCase() === statusFilter);
 
-    const data = rows.map((r) => ({
+    // Server-side pagination. XLSX export ignores pagination (downloads all).
+    const isXlsx = req.query.format === 'xlsx';
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit ?? 100)));
+    const total = rows.length;
+    const pageRows = isXlsx ? rows : rows.slice((page - 1) * limit, page * limit);
+
+    const data = pageRows.map((r) => ({
       id:               r.id,
       devoteeName:      r.devotee_name,
       phone:            r.devotee_phone ?? '',
@@ -744,7 +786,7 @@ reportsRouter.get('/all-bookings', requireAdmin, async (req: Request, res: Respo
       status:           r.status,
       paymentStatus:    r.payment_status ?? '',
     }));
-    if (req.query.format === 'xlsx') {
+    if (isXlsx) {
       const buf = await buildExcel(data, [
         { header: 'ID', key: 'id' },
         { header: 'Devotee Account', key: 'devoteeName', width: 22 },
@@ -760,7 +802,11 @@ reportsRouter.get('/all-bookings', requireAdmin, async (req: Request, res: Respo
       ], 'All Bookings');
       return sendFile(res, buf, 'All Bookings Report.xlsx', MIME_XLSX);
     }
-    res.json({ success: true, data });
+    res.json({
+      success: true,
+      data,
+      meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    });
   } catch (err) { next(err); }
 });
 
@@ -1010,6 +1056,15 @@ reportsRouter.get('/payments', requireAdmin, async (req: Request, res: Response,
     if (req.query.booking_type) { conditions.push(`p.booking_type = $${idx++}`); params.push(req.query.booking_type); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    // Server-side pagination (default page=1, limit=100, hard ceiling 500).
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit ?? 100)));
+    const offset = (page - 1) * limit;
+
+    // Compute total for meta — same WHERE, no LIMIT/OFFSET.
+    const totalRes = await pool.query(`SELECT COUNT(*)::int AS total FROM payments p ${where}`, params);
+    const total: number = totalRes.rows[0].total;
+
     const { rows } = await pool.query(
       `SELECT p.id,
               p.booking_type,
@@ -1020,7 +1075,7 @@ reportsRouter.get('/payments', requireAdmin, async (req: Request, res: Response,
               p.gateway_order_id,
               p.gateway_payment_id,
               p.created_at,
-              p.captured_at,
+              p.updated_at,
               d.name  AS devotee_name,
               d.phone AS devotee_phone,
               CASE p.booking_type
@@ -1032,8 +1087,8 @@ reportsRouter.get('/payments', requireAdmin, async (req: Request, res: Response,
          LEFT JOIN devotees d ON d.id = p.devotee_id
          ${where}
          ORDER BY p.created_at DESC
-         LIMIT 2000`,
-      params,
+         LIMIT $${idx++} OFFSET $${idx++}`,
+      [...params, limit, offset],
     );
 
     const data = rows.map((r) => ({
@@ -1050,7 +1105,10 @@ reportsRouter.get('/payments', requireAdmin, async (req: Request, res: Response,
       isStub:           String(r.gateway_order_id ?? '').startsWith('order_stub_') ? 'Yes' : 'No',
       paymentId:        r.gateway_payment_id ?? '',
       createdAt:        fmtDate(r.created_at),
-      capturedAt:       fmtDate(r.captured_at),
+      // `updated_at` is bumped on every status transition (CREATED → CAPTURED →
+      // REFUNDED), so it's a close proxy for "last touched at" without needing
+      // a dedicated captured_at column.
+      lastUpdated:      fmtDate(r.updated_at),
     }));
 
     if (req.query.format === 'xlsx') {
@@ -1068,11 +1126,15 @@ reportsRouter.get('/payments', requireAdmin, async (req: Request, res: Response,
         { header: 'Payment ID',   key: 'paymentId', width: 28 },
         { header: 'Stub Order?',  key: 'isStub' },
         { header: 'Created',      key: 'createdAt', width: 22 },
-        { header: 'Captured',     key: 'capturedAt', width: 22 },
+        { header: 'Last Updated', key: 'lastUpdated', width: 22 },
       ], 'Payments');
       return sendFile(res, buf, 'Payments Report.xlsx', MIME_XLSX);
     }
-    res.json({ success: true, data });
+    res.json({
+      success: true,
+      data,
+      meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    });
   } catch (err) { next(err); }
 });
 
@@ -1151,6 +1213,252 @@ reportsRouter.get('/chadhava-offerings-detail', requireAdmin, async (req: Reques
         { header: 'Line Total (₹)',   key: 'lineTotal' },
       ], 'Chadhava Offerings Detail');
       return sendFile(res, buf, 'Chadhava Offerings Detail.xlsx', MIME_XLSX);
+    }
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 13.  DAILY REVENUE — one row per booking-creation date.
+ *      Cancelled bookings counted but excluded from revenue.
+ *      Refunded count comes from the latest payment row per booking.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+reportsRouter.get('/daily-revenue', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const fromTo = dateRangeParams(req.query as Record<string, unknown>, 'created_at');
+    const where = fromTo.conditions.length ? `WHERE ${fromTo.conditions.join(' AND ')}` : '';
+    const params = fromTo.params;
+
+    const { rows } = await pool.query(
+      `WITH unified AS (
+         SELECT 'PUJA' AS type, pb.id, pb.cost::numeric AS cost, pb.status::text, pb.created_at
+           FROM puja_bookings pb ${where}
+         UNION ALL
+         SELECT 'CHADHAVA' AS type, cb.id, cb.cost::numeric AS cost, cb.status::text, cb.created_at
+           FROM chadhava_bookings cb ${where}
+         UNION ALL
+         SELECT 'APPOINTMENT' AS type, a.id, a.cost::numeric AS cost, a.status::text, a.created_at
+           FROM appointments a ${where}
+       ),
+       latest_pay AS (
+         SELECT booking_id, status::text AS pay_status,
+                ROW_NUMBER() OVER (PARTITION BY booking_id ORDER BY created_at DESC) AS rn
+           FROM payments
+       )
+       SELECT
+         to_char(u.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS date,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.type='PUJA'        AND u.status <> 'CANCELLED'), 0)::numeric AS puja_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.type='CHADHAVA'    AND u.status <> 'CANCELLED'), 0)::numeric AS chadhava_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.type='APPOINTMENT' AND u.status <> 'CANCELLED'), 0)::numeric AS appt_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.status <> 'CANCELLED'), 0)::numeric AS total_revenue,
+         COUNT(*)::int AS bookings,
+         COUNT(*) FILTER (WHERE u.status = 'CANCELLED')::int AS cancelled,
+         COUNT(*) FILTER (WHERE lp.pay_status = 'REFUNDED')::int AS refunded
+       FROM unified u
+       LEFT JOIN latest_pay lp ON lp.booking_id = u.id AND lp.rn = 1
+       GROUP BY date
+       ORDER BY date DESC
+       LIMIT 365`,
+      // Each base query needs the same date params: pass them 3× for the
+      // UNION (one per CTE branch). Same args order each time.
+      [...params, ...params, ...params],
+    );
+
+    const data = rows.map((r) => ({
+      date:            r.date,
+      pujaRevenue:     Number(r.puja_revenue),
+      chadhavaRevenue: Number(r.chadhava_revenue),
+      apptRevenue:     Number(r.appt_revenue),
+      totalRevenue:    Number(r.total_revenue),
+      bookings:        r.bookings,
+      cancelled:       r.cancelled,
+      refunded:        r.refunded,
+    }));
+
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'Date',              key: 'date', width: 14 },
+        { header: 'Puja Revenue (₹)',     key: 'pujaRevenue' },
+        { header: 'Chadhava Revenue (₹)', key: 'chadhavaRevenue' },
+        { header: 'Appointment Revenue (₹)', key: 'apptRevenue' },
+        { header: 'Total Revenue (₹)',    key: 'totalRevenue' },
+        { header: 'Bookings',             key: 'bookings' },
+        { header: 'Cancelled',            key: 'cancelled' },
+        { header: 'Refunded',             key: 'refunded' },
+      ], 'Daily Revenue');
+      return sendFile(res, buf, 'Daily Revenue Report.xlsx', MIME_XLSX);
+    }
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 14.  CANCELLATIONS & REFUNDS — one row per cancelled booking with its
+ *      latest payment-row state. No `cancellation_reason` column exists so
+ *      that field is omitted; `cancelled_at` proxies via `updated_at`.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+reportsRouter.get('/cancellations', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Range filter applies to when the booking was cancelled (≈ updated_at).
+    const fromTo = dateRangeParams(req.query as Record<string, unknown>, 'updated_at');
+    const where = fromTo.conditions.length ? `AND ${fromTo.conditions.join(' AND ')}` : '';
+    const params = fromTo.params;
+
+    const { rows } = await pool.query(
+      `WITH cancelled AS (
+         SELECT 'PUJA' AS type, pb.id, pb.cost::numeric AS cost, pb.updated_at,
+                d.name AS devotee_name, d.phone AS devotee_phone,
+                p.name AS service_name, pe.start_time AS event_date
+           FROM puja_bookings pb
+           JOIN puja_events pe ON pe.id = pb.puja_event_id
+           JOIN pujas    p  ON p.id  = pe.puja_id
+           JOIN devotees d  ON d.id  = pb.devotee_id
+          WHERE pb.status = 'CANCELLED' ${where}
+         UNION ALL
+         SELECT 'CHADHAVA' AS type, cb.id, cb.cost::numeric AS cost, cb.updated_at,
+                d.name AS devotee_name, d.phone AS devotee_phone,
+                c.name AS service_name, ce.start_time AS event_date
+           FROM chadhava_bookings cb
+           JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
+           JOIN chadhavas    c  ON c.id  = ce.chadhava_id
+           JOIN devotees     d  ON d.id  = cb.devotee_id
+          WHERE cb.status = 'CANCELLED' ${where}
+         UNION ALL
+         SELECT 'APPOINTMENT' AS type, a.id, a.cost::numeric AS cost, a.updated_at,
+                d.name AS devotee_name, d.phone AS devotee_phone,
+                ast.name AS service_name, a.scheduled_at AS event_date
+           FROM appointments a
+           JOIN astrologers ast ON ast.id = a.astrologer_id
+           JOIN devotees    d   ON d.id   = a.devotee_id
+          WHERE a.status = 'CANCELLED' ${where}
+       ),
+       latest_pay AS (
+         SELECT booking_id, status::text AS pay_status, gateway_payment_id, amount,
+                ROW_NUMBER() OVER (PARTITION BY booking_id ORDER BY created_at DESC) AS rn
+           FROM payments
+       )
+       SELECT c.*, lp.pay_status, lp.gateway_payment_id, lp.amount AS paid_amount
+         FROM cancelled c
+         LEFT JOIN latest_pay lp ON lp.booking_id = c.id AND lp.rn = 1
+        ORDER BY c.updated_at DESC
+        LIMIT 1000`,
+      [...params, ...params, ...params],
+    );
+
+    const data = rows.map((r) => ({
+      bookingId:      r.id,
+      type:           r.type,
+      devotee:        r.devotee_name,
+      phone:          r.devotee_phone ?? '',
+      service:        r.service_name,
+      eventDate:      fmtDate(r.event_date),
+      cost:           Number(r.cost),
+      cancelledAt:    fmtDate(r.updated_at),
+      paymentStatus:  r.pay_status ?? 'NO_PAYMENT',
+      paymentId:      r.gateway_payment_id ?? '',
+      refundEligible: r.pay_status === 'CAPTURED' ? 'Yes' : 'No',
+    }));
+
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'Booking ID',      key: 'bookingId', width: 38 },
+        { header: 'Type',            key: 'type', width: 12 },
+        { header: 'Devotee',         key: 'devotee', width: 22 },
+        { header: 'Phone',           key: 'phone', width: 14 },
+        { header: 'Service',         key: 'service', width: 32 },
+        { header: 'Event Date',      key: 'eventDate', width: 22 },
+        { header: 'Cost (₹)',        key: 'cost' },
+        { header: 'Cancelled At',    key: 'cancelledAt', width: 22 },
+        { header: 'Payment Status',  key: 'paymentStatus', width: 16 },
+        { header: 'Payment ID',      key: 'paymentId', width: 28 },
+        { header: 'Refund Eligible', key: 'refundEligible' },
+      ], 'Cancellations & Refunds');
+      return sendFile(res, buf, 'Cancellations & Refunds.xlsx', MIME_XLSX);
+    }
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 15.  PUJARI & ASTROLOGER WORKLOAD — one row per pujari or astrologer with
+ *      assigned-event counts split by upcoming vs completed.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+reportsRouter.get('/workload', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT 'PUJARI' AS role,
+              pj.id::text,
+              pj.name,
+              COALESCE(pe_count.upcoming,  0)::int AS puja_upcoming,
+              COALESCE(pe_count.completed, 0)::int AS puja_completed,
+              COALESCE(ce_count.upcoming,  0)::int AS chadhava_upcoming,
+              COALESCE(ce_count.completed, 0)::int AS chadhava_completed,
+              0::int AS appt_upcoming,
+              0::int AS appt_completed
+         FROM pujaris pj
+         LEFT JOIN LATERAL (
+           SELECT
+             COUNT(*) FILTER (WHERE pe.start_time >= NOW() AND pe.status <> 'COMPLETED') AS upcoming,
+             COUNT(*) FILTER (WHERE pe.status = 'COMPLETED') AS completed
+           FROM puja_events pe WHERE pe.pujari_id = pj.id
+         ) pe_count ON true
+         LEFT JOIN LATERAL (
+           SELECT
+             COUNT(*) FILTER (WHERE ce.start_time >= NOW() AND ce.status <> 'COMPLETED') AS upcoming,
+             COUNT(*) FILTER (WHERE ce.status = 'COMPLETED') AS completed
+           FROM chadhava_events ce WHERE ce.pujari_id = pj.id
+         ) ce_count ON true
+
+       UNION ALL
+
+       SELECT 'ASTROLOGER' AS role,
+              ast.id::text,
+              ast.name,
+              0::int, 0::int, 0::int, 0::int,
+              COALESCE(ap_count.upcoming,  0)::int AS appt_upcoming,
+              COALESCE(ap_count.completed, 0)::int AS appt_completed
+         FROM astrologers ast
+         LEFT JOIN LATERAL (
+           SELECT
+             COUNT(*) FILTER (WHERE a.scheduled_at >= NOW() AND a.status <> 'COMPLETED' AND a.status <> 'CANCELLED') AS upcoming,
+             COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS completed
+           FROM appointments a WHERE a.astrologer_id = ast.id
+         ) ap_count ON true
+
+       ORDER BY role, name`,
+    );
+
+    const data = rows.map((r) => ({
+      role:        r.role,
+      id:          r.id,
+      name:        r.name,
+      pujaUpcoming:     r.puja_upcoming,
+      pujaCompleted:    r.puja_completed,
+      chadhavaUpcoming: r.chadhava_upcoming,
+      chadhavaCompleted: r.chadhava_completed,
+      apptUpcoming:     r.appt_upcoming,
+      apptCompleted:    r.appt_completed,
+      totalUpcoming:    r.puja_upcoming + r.chadhava_upcoming + r.appt_upcoming,
+      totalCompleted:   r.puja_completed + r.chadhava_completed + r.appt_completed,
+    }));
+
+    if (req.query.format === 'xlsx') {
+      const buf = await buildExcel(data, [
+        { header: 'Role',                key: 'role', width: 14 },
+        { header: 'Name',                key: 'name', width: 28 },
+        { header: 'Puja Upcoming',       key: 'pujaUpcoming' },
+        { header: 'Puja Completed',      key: 'pujaCompleted' },
+        { header: 'Chadhava Upcoming',   key: 'chadhavaUpcoming' },
+        { header: 'Chadhava Completed',  key: 'chadhavaCompleted' },
+        { header: 'Appointments Upcoming',  key: 'apptUpcoming' },
+        { header: 'Appointments Completed', key: 'apptCompleted' },
+        { header: 'Total Upcoming',      key: 'totalUpcoming' },
+        { header: 'Total Completed',     key: 'totalCompleted' },
+      ], 'Workload');
+      return sendFile(res, buf, 'Workload Report.xlsx', MIME_XLSX);
     }
     res.json({ success: true, data });
   } catch (err) { next(err); }

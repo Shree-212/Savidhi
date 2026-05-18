@@ -5,13 +5,16 @@ import { ReportPage, type ReportKey } from './_ReportPage';
 
 const REPORT_OPTIONS: { key: ReportKey; label: string }[] = [
   { key: 'summary',                    label: 'Summary Report' },
+  { key: 'daily-revenue',              label: 'Daily Revenue' },
   { key: 'all-bookings',               label: 'All Bookings Report' },
   { key: 'payments',                   label: 'Payments Report' },
+  { key: 'cancellations',              label: 'Cancellations & Refunds' },
   { key: 'puja-sankalp',               label: 'Puja Sankalp Report' },
   { key: 'chadhava-sankalp',           label: 'Chadhava Sankalp Report' },
   { key: 'chadhava-offerings',         label: 'Chadhava Offerings (by event)' },
   { key: 'chadhava-offerings-detail',  label: 'Chadhava Offerings Detail (by booking)' },
   { key: 'appointments',               label: 'Appointments Report' },
+  { key: 'workload',                   label: 'Pujari & Astrologer Workload' },
   { key: 'temple-wise',                label: 'Temple Wise Bookings Report' },
   { key: 'deity-wise',                 label: 'Deity Wise Bookings Report' },
   { key: 'devotee-wise',               label: 'Devotee Wise Bookings Report' },

@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { pujaEventService, pujaBookingService, pujaService, pujariService } from '@/lib/services';
+import { sortRows, type SortDir } from '@/lib/sort';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -12,6 +13,7 @@ import { TimelineView } from '@/components/shared/TimelineView';
 import { Modal } from '@/components/shared/Modal';
 import { ExpandButton, DeleteButton, PrimaryButton, OutlineButton, ViewButton } from '@/components/shared/ActionButtons';
 import { MediaUploadSingle } from '@/components/shared/MediaUpload';
+import { VideoPreview } from '@/components/shared/VideoPreview';
 import type { PujaEvent, PujaBooking, PujaEventStage, TimelineEvent } from '@/types';
 
 /* ── helpers ──────────────────────────────────────────────── */
@@ -112,6 +114,12 @@ function PujaBookingsPageInner() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPage, setExpandedPage] = useState(1);
   const EXPANDED_PAGE_SIZE = 5;
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const handleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
   const [selectedBooking, setSelectedBooking] = useState<PujaBooking | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<(PujaEvent & { stage: PujaEventStage; bookingsData?: any[] }) | null>(null);
   const [showLiveModal, setShowLiveModal] = useState(false);
@@ -279,6 +287,19 @@ function PujaBookingsPageInner() {
       if (selectedEvent?.id === eventId) await fetchEventDetail(eventId);
     } catch (err: any) {
       alert(err.response?.data?.message || err.message || 'Failed to advance stage');
+    }
+  };
+
+  // Clears the chosen video URL on the event row. Used by the Remove button
+  // inside the event-detail modal. We don't delete the underlying GCS file.
+  const handleRemoveVideo = async (eventId: string, field: 'short_video_url' | 'sankalp_video_url') => {
+    const fieldLabel = field === 'short_video_url' ? 'short video' : 'sankalp video';
+    if (!confirm(`Remove the ${fieldLabel} from this event?`)) return;
+    try {
+      await pujaEventService.update(eventId, { [field]: null });
+      if (selectedEvent?.id === eventId) await fetchEventDetail(eventId);
+    } catch (err: any) {
+      alert(err.response?.data?.message || err.message || 'Failed to remove video');
     }
   };
 
@@ -476,7 +497,10 @@ function PujaBookingsPageInner() {
           ) : (
             <DataTable
               columns={eventColumns}
-              data={pujaEvents}
+              data={sortRows(pujaEvents, sortKey, sortDir)}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSortChange={handleSort}
               expandedKey={expandedId}
               renderExpanded={() => (
                 <div className="px-4 py-3 border-l-2 border-primary/40 bg-background">
@@ -632,18 +656,33 @@ function PujaBookingsPageInner() {
               </p>
             )}
 
-            {/* Show videos if stage is past SHORT_VIDEO_ADDED */}
+            {/* Videos: real player with replace + remove. Visible from
+                SHORT_VIDEO_ADDED onwards (matches the stage gate above). */}
             {eventStage && ['SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'].includes(eventStage) && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="border border-border rounded-lg p-3">
-                  <p className="text-[10px] font-bold mb-2">Short Video <span className="text-primary cursor-pointer">✏️</span></p>
-                  <div className="bg-accent rounded-lg h-24 flex items-center justify-center text-muted-foreground text-xs">▶ Video</div>
+                  <p className="text-[10px] font-bold mb-2 uppercase tracking-wider text-muted-foreground">Short Video</p>
+                  {(selectedEvent as any).short_video_url ? (
+                    <VideoPreview
+                      value={(selectedEvent as any).short_video_url}
+                      onReplace={() => setShowVideoModal(true)}
+                      onRemove={() => handleRemoveVideo(selectedEvent.id, 'short_video_url')}
+                    />
+                  ) : (
+                    <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">Not uploaded</div>
+                  )}
                 </div>
                 <div className="border border-border rounded-lg p-3">
-                  <p className="text-[10px] font-bold mb-2">Sankalp Video {['SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'].includes(eventStage!) ? <span className="text-primary cursor-pointer">✏️</span> : <span className="text-muted-foreground">Yet to be uploaded</span>}</p>
-                  <div className="bg-accent rounded-lg h-24 flex items-center justify-center text-muted-foreground text-xs">
-                    {['SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'].includes(eventStage!) ? '▶ Video' : 'Not uploaded'}
-                  </div>
+                  <p className="text-[10px] font-bold mb-2 uppercase tracking-wider text-muted-foreground">Sankalp Video</p>
+                  {(selectedEvent as any).sankalp_video_url ? (
+                    <VideoPreview
+                      value={(selectedEvent as any).sankalp_video_url}
+                      onReplace={() => setShowSankalpModal(true)}
+                      onRemove={() => handleRemoveVideo(selectedEvent.id, 'sankalp_video_url')}
+                    />
+                  ) : (
+                    <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">Yet to be uploaded</div>
+                  )}
                 </div>
               </div>
             )}
@@ -849,15 +888,20 @@ function PujaBookingsPageInner() {
 
       {/* ── Add Sankalp Video Modal ─────────────────────── */}
       <Modal open={showSankalpModal} onClose={() => setShowSankalpModal(false)} title="Add Sankalp Video" onBack={() => setShowSankalpModal(false)} wide>
-        <div className="space-y-4">
-          <MediaUploadSingle
-            value={sankalpVideoUrl}
-            onChange={setSankalpVideoUrl}
-            accept="video/*"
-            type="video"
-            label="Sankalp Video File"
-          />
+        <div className="flex flex-col gap-3 max-h-[80vh]">
+          {/* Sticky video uploader / player at top — admins scrub through and
+              jot down per-devotee timestamps in the scrollable list below. */}
+          <div className="sticky top-0 z-10 bg-background pb-2 -mx-4 px-4 border-b border-border/50">
+            <MediaUploadSingle
+              value={sankalpVideoUrl}
+              onChange={setSankalpVideoUrl}
+              accept="video/*"
+              type="video"
+              label="Sankalp Video File"
+            />
+          </div>
           <h4 className="text-[10px] font-bold uppercase tracking-wider">Devotee Name Timestamp (per booking)</h4>
+          <div className="overflow-y-auto pr-1 space-y-3 max-h-[40vh]">
           {((selectedEvent as any)?.bookingsData ?? []).map((b: any) => (
             <div key={b.id} className="flex items-center gap-3">
               <div className="min-w-[12rem] flex-1">
@@ -887,6 +931,7 @@ function PujaBookingsPageInner() {
               />
             </div>
           ))}
+          </div>
           <PrimaryButton className="w-full" onClick={async () => {
             if (!sankalpVideoUrl.trim()) return alert('Please upload a video');
             if (selectedEvent) {

@@ -149,6 +149,15 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
 
     if (req.query.include_inactive !== 'true') {
       query += ` AND p.is_active = true`;
+      // Public callers also hide pujas with zero bookable events — they
+      // appear "live" but the booking page shows "No upcoming events scheduled",
+      // which is a dead-end UX. Admin (?include_inactive=true) sees everything.
+      query += ` AND EXISTS (
+        SELECT 1 FROM puja_events pe
+         WHERE pe.puja_id = p.id
+           AND pe.start_time >= NOW()
+           AND pe.status != 'COMPLETED'
+      )`;
     }
 
     if (templeId) {

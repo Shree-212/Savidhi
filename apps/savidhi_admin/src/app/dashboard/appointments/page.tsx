@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { appointmentService } from '@/lib/services';
+import { sortRows, type SortDir } from '@/lib/sort';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -78,6 +79,12 @@ function mapAppointment(a: any): Appointment & { bookedAt: string; devoteeName: 
 export default function AppointmentsPage() {
   const [tab,    setTab]    = useState('List');
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const handleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
   const [selected,      setSelected]      = useState<(Appointment & { bookedAt: string; devoteeName: string; devoteeGotra: string }) | null>(null);
   const [showSetupMeet, setShowSetupMeet] = useState(false);
   const [meetLinkInput, setMeetLinkInput] = useState('');
@@ -197,7 +204,13 @@ export default function AppointmentsPage() {
       />
 
       {tab === 'List' ? (
-        <DataTable columns={columns} data={appointments} />
+        <DataTable
+          columns={columns}
+          data={sortRows(appointments, sortKey, sortDir)}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortChange={handleSort}
+        />
       ) : (
         <TimelineView
           events={timelineEvents}

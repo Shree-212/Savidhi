@@ -3,13 +3,14 @@
 import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { Upload, X, Film, ImageIcon, Loader2 } from 'lucide-react';
+import { VideoPreview } from './VideoPreview';
 
 /** Normalise any uploaded-media URL so it's served via the /api rewrite (already active).
  *  - /api/v1/media/files/... → kept as-is (correct new format)
  *  - http://localhost:PORT/uploads/xxx.jpg → /api/v1/media/files/xxx.jpg
  *  - /uploads/xxx.jpg → /api/v1/media/files/xxx.jpg
  *  - everything else (https://...) → kept as-is */
-function normaliseUrl(url: string): string {
+export function normaliseUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith('/api/v1/media/files/')) return url;
   try {
@@ -100,6 +101,33 @@ export function MediaUploadSingle({ value, onChange, accept, label, type = 'imag
     }
   };
 
+  // For videos with a value, render the inline player + Replace/Remove
+  // buttons so admins can actually scrub through the video to find timestamps.
+  if (type === 'video' && value && !uploading) {
+    return (
+      <div className="border border-border rounded-lg p-3">
+        <p className="text-[10px] font-bold mb-2">{label}</p>
+        <VideoPreview
+          value={value}
+          onReplace={() => inputRef.current?.click()}
+          onRemove={() => onChange('')}
+        />
+        {error && <p className="text-[10px] text-destructive mt-1">{error}</p>}
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+            e.target.value = '';
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="border border-border rounded-lg p-3">
       <p className="text-[10px] font-bold mb-2">{label}</p>
@@ -110,15 +138,7 @@ export function MediaUploadSingle({ value, onChange, accept, label, type = 'imag
         {uploading ? (
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         ) : value ? (
-          type === 'video' ? (
-            <div className="flex flex-col items-center gap-1">
-              <Film className="w-6 h-6 text-primary" />
-              <span className="text-[10px] text-primary font-medium">Video ready</span>
-              <span className="text-[9px] text-muted-foreground">Click to replace</span>
-            </div>
-          ) : (
-            <Image src={normaliseUrl(value)} alt={label} fill className="object-cover rounded-lg" unoptimized sizes="200px" />
-          )
+          <Image src={normaliseUrl(value)} alt={label} fill className="object-cover rounded-lg" unoptimized sizes="200px" />
         ) : (
           <div className="flex flex-col items-center gap-1 text-muted-foreground">
             {type === 'video' ? <Film className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
