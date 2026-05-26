@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { chadhavaService } from '../../services';
+import { chadhavaService, chadhavaEventService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
-import { resolveMediaUrl } from '../../utils';
+import { resolveMediaUrl, formatEventDateWithHindiDay } from '../../utils';
 import type { Chadhava, ChadhavaOffering } from '../../data';
 
 interface Props { navigation: any; route: any; }
@@ -14,6 +14,8 @@ export function ChadhavaDetailScreen({ navigation, route }: Props) {
   const [chadhava, setChadhava] = useState<Chadhava | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  // PDF item 7 — single-event date line, only when event_repeats === false.
+  const [singleEventStart, setSingleEventStart] = useState<string | null>(null);
 
   useEffect(() => {
     const chadhavaId = route.params?.chadhavaId;
@@ -22,6 +24,15 @@ export function ChadhavaDetailScreen({ navigation, route }: Props) {
       try {
         const res = await chadhavaService.getById(chadhavaId);
         const d = res.data?.data ?? res.data;
+        if (d.event_repeats === false) {
+          try {
+            const evRes = await chadhavaEventService.list({ chadhava_id: d.id, upcoming: true, limit: 1 });
+            const events = evRes.data?.data ?? evRes.data ?? [];
+            if (events.length > 0 && events[0].start_time) {
+              setSingleEventStart(events[0].start_time);
+            }
+          } catch { /* silent */ }
+        }
         setChadhava({
           id: d.id,
           name: d.name,
@@ -89,6 +100,13 @@ export function ChadhavaDetailScreen({ navigation, route }: Props) {
             <Icon name="map-marker" size={16} color={Colors.green} />
             <Text style={styles.location}>{chadhava.templeName}, {chadhava.templeLocation}</Text>
           </View>
+          {/* Single-event date line — PDF item 7. Hidden for recurring chadhavas. */}
+          {singleEventStart && (
+            <View style={styles.locRow}>
+              <Icon name="calendar-star" size={16} color={Colors.primary} />
+              <Text style={styles.location}>{formatEventDateWithHindiDay(singleEventStart)}</Text>
+            </View>
+          )}
 
           <ExpandableSection title="Benefits Of Chadhava" initiallyExpanded>
             {chadhava.benefits.map((b, i) => <Text key={i} style={styles.bullet}>• {b}</Text>)}

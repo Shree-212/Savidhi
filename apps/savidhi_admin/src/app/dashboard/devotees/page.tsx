@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { devoteeService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
@@ -23,6 +24,7 @@ interface ApiDevotee {
 
 export default function DevoteesPage() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [selected, setSelected] = useState<DevoteeAdmin | null>(null);
 
   const [devotees, setDevotees] = useState<DevoteeAdmin[]>([]);
@@ -31,7 +33,7 @@ export default function DevoteesPage() {
   const fetchDevotees = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await devoteeService.list({ search: search || undefined });
+      const res = await devoteeService.list({ search: debouncedSearch || undefined });
       const raw: ApiDevotee[] = res.data?.data || res.data || [];
 
       const mapped: DevoteeAdmin[] = raw.map((d) => ({
@@ -50,7 +52,7 @@ export default function DevoteesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     fetchDevotees();
@@ -58,7 +60,7 @@ export default function DevoteesPage() {
 
   useEffect(() => {
     fetchDevotees();
-  }, [search]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const openView = async (devotee: DevoteeAdmin) => {
     try {

@@ -20,7 +20,7 @@ const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; 
 /** GET / – list chadhava events. Admins see all; devotees see upcoming non-cancelled. */
 chadhavaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, chadhava_id, pujari_id, from_date, to_date, upcoming, page = '1', limit = '20' } = req.query;
+    const { status, chadhava_id, pujari_id, from_date, to_date, upcoming, search, page = '1', limit = '20' } = req.query;
     const role = req.headers['x-user-role'] as string;
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
@@ -51,12 +51,25 @@ chadhavaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, n
       params.push(pujari_id);
     }
     if (from_date) { conditions.push(`ce.start_time >= $${idx++}`); params.push(from_date); }
-    if (to_date) { conditions.push(`ce.start_time <= $${idx++}`); params.push(to_date); }
+    // INCLUSIVE to_date — see reports.ts dateRangeParams for rationale.
+    if (to_date) { conditions.push(`ce.start_time < ($${idx++}::date + INTERVAL '1 day')`); params.push(to_date); }
     if (upcoming === 'true') { conditions.push(`ce.start_time >= NOW()`); }
+    // Search across event ID, chadhava name, temple name (PDF item 3a — chadhava-bookings page).
+    if (typeof search === 'string' && search.trim()) {
+      const p = `$${idx++}`;
+      conditions.push(`(ce.id::text ILIKE ${p} OR c.name ILIKE ${p} OR t.name ILIKE ${p})`);
+      params.push(`%${search.trim()}%`);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countResult = await pool.query(`SELECT COUNT(*) FROM chadhava_events ce ${where}`, params);
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM chadhava_events ce
+         JOIN chadhavas c ON c.id = ce.chadhava_id
+         JOIN temples t   ON t.id = c.temple_id
+       ${where}`,
+      params,
+    );
     const total = Number(countResult.rows[0].count);
 
     const { rows } = await pool.query(
@@ -221,6 +234,41 @@ chadhavaEventsRouter.delete('/:id', requireAdmin, async (req: Request, res: Resp
       return res.status(404).json({ success: false, message: 'Chadhava event not found' });
     }
     res.json({ success: true, message: 'Chadhava event deleted' });
+  } catch (err) { next(err); }
+});
+
+/** PATCH /:id/media – update intro/sankalp video URLs WITHOUT running the
+ *  STAGE_TRANSITIONS guard. See puja-events sibling route for rationale. */
+chadhavaEventsRouter.patch('/:id/media', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { short_video_url, sankalp_video_url } = req.body ?? {};
+
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+    if (short_video_url !== undefined) {
+      sets.push(`short_video_url = $${idx++}`);
+      params.push(short_video_url);
+    }
+    if (sankalp_video_url !== undefined) {
+      sets.push(`sankalp_video_url = $${idx++}`);
+      params.push(sankalp_video_url);
+    }
+    if (sets.length === 0) {
+      return res.status(400).json({ success: false, message: 'No media fields supplied' });
+    }
+    sets.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const { rows } = await pool.query(
+      `UPDATE chadhava_events SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+      params,
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Chadhava event not found' });
+    }
+    res.json({ success: true, data: rows[0] });
   } catch (err) { next(err); }
 });
 

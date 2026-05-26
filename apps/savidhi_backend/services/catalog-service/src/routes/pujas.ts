@@ -165,8 +165,10 @@ pujasRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
       query += ` AND p.temple_id = $${params.length}`;
     }
     if (search) {
+      // PDF item 3a (pujas in catalog) — ID, puja name, temple.
       params.push(`%${search}%`);
-      query += ` AND p.name ILIKE $${params.length}`;
+      const p = `$${params.length}`;
+      query += ` AND (p.id::text ILIKE ${p} OR p.name ILIKE ${p} OR t.name ILIKE ${p})`;
     }
 
     // Build a COUNT query that mirrors the WHERE clauses but skips the lateral join.

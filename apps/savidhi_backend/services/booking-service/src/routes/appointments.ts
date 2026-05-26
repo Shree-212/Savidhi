@@ -9,7 +9,7 @@ appointmentsRouter.get('/', requireAuth, async (req: Request, res: Response, nex
   try {
     const role = req.headers['x-user-role'] as string;
     const userId = req.headers['x-user-id'] as string;
-    const { status, astrologer_id, from_date, to_date, page = '1', limit = '20' } = req.query;
+    const { status, astrologer_id, from_date, to_date, search, page = '1', limit = '20' } = req.query;
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
     const offset = (pageNum - 1) * limitNum;
@@ -26,11 +26,23 @@ appointmentsRouter.get('/', requireAuth, async (req: Request, res: Response, nex
     if (status) { conditions.push(`a.status = $${idx++}`); params.push(status); }
     if (astrologer_id) { conditions.push(`a.astrologer_id = $${idx++}`); params.push(astrologer_id); }
     if (from_date) { conditions.push(`a.scheduled_at >= $${idx++}`); params.push(from_date); }
-    if (to_date) { conditions.push(`a.scheduled_at <= $${idx++}`); params.push(to_date); }
+    // INCLUSIVE to_date — see reports.ts dateRangeParams for rationale.
+    if (to_date) { conditions.push(`a.scheduled_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(to_date); }
+    // Search across appointment ID + astrologer name (PDF item 3a — appointments page).
+    if (typeof search === 'string' && search.trim()) {
+      const p = `$${idx++}`;
+      conditions.push(`(a.id::text ILIKE ${p} OR ast.name ILIKE ${p})`);
+      params.push(`%${search.trim()}%`);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countResult = await pool.query(`SELECT COUNT(*) FROM appointments a ${where}`, params);
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM appointments a
+         JOIN astrologers ast ON ast.id = a.astrologer_id
+       ${where}`,
+      params,
+    );
     const total = Number(countResult.rows[0].count);
 
     const { rows } = await pool.query(

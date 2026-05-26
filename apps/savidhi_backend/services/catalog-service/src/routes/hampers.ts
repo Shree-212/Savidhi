@@ -15,8 +15,10 @@ hampersRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     const params: any[] = [];
 
     if (search) {
+      // PDF item 3a (hampers) — ID, name, content description.
       params.push(`%${search}%`);
-      query += ` WHERE name ILIKE $${params.length}`;
+      const p = `$${params.length}`;
+      query += ` WHERE (id::text ILIKE ${p} OR name ILIKE ${p} OR COALESCE(content_description, '') ILIKE ${p})`;
     }
 
     const countResult = await pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);

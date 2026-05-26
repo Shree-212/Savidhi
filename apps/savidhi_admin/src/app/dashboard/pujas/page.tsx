@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { pujaService, templeService, deityService, hamperService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -98,6 +99,7 @@ export default function PujasPage() {
 
 function PujasPageInner() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [pujas, setPujas] = useState<any[]>([]);
   const [temples, setTemples] = useState<SelectOption[]>([]);
   const [deities, setDeities] = useState<SelectOption[]>([]);
@@ -120,7 +122,7 @@ function PujasPageInner() {
     try {
       setLoading(true);
       const res = await pujaService.list({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         temple_id: filterTempleId || undefined,
       });
       setPujas(res.data?.data || []);
@@ -148,7 +150,7 @@ function PujasPageInner() {
 
 
   useEffect(() => { loadData(); loadDropdowns(); }, []);
-  useEffect(() => { loadData(); }, [search, filterTempleId]);
+  useEffect(() => { loadData(); }, [debouncedSearch, filterTempleId]);
 
   const repeatsOnOptions: string[] = useMemo(() => {
     if (editing?.repeat_duration === 'WEEK_DAYS') return WEEKDAYS.map(w => w.code);

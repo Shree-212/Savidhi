@@ -15,7 +15,11 @@ function dateRangeParams(query: Record<string, unknown>, dateCol: string) {
   let idx = 1;
 
   if (query.from_date) { conditions.push(`${dateCol} >= $${idx++}`); params.push(query.from_date); }
-  if (query.to_date)   { conditions.push(`${dateCol} <= $${idx++}`); params.push(query.to_date); }
+  // INCLUSIVE to_date: treat the YYYY-MM-DD string as the END of that day by
+  // comparing against (to_date::date + 1 day) exclusively. Without this,
+  // `<= '2026-05-16'` excludes any row whose timestamp falls after midnight on
+  // 16 May, which was the "13 May–16 May shows only through 15 May" bug.
+  if (query.to_date)   { conditions.push(`${dateCol} < ($${idx++}::date + INTERVAL '1 day')`); params.push(query.to_date); }
 
   return { conditions, params, idx };
 }
@@ -692,9 +696,10 @@ async function fetchAllBookings(query: Record<string, unknown>) {
     allParams.push(query.from_date); pi++;
   }
   if (query.to_date) {
-    pujaFilter += ` AND pe.start_time <= $${pi}`;
-    chadhavaFilter += ` AND ce.start_time <= $${pi}`;
-    apptFilter += ` AND a.scheduled_at <= $${pi}`;
+    // INCLUSIVE to_date — comparison goes against next-day midnight (exclusive).
+    pujaFilter += ` AND pe.start_time < ($${pi}::date + INTERVAL '1 day')`;
+    chadhavaFilter += ` AND ce.start_time < ($${pi}::date + INTERVAL '1 day')`;
+    apptFilter += ` AND a.scheduled_at < ($${pi}::date + INTERVAL '1 day')`;
     allParams.push(query.to_date); pi++;
   }
   const { rows } = await pool.query(

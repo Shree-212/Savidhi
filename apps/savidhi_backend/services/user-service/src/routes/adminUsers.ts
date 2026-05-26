@@ -28,7 +28,11 @@ adminUsersRouter.get(
       let paramIndex = 1;
 
       if (search) {
-        whereClause = `WHERE (d.name ILIKE $${paramIndex} OR d.phone ILIKE $${paramIndex})`;
+        // PDF item 3a (devotees) — ID, name, phone, gotra.
+        whereClause = `WHERE (d.id::text ILIKE $${paramIndex}
+                           OR d.name ILIKE $${paramIndex}
+                           OR d.phone ILIKE $${paramIndex}
+                           OR COALESCE(d.gotra, '') ILIKE $${paramIndex})`;
         values.push(`%${search}%`);
         paramIndex++;
       }

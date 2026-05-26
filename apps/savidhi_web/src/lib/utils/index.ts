@@ -12,6 +12,41 @@ export function formatDate(date: Date | string): string {
   });
 }
 
+// Hindi suffix for the day-of-week tag on single-event puja/chadhava detail
+// pages, e.g. Monday → "Somvar Visesh". Index 0 = Sunday.
+const HINDI_DAY_SUFFIX = [
+  'Ravivar Visesh',
+  'Somvar Visesh',
+  'Mangalvar Visesh',
+  'Budhvar Visesh',
+  'Guruvar Visesh',
+  'Shukravar Visesh',
+  'Shanivar Visesh',
+] as const;
+
+/**
+ * Format an ISO timestamp into the "Mon - 18 May, 2026 - Somvar Visesh" line
+ * used on single-event puja/chadhava detail pages. Always formats in IST so
+ * the weekday is correct regardless of the visitor's timezone.
+ */
+export function formatEventDateWithHindiDay(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).formatToParts(d).reduce<Record<string, string>>((acc, p) => {
+    if (p.type !== 'literal') acc[p.type] = p.value;
+    return acc;
+  }, {});
+  const istDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return `${parts.weekday} - ${parts.day} ${parts.month}, ${parts.year} - ${HINDI_DAY_SUFFIX[istDate.getDay()]}`;
+}
+
 /** Normalise any uploaded-media URL so it's served via the /api rewrite.
  *  - /api/v1/media/files/... → kept as-is (correct routed form)
  *  - http://localhost:PORT/uploads/xxx.jpg → /api/v1/media/files/xxx.jpg

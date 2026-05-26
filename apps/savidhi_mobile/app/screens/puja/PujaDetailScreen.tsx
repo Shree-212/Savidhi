@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../theme';
-import { pujaService } from '../../services';
+import { pujaService, pujaEventService } from '../../services';
 import { ExpandableSection } from '../../components/shared/ExpandableSection';
 import { PrimaryButton } from '../../components/shared/PrimaryButton';
-import { resolveMediaUrl } from '../../utils';
+import { resolveMediaUrl, formatEventDateWithHindiDay } from '../../utils';
 import type { Puja } from '../../data';
 
 interface Props { navigation: any; route: any; }
@@ -13,6 +13,10 @@ interface Props { navigation: any; route: any; }
 export function PujaDetailScreen({ navigation, route }: Props) {
   const [puja, setPuja] = useState<Puja | null>(null);
   const [loading, setLoading] = useState(true);
+  // PDF item 7 — exact date + Hindi-day line for single-event pujas, rendered
+  // only when puja.event_repeats === false. Held separately so we don't have
+  // to widen the shared Puja type for this single screen.
+  const [singleEventStart, setSingleEventStart] = useState<string | null>(null);
 
   useEffect(() => {
     const pujaId = route.params?.pujaId;
@@ -40,6 +44,17 @@ export function PujaDetailScreen({ navigation, route }: Props) {
           isMonthly: d.event_repeats === 'monthly',
           templeId: d.temple_id ?? '',
         });
+        // Only single-event pujas (event_repeats === false) get the explicit
+        // date+day line — recurring pujas already render schedule_day above.
+        if (d.event_repeats === false) {
+          try {
+            const evRes = await pujaEventService.list({ puja_id: d.id, upcoming: true, limit: 1 });
+            const events = evRes.data?.data ?? evRes.data ?? [];
+            if (events.length > 0 && events[0].start_time) {
+              setSingleEventStart(events[0].start_time);
+            }
+          } catch { /* silent — line just won't render */ }
+        }
       } catch (err) {
         console.error('PujaDetailScreen fetch error:', err);
       } finally {
@@ -85,6 +100,13 @@ export function PujaDetailScreen({ navigation, route }: Props) {
               <Text style={styles.countdownText}>{puja.countdown}</Text>
             </View>
           </View>
+          {/* Single-event date line — PDF item 7. Hidden for recurring pujas. */}
+          {singleEventStart && (
+            <View style={styles.dateRow}>
+              <Icon name="calendar-star" size={16} color={Colors.primary} />
+              <Text style={styles.dateText}>{formatEventDateWithHindiDay(singleEventStart)}</Text>
+            </View>
+          )}
 
           {/* Expandable Sections */}
           <ExpandableSection title="Benefits Of Puja" initiallyExpanded>

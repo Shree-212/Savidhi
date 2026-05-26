@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { templeService, deityService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
@@ -27,6 +28,7 @@ interface Temple {
 export default function TemplesPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [temples, setTemples] = useState<Temple[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Temple | null>(null);
@@ -45,7 +47,7 @@ export default function TemplesPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await templeService.list({ search: search || undefined });
+      const res = await templeService.list({ search: debouncedSearch || undefined });
       setTemples(res.data?.data || []);
     } catch (err) {
       console.error('Failed to load temples', err);
@@ -56,7 +58,7 @@ export default function TemplesPage() {
 
   useEffect(() => {
     loadData();
-  }, [search]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     deityService.list({ limit: 200 })

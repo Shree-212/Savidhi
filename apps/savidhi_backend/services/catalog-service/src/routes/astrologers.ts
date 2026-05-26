@@ -22,8 +22,10 @@ astrologersRouter.get('/', async (req: Request, res: Response, next: NextFunctio
     }
 
     if (search) {
+      // PDF item 3a (astrologers) — ID, name, designation.
       params.push(`%${search}%`);
-      query += ` AND name ILIKE $${params.length}`;
+      const p = `$${params.length}`;
+      query += ` AND (id::text ILIKE ${p} OR name ILIKE ${p} OR COALESCE(designation, '') ILIKE ${p})`;
     }
 
     const countResult = await pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);

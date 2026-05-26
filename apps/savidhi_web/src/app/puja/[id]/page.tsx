@@ -13,6 +13,7 @@ import { mapPuja } from '@/lib/mappers';
 import type { Puja } from '@/data/models';
 import { useT, useLocale } from '@/lib/i18n';
 import { getRepeatLabel } from '@/lib/repeatLabel';
+import { formatEventDateWithHindiDay } from '@/lib/utils';
 
 const DEVOTEE_PACKAGE_TIERS = [
   { count: 1, field: 'price_for_1' },
@@ -160,6 +161,17 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
                 ) : null;
               })()}
             </div>
+
+            {/* PDF item 7 — explicit "Mon - 18 May, 2026 - Somvar Visesh" line
+                for non-recurring (single-event) pujas. Hidden when the puja
+                runs on a recurring schedule (the meta row above already shows
+                the schedule_day in that case). */}
+            {pujaRaw?.event_repeats === false && nextEventStart && (
+              <div className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-700 bg-primary-50 border border-primary-100 px-3 py-1.5 rounded-full">
+                <Calendar className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                <span>{formatEventDateWithHindiDay(nextEventStart)}</span>
+              </div>
+            )}
 
             {nextEventStart && (
               <div className="mb-5">

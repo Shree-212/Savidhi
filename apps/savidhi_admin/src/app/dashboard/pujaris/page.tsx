@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { pujariService, templeService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -42,6 +43,7 @@ interface ApiLedgerEntry {
 
 export default function PujarisPage() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [editing, setEditing] = useState<PujariAdmin | null>(null);
   const [showLedger, setShowLedger] = useState(false);
   const [ledgerPujariId, setLedgerPujariId] = useState<string | null>(null);
@@ -86,7 +88,7 @@ export default function PujarisPage() {
     try {
       const temples = tMap || templeMap;
       const res = await pujariService.list({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         temple_id: (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('temple_id') : '') || undefined,
       });
       const raw: ApiPujari[] = res.data?.data || res.data || [];
@@ -130,7 +132,7 @@ export default function PujarisPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, templeMap]);
+  }, [debouncedSearch, templeMap]);
 
   useEffect(() => {
     fetchTemples().then((tMap) => fetchPujaris(tMap));
@@ -140,7 +142,7 @@ export default function PujarisPage() {
     if (Object.keys(templeMap).length > 0) {
       fetchPujaris();
     }
-  }, [search]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchLedger = async (pujariId: string) => {
     try {

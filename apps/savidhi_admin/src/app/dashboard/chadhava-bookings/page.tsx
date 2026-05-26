@@ -6,6 +6,8 @@ import { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { chadhavaEventService, chadhavaBookingService, chadhavaService, pujariService } from '@/lib/services';
 import { sortRows, type SortDir } from '@/lib/sort';
+import { useDebouncedValue } from '@/lib/hooks';
+import { toLocalDatetimeInputIST, fromLocalDatetimeInputIST } from '@/lib/dateUtils';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -124,6 +126,10 @@ function ChadhavaBookingsPageInner() {
 
   const [tab,        setTab]        = useState('List');
   const [search,     setSearch]     = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
+  // PDF item 4b — date range filter on the events list.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPage, setExpandedPage] = useState(1);
   const EXPANDED_PAGE_SIZE = 5;
@@ -176,6 +182,11 @@ function ChadhavaBookingsPageInner() {
       const params: any = { limit: 100 };
       if (filterChadhavaId) params.chadhava_id = filterChadhavaId;
       if (filterPujariId) params.pujari_id = filterPujariId;
+      // Item 3: server-side search (ID / chadhava name / temple).
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      // Item 4b: date range filter on start_time.
+      if (fromDate) params.from_date = fromDate;
+      if (toDate) params.to_date = toDate;
       const res = await chadhavaEventService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       setChadhavaEvents(raw.map(mapEvent));
@@ -186,7 +197,7 @@ function ChadhavaBookingsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [filterChadhavaId, filterPujariId]);
+  }, [filterChadhavaId, filterPujariId, debouncedSearch, fromDate, toDate]);
 
   /* ── Delete event (real DELETE) ── */
   const handleDeleteEvent = async (eventId: string) => {
@@ -252,8 +263,9 @@ function ChadhavaBookingsPageInner() {
       mapped.pujari_id = data.pujari_id ?? '';
       mapped.max_bookings = data.max_bookings ?? 100;
       setSelectedEvent(mapped);
+      // PDF item 2 — IST-aware prefill so the form matches the details page.
       setEditEventPujariId(data.pujari_id ?? '');
-      setEditEventStartTime(data.start_time ? new Date(data.start_time).toISOString().slice(0, 16) : '');
+      setEditEventStartTime(toLocalDatetimeInputIST(data.start_time));
       setEditEventMaxBookings(data.max_bookings ?? 100);
     } catch {
       // fallback: find in list
@@ -334,18 +346,42 @@ function ChadhavaBookingsPageInner() {
     }
   };
 
-  // Clears the chosen video URL on the event row. Used by the Remove button
-  // inside the event-detail modal. We don't delete the underlying GCS file.
+  // Clears the chosen video URL on the event row. Uses /media so it works in
+  // any stage (PDF item 5a/c).
   const handleRemoveVideo = async (eventId: string, field: 'short_video_url' | 'sankalp_video_url') => {
     const fieldLabel = field === 'short_video_url' ? 'short video' : 'sankalp video';
     if (!confirm(`Remove the ${fieldLabel} from this event?`)) return;
     try {
-      await chadhavaEventService.update(eventId, { [field]: null });
+      await chadhavaEventService.updateMedia(eventId, { [field]: null });
       if (selectedEvent?.id === eventId) await fetchEventDetail(eventId);
     } catch (err: any) {
       alert(err.response?.data?.message || err.message || 'Failed to remove video');
     }
   };
+
+  // PDF item 5b — prefill per-booking sankalp timestamps when the modal opens
+  // to replace an existing video.
+  useEffect(() => {
+    if (!showSankalpModal || !selectedEvent?.bookingsData) return;
+    const next: Record<string, { minute: string; second: string }> = {};
+    for (const b of selectedEvent.bookingsData as any[]) {
+      const ts = b.sankalp_video_timestamp;
+      if (!ts) continue;
+      const [m, s] = String(ts).split(':');
+      next[b.id] = { minute: m ?? '', second: s ?? '' };
+    }
+    setSankalpTimestamps(next);
+    if ((selectedEvent as any).sankalp_video_url) {
+      setSankalpVideoUrl((selectedEvent as any).sankalp_video_url);
+    }
+  }, [showSankalpModal, selectedEvent?.id, selectedEvent?.bookingsData]);
+
+  useEffect(() => {
+    if (!showVideoModal || !selectedEvent) return;
+    if ((selectedEvent as any).short_video_url) {
+      setShortVideoUrl((selectedEvent as any).short_video_url);
+    }
+  }, [showVideoModal, selectedEvent?.id]);
 
   const handleViewBooking = async (bookingId: string) => {
     try {
@@ -459,6 +495,10 @@ function ChadhavaBookingsPageInner() {
         search={search}
         onSearchChange={setSearch}
         onAdd={openCreateModal}
+        showDateNav
+        fromDate={fromDate}
+        toDate={toDate}
+        onDateChange={({ from, to }) => { setFromDate(from); setToDate(to); }}
       />
 
       {(filterChadhavaId || filterPujariId) && (
@@ -665,19 +705,47 @@ function ChadhavaBookingsPageInner() {
               </p>
             )}
 
-            {/* Sankalp video — real player with replace + remove. */}
-            {eventStage && ['SANKALP_VIDEO_ADDED', 'COMPLETED'].includes(eventStage) && (
-              <div className="border border-border rounded-lg p-3">
-                <p className="text-[10px] font-bold mb-2 uppercase tracking-wider text-muted-foreground">Sankalp Video</p>
-                {(selectedEvent as any).sankalp_video_url ? (
-                  <VideoPreview
-                    value={(selectedEvent as any).sankalp_video_url}
-                    onReplace={() => setShowSankalpModal(true)}
-                    onRemove={() => handleRemoveVideo(selectedEvent.id, 'sankalp_video_url')}
-                  />
-                ) : (
-                  <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">Yet to be uploaded</div>
-                )}
+            {/* Short + sankalp video slots — PDF item 5a: always visible (any
+                stage past YET_TO_START) with re-upload button on empty slots.
+                Lets admin replace/delete videos even on COMPLETED events. */}
+            {eventStage && eventStage !== 'YET_TO_START' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="border border-border rounded-lg p-3">
+                  <p className="text-[10px] font-bold mb-2 uppercase tracking-wider text-muted-foreground">Short Video</p>
+                  {(selectedEvent as any).short_video_url ? (
+                    <VideoPreview
+                      value={(selectedEvent as any).short_video_url}
+                      onReplace={() => setShowVideoModal(true)}
+                      onRemove={() => handleRemoveVideo(selectedEvent.id, 'short_video_url')}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowVideoModal(true)}
+                      className="w-full bg-accent rounded-lg h-20 flex items-center justify-center text-xs text-primary hover:bg-accent/80 border border-dashed border-border"
+                    >
+                      + Upload Short Video
+                    </button>
+                  )}
+                </div>
+                <div className="border border-border rounded-lg p-3">
+                  <p className="text-[10px] font-bold mb-2 uppercase tracking-wider text-muted-foreground">Sankalp Video</p>
+                  {(selectedEvent as any).sankalp_video_url ? (
+                    <VideoPreview
+                      value={(selectedEvent as any).sankalp_video_url}
+                      onReplace={() => setShowSankalpModal(true)}
+                      onRemove={() => handleRemoveVideo(selectedEvent.id, 'sankalp_video_url')}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowSankalpModal(true)}
+                      className="w-full bg-accent rounded-lg h-20 flex items-center justify-center text-xs text-primary hover:bg-accent/80 border border-dashed border-border"
+                    >
+                      + Upload Sankalp Video
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -685,7 +753,8 @@ function ChadhavaBookingsPageInner() {
               <p className="text-[11px] text-muted-foreground">Rating: ⭐ 5 Star (99)</p>
             )}
 
-            {/* Action buttons (hidden when event is cancelled) */}
+            {/* PDF item 1 — row 1: Edit Event Meta + stage action;
+                row 2: Delete Event + Cancel All & Refund. Close removed. */}
             {isEventCancelled ? (
               <div className="mt-4 p-3 rounded-md border border-red-200 bg-red-50 text-xs text-red-700">
                 This event is <strong>CANCELLED</strong>. Stage progression is locked.
@@ -693,11 +762,12 @@ function ChadhavaBookingsPageInner() {
               </div>
             ) : (
               <div className="flex gap-3 mt-4">
+                <OutlineButton className="flex-1" onClick={() => {
+                  setEditEventHasPrasad((selectedEvent as any)?.has_prasad ?? true);
+                  setShowEditEventModal(true);
+                }}>Edit Event Meta</OutlineButton>
                 {eventStage === 'YET_TO_START' && (
-                  <>
-                    <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Close</OutlineButton>
-                    <PrimaryButton className="flex-1" onClick={() => setShowLiveModal(true)}>Add Live Feed Link</PrimaryButton>
-                  </>
+                  <PrimaryButton className="flex-1" onClick={() => setShowLiveModal(true)}>Add Live Feed Link</PrimaryButton>
                 )}
                 {eventStage === 'LIVE_ADDED' && (
                   <PrimaryButton className="flex-1" onClick={() => setShowVideoModal(true)}>Add Short Video</PrimaryButton>
@@ -711,13 +781,14 @@ function ChadhavaBookingsPageInner() {
               </div>
             )}
 
-            {/* Admin meta tools — hidden when cancelled */}
             {!isEventCancelled && (
               <div className="flex gap-3 mt-2 pt-3 border-t border-border">
-                <OutlineButton className="flex-1" onClick={() => {
-                  setEditEventHasPrasad((selectedEvent as any)?.has_prasad ?? true);
-                  setShowEditEventModal(true);
-                }}>Edit Event Meta</OutlineButton>
+                <OutlineButton
+                  className="flex-1 text-red-500 border-red-300 hover:bg-red-50"
+                  onClick={() => handleDeleteEvent(selectedEvent.id)}
+                >
+                  Delete Event
+                </OutlineButton>
                 <OutlineButton
                   className="flex-1 text-red-500 border-red-300 hover:bg-red-50"
                   onClick={() => handleCancelAllBookings(selectedEvent.id)}
@@ -789,8 +860,9 @@ function ChadhavaBookingsPageInner() {
                   data.pujari_id = editEventPujariId || null;
                 }
                 if ((selectedEvent.bookingsData?.length ?? 0) === 0) {
+                  // Treat the datetime-local value as IST wall time (item 2).
                   data.start_time = editEventStartTime
-                    ? new Date(editEventStartTime).toISOString()
+                    ? fromLocalDatetimeInputIST(editEventStartTime)
                     : null;
                 }
                 if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
@@ -862,7 +934,21 @@ function ChadhavaBookingsPageInner() {
           />
           <PrimaryButton className="w-full" onClick={async () => {
             if (!shortVideoUrl.trim()) return alert('Please upload a video');
-            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { short_video_url: shortVideoUrl });
+            if (selectedEvent) {
+              const currentStage = (selectedEvent as any).stage as string | undefined;
+              try {
+                if (currentStage === 'LIVE_ADDED') {
+                  await handleAdvanceStage(selectedEvent.id, { short_video_url: shortVideoUrl });
+                } else {
+                  await chadhavaEventService.updateMedia(selectedEvent.id, { short_video_url: shortVideoUrl });
+                  await fetchEvents();
+                  await fetchEventDetail(selectedEvent.id);
+                }
+              } catch (err: any) {
+                alert(err?.response?.data?.message || err?.message || 'Failed to save short video');
+                return;
+              }
+            }
             setShortVideoUrl('');
             setShowVideoModal(false);
           }}>Submit</PrimaryButton>
@@ -918,7 +1004,22 @@ function ChadhavaBookingsPageInner() {
           <PrimaryButton className="w-full" onClick={async () => {
             if (!sankalpVideoUrl.trim()) return alert('Please upload a video');
             if (selectedEvent) {
-              await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+              // PDF item 5c: only advance when at SHORT_VIDEO_ADDED. For any
+              // later stage (including COMPLETED) use the media route so we
+              // don't trip the STAGE_TRANSITIONS guard.
+              const currentStage = (selectedEvent as any).stage as string | undefined;
+              try {
+                if (currentStage === 'SHORT_VIDEO_ADDED') {
+                  await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+                } else {
+                  await chadhavaEventService.updateMedia(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+                  await fetchEvents();
+                  await fetchEventDetail(selectedEvent.id);
+                }
+              } catch (err: any) {
+                alert(err?.response?.data?.message || err?.message || 'Failed to save sankalp video');
+                return;
+              }
               await Promise.allSettled(
                 Object.entries(sankalpTimestamps).map(([bookingId, ts]) => {
                   const m = parseInt(ts.minute || '0');

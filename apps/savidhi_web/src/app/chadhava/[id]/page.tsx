@@ -3,7 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, MapPin, Minus, Plus, Loader2, Clock, Repeat, Sparkles } from 'lucide-react';
+import { ArrowLeft, MapPin, Minus, Plus, Loader2, Clock, Repeat, Sparkles, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ExpandableSection } from '@/components/shared/ExpandableSection';
 import { ImageSlider } from '@/components/shared/ImageSlider';
@@ -12,7 +12,7 @@ import { DevoteeProof } from '@/components/shared/DevoteeProof';
 import { chadhavaService, chadhavaEventService } from '@/lib/services';
 import { mapChadhava } from '@/lib/mappers';
 import type { Chadhava } from '@/data/models';
-import { normaliseMediaUrl } from '@/lib/utils';
+import { normaliseMediaUrl, formatEventDateWithHindiDay } from '@/lib/utils';
 import { useT, useLocale } from '@/lib/i18n';
 import { getRepeatLabel } from '@/lib/repeatLabel';
 
@@ -22,6 +22,10 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
   const { locale } = useLocale();
   const [chadhava, setChadhava] = useState<Chadhava | null>(null);
   const [nextEventStart, setNextEventStart] = useState<string | null>(null);
+  // PDF item 7 — `event_repeats` from the raw API row drives whether we show
+  // the explicit "Mon - 18 May, 2026 - Somvar Visesh" line. The mapped model
+  // doesn't surface this flag directly so we keep it locally.
+  const [isSingleEvent, setIsSingleEvent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
@@ -33,7 +37,10 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
     ]).then(([chRes, evRes]) => {
       if (chRes.status === 'fulfilled') {
         const raw = chRes.value.data?.data ?? chRes.value.data;
-        if (raw) setChadhava(mapChadhava(raw));
+        if (raw) {
+          setChadhava(mapChadhava(raw));
+          setIsSingleEvent(raw.event_repeats === false);
+        }
       }
       if (evRes.status === 'fulfilled') {
         const evs: any[] = evRes.value.data?.data ?? [];
@@ -155,6 +162,14 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
                 ) : null;
               })()}
             </div>
+
+            {/* PDF item 7 — exact date+Hindi-day line for single-event chadhavas. */}
+            {isSingleEvent && nextEventStart && (
+              <div className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-700 bg-primary-50 border border-primary-100 px-3 py-1.5 rounded-full">
+                <Calendar className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                <span>{formatEventDateWithHindiDay(nextEventStart)}</span>
+              </div>
+            )}
 
             {nextEventStart && (
               <div className="mb-5">

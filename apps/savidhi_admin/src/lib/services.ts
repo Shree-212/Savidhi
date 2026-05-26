@@ -144,11 +144,26 @@ export const pujaEventService = {
       sankalp_video_url?: string;
     },
   ) => apiClient.patch(`/bookings/puja-events/${id}/stage`, data),
+  // PATCH /:id/media — update intro/sankalp video URLs WITHOUT the
+  // STAGE_TRANSITIONS guard. Use this instead of advanceStage() when the event
+  // is already at SHIPPED (or any terminal stage) and the admin just wants to
+  // replace/delete a video. Pass `null` to clear a slot.
+  updateMedia: (
+    id: string,
+    data: { short_video_url?: string | null; sankalp_video_url?: string | null },
+  ) => apiClient.patch(`/bookings/puja-events/${id}/media`, data),
 };
 
 export const pujaBookingService = {
-  list: (params?: { page?: number; limit?: number; status?: string; puja_event_id?: string }) =>
-    apiClient.get('/bookings/puja-bookings', { params }),
+  list: (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    puja_event_id?: string;
+    search?: string;
+    from_date?: string;
+    to_date?: string;
+  }) => apiClient.get('/bookings/puja-bookings', { params }),
   getById: (id: string) => apiClient.get(`/bookings/puja-bookings/${id}`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/puja-bookings/${id}/cancel`),
@@ -166,6 +181,7 @@ export const chadhavaEventService = {
     chadhava_id?: string;
     pujari_id?: string;
     upcoming?: boolean;
+    search?: string;
   }) => apiClient.get('/bookings/chadhava-events', { params }),
   getById: (id: string) => apiClient.get(`/bookings/chadhava-events/${id}`),
   create: (data: any) => apiClient.post('/bookings/chadhava-events', data),
@@ -183,6 +199,11 @@ export const chadhavaEventService = {
       sankalp_video_url?: string;
     },
   ) => apiClient.patch(`/bookings/chadhava-events/${id}/stage`, data),
+  // See pujaEventService.updateMedia for rationale.
+  updateMedia: (
+    id: string,
+    data: { short_video_url?: string | null; sankalp_video_url?: string | null },
+  ) => apiClient.patch(`/bookings/chadhava-events/${id}/media`, data),
 };
 
 export const chadhavaBookingService = {
@@ -191,6 +212,9 @@ export const chadhavaBookingService = {
     limit?: number;
     status?: string;
     chadhava_event_id?: string;
+    search?: string;
+    from_date?: string;
+    to_date?: string;
   }) => apiClient.get('/bookings/chadhava-bookings', { params }),
   getById: (id: string) => apiClient.get(`/bookings/chadhava-bookings/${id}`),
   cancel: (id: string) =>
@@ -205,6 +229,10 @@ export const appointmentService = {
     limit?: number;
     status?: string;
     date?: string;
+    search?: string;
+    from_date?: string;
+    to_date?: string;
+    astrologer_id?: string;
   }) => apiClient.get('/bookings/appointments', { params }),
   getById: (id: string) => apiClient.get(`/bookings/appointments/${id}`),
   generateMeetLink: (id: string, data?: { meet_link?: string }) =>

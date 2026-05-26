@@ -9,6 +9,44 @@ export function formatDate(date: string | Date): string {
   });
 }
 
+// Hindi suffix for the day-of-week tag shown on single-event puja/chadhava
+// detail pages, e.g. Monday → "Somvar Visesh". Index 0 = Sunday.
+const HINDI_DAY_SUFFIX = [
+  'Ravivar Visesh',
+  'Somvar Visesh',
+  'Mangalvar Visesh',
+  'Budhvar Visesh',
+  'Guruvar Visesh',
+  'Shukravar Visesh',
+  'Shanivar Visesh',
+] as const;
+
+/**
+ * Format an ISO timestamp into the "Mon - 18 May, 2026 - Somvar Visesh" line
+ * used on single-event puja/chadhava detail pages. Always formats in IST so
+ * the weekday matches the temple's local calendar regardless of the device
+ * timezone. Returns '' on bad input rather than throwing.
+ */
+export function formatEventDateWithHindiDay(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).formatToParts(d).reduce<Record<string, string>>((acc, p) => {
+    if (p.type !== 'literal') acc[p.type] = p.value;
+    return acc;
+  }, {});
+  // weekday index in IST — re-derive via toLocaleString to dodge UTC drift.
+  const istDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const dow = istDate.getDay();
+  return `${parts.weekday} - ${parts.day} ${parts.month}, ${parts.year} - ${HINDI_DAY_SUFFIX[dow]}`;
+}
+
 /** Truncate a string to maxLength */
 export function truncate(str: string, maxLength = 100): string {
   if (str.length <= maxLength) return str;

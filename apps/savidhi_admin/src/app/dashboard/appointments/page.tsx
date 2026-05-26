@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { appointmentService } from '@/lib/services';
 import { sortRows, type SortDir } from '@/lib/sort';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -79,6 +80,10 @@ function mapAppointment(a: any): Appointment & { bookedAt: string; devoteeName: 
 export default function AppointmentsPage() {
   const [tab,    setTab]    = useState('List');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
+  // PDF item 4b — date range filter for appointments.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate,   setToDate]   = useState('');
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const handleSort = (key: string) => {
@@ -101,7 +106,13 @@ export default function AppointmentsPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await appointmentService.list({ limit: 100 });
+      const params: any = { limit: 100 };
+      // PDF item 3: server-side search by ID + astrologer name.
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      // PDF item 4b: date range on scheduled_at.
+      if (fromDate) params.from_date = fromDate;
+      if (toDate)   params.to_date   = toDate;
+      const res = await appointmentService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       const mapped = raw.map(mapAppointment);
       setAppointments(mapped);
@@ -111,7 +122,7 @@ export default function AppointmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debouncedSearch, fromDate, toDate]);
 
   useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
 
@@ -201,6 +212,10 @@ export default function AppointmentsPage() {
         search={search}
         onSearchChange={setSearch}
         onAdd={() => {}}
+        showDateNav
+        fromDate={fromDate}
+        toDate={toDate}
+        onDateChange={({ from, to }) => { setFromDate(from); setToDate(to); }}
       />
 
       {tab === 'List' ? (

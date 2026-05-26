@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { hamperService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
@@ -16,6 +17,7 @@ interface Hamper {
 
 export default function HampersPage() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [hampers, setHampers] = useState<Hamper[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Hamper | null>(null);
@@ -29,7 +31,7 @@ export default function HampersPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await hamperService.list({ search: search || undefined });
+      const res = await hamperService.list({ search: debouncedSearch || undefined });
       setHampers(res.data?.data || []);
     } catch (err) {
       console.error('Failed to load hampers', err);
@@ -40,7 +42,7 @@ export default function HampersPage() {
 
   useEffect(() => {
     loadData();
-  }, [search]);
+  }, [debouncedSearch]);
 
   const handleAdd = () => {
     setIsNew(true);

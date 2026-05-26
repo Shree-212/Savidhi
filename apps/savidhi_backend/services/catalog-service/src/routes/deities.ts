@@ -8,7 +8,18 @@ export const deitiesRouter = Router();
 
 deitiesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query('SELECT * FROM deities ORDER BY name');
+    // PDF item 3a (deities) — ID, type of deity. The schema (001_init.sql) has
+    // no separate `type` column; the deity's `name` (Shiva, Vishnu, Durga…) IS
+    // the type, so the search predicate matches across id + name.
+    const search = (req.query.search as string | undefined)?.trim();
+    let sql = 'SELECT * FROM deities';
+    const params: unknown[] = [];
+    if (search) {
+      params.push(`%${search}%`);
+      sql += ` WHERE id::text ILIKE $1 OR name ILIKE $1`;
+    }
+    sql += ' ORDER BY name';
+    const result = await pool.query(sql, params);
     const locale = parseLocale(req.query.locale);
     res.json({
       success: true,

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { chadhavaService, templeService, deityService, hamperService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -85,6 +86,7 @@ const TITHIS: string[] = [
 // ─── Component ─────────────────────────────────────────────────────────────
 export default function ChadhavasPage() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [chadhavas, setChadhavas] = useState<any[]>([]);
   const [temples, setTemples] = useState<SelectOption[]>([]);
   const [deities, setDeities] = useState<SelectOption[]>([]);
@@ -104,7 +106,7 @@ export default function ChadhavasPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await chadhavaService.list({ search: search || undefined });
+      const res = await chadhavaService.list({ search: debouncedSearch || undefined });
       setChadhavas(res.data?.data || []);
     } catch (err) {
       console.error('Failed to load chadhavas', err);
@@ -129,7 +131,7 @@ export default function ChadhavasPage() {
   };
 
   useEffect(() => { loadData(); loadDropdowns(); }, []);
-  useEffect(() => { loadData(); }, [search]);
+  useEffect(() => { loadData(); }, [debouncedSearch]);
 
   const repeatsOnOptions: string[] = useMemo(() => {
     if (editing?.repeat_duration === 'WEEK_DAYS') return WEEKDAYS.map(w => w.code);

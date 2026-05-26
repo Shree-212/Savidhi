@@ -176,13 +176,28 @@ chadhavasRouter.get('/', async (req: Request, res: Response, next: NextFunction)
       conds.push(`c.temple_id = $${params.length}`);
     }
     if (search) {
+      // PDF item 3a (chadhavas in catalog) — ID, name, temple, deity, day.
+      // schedule_day is stored as text (e.g. "Monday"); repeats_on is an array
+      // when event_repeats=true, but searching the scalar covers single-event
+      // chadhavas and the common admin filter case.
       params.push(`%${search}%`);
-      conds.push(`c.name ILIKE $${params.length}`);
+      const p = `$${params.length}`;
+      conds.push(
+        `(c.id::text ILIKE ${p}
+           OR c.name ILIKE ${p}
+           OR t.name ILIKE ${p}
+           OR d.name ILIKE ${p}
+           OR COALESCE(c.schedule_day, '') ILIKE ${p})`,
+      );
     }
     const whereClause = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
+    // Count query needs the joins for the search predicate.
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM chadhavas c ${whereClause}`,
+      `SELECT COUNT(*) FROM chadhavas c
+         LEFT JOIN temples t ON c.temple_id = t.id
+         LEFT JOIN deities d ON c.deity_id = d.id
+       ${whereClause}`,
       params,
     );
     const total = parseInt(countResult.rows[0].count);

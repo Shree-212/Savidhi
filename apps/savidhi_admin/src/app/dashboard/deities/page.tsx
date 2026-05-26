@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { deityService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
@@ -16,6 +17,7 @@ interface Deity {
 
 export default function DeitiesPage() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [deities, setDeities] = useState<Deity[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Deity | null>(null);
@@ -27,7 +29,7 @@ export default function DeitiesPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await deityService.list({ search: search || undefined });
+      const res = await deityService.list({ search: debouncedSearch || undefined });
       setDeities(res.data?.data || []);
     } catch (err) {
       console.error('Failed to load deities', err);
@@ -38,7 +40,7 @@ export default function DeitiesPage() {
 
   useEffect(() => {
     loadData();
-  }, [search]);
+  }, [debouncedSearch]);
 
   const handleAdd = () => {
     setIsNew(true);

@@ -10,6 +10,7 @@ pujarisRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const offset = (page - 1) * limit;
     const templeId = req.query.temple_id as string;
+    const search = req.query.search as string;
 
     let query = 'SELECT p.*, t.name AS temple_name FROM pujaris p LEFT JOIN temples t ON p.temple_id = t.id WHERE 1=1';
     const params: any[] = [];
@@ -21,6 +22,13 @@ pujarisRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     if (templeId) {
       params.push(templeId);
       query += ` AND p.temple_id = $${params.length}`;
+    }
+
+    if (search) {
+      // PDF item 3a (pujaris) — ID, name, temple.
+      params.push(`%${search}%`);
+      const p = `$${params.length}`;
+      query += ` AND (p.id::text ILIKE ${p} OR p.name ILIKE ${p} OR t.name ILIKE ${p})`;
     }
 
     const countQuery = query.replace('SELECT p.*, t.name AS temple_name', 'SELECT COUNT(*)');

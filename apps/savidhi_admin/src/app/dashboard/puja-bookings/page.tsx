@@ -6,6 +6,8 @@ import { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { pujaEventService, pujaBookingService, pujaService, pujariService } from '@/lib/services';
 import { sortRows, type SortDir } from '@/lib/sort';
+import { useDebouncedValue } from '@/lib/hooks';
+import { toLocalDatetimeInputIST, fromLocalDatetimeInputIST } from '@/lib/dateUtils';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -111,6 +113,10 @@ function PujaBookingsPageInner() {
 
   const [tab, setTab] = useState('List');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
+  // PDF item 4b — date range filter on the events list.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPage, setExpandedPage] = useState(1);
   const EXPANDED_PAGE_SIZE = 5;
@@ -165,6 +171,11 @@ function PujaBookingsPageInner() {
       const params: any = { limit: 100 };
       if (filterPujaId) params.puja_id = filterPujaId;
       if (filterPujariId) params.pujari_id = filterPujariId;
+      // Item 3: server-side search (ID / puja name / temple).
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      // Item 4b: date range filter on start_time.
+      if (fromDate) params.from_date = fromDate;
+      if (toDate) params.to_date = toDate;
       const res = await pujaEventService.list(params);
       const raw = res.data?.data ?? res.data ?? [];
       setPujaEvents(raw.map(mapEvent));
@@ -175,7 +186,7 @@ function PujaBookingsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [filterPujaId, filterPujariId]);
+  }, [filterPujaId, filterPujariId, debouncedSearch, fromDate, toDate]);
 
   // ── Fetch bookings for expanded event ────────────────────
   const fetchBookings = useCallback(async (eventId: string) => {
@@ -201,9 +212,12 @@ function PujaBookingsPageInner() {
       (mapped as any).pujari_id = data.pujari_id ?? '';
       (mapped as any).max_bookings = data.max_bookings ?? 100;
       setSelectedEvent(mapped as any);
-      // Seed the edit-event form state
+      // Seed the edit-event form state.
+      // PDF item 2: prefill must match the IST time shown on the details page.
+      // toLocalDatetimeInputIST converts UTC ISO → IST YYYY-MM-DDTHH:mm so the
+      // datetime-local input shows e.g. "09:00" (IST), not "03:30" (UTC).
       setEditEventPujariId(data.pujari_id ?? '');
-      setEditEventStartTime(data.start_time ? new Date(data.start_time).toISOString().slice(0, 16) : '');
+      setEditEventStartTime(toLocalDatetimeInputIST(data.start_time));
       setEditEventMaxBookings(data.max_bookings ?? 100);
       setEditEventHasPrasad(data.has_prasad ?? true);
     } catch {
@@ -278,6 +292,35 @@ function PujaBookingsPageInner() {
     }
   }, [expandedId, fetchBookings]);
 
+  // PDF item 5b — when the Sankalp Video modal opens to REPLACE an existing
+  // sankalp video, prefill the per-booking minute/second timestamps from the
+  // booking rows (sankalp_video_timestamp is "MM:SS"). Without this the admin
+  // had to re-enter every devotee's timestamp from scratch on every replace.
+  useEffect(() => {
+    if (!showSankalpModal || !selectedEvent?.bookingsData) return;
+    const next: Record<string, { minute: string; second: string }> = {};
+    for (const b of selectedEvent.bookingsData as any[]) {
+      const ts = b.sankalp_video_timestamp;
+      if (!ts) continue;
+      const [m, s] = String(ts).split(':');
+      next[b.id] = { minute: m ?? '', second: s ?? '' };
+    }
+    setSankalpTimestamps(next);
+    // Also prefill the video URL field so the existing video plays in the
+    // uploader and the Submit button isn't blocked by an empty-URL guard.
+    if ((selectedEvent as any).sankalp_video_url) {
+      setSankalpVideoUrl((selectedEvent as any).sankalp_video_url);
+    }
+  }, [showSankalpModal, selectedEvent?.id, selectedEvent?.bookingsData]);
+
+  // Mirror prefill for the Short Video replace modal.
+  useEffect(() => {
+    if (!showVideoModal || !selectedEvent) return;
+    if ((selectedEvent as any).short_video_url) {
+      setShortVideoUrl((selectedEvent as any).short_video_url);
+    }
+  }, [showVideoModal, selectedEvent?.id]);
+
   // ── Stage advance handler ────────────────────────────────
   const handleAdvanceStage = async (eventId: string, data?: Record<string, any>) => {
     try {
@@ -292,11 +335,13 @@ function PujaBookingsPageInner() {
 
   // Clears the chosen video URL on the event row. Used by the Remove button
   // inside the event-detail modal. We don't delete the underlying GCS file.
+  // Uses the dedicated /media route so the STAGE_TRANSITIONS guard doesn't
+  // reject deletes once the event is past SHIPPED (PDF item 5c).
   const handleRemoveVideo = async (eventId: string, field: 'short_video_url' | 'sankalp_video_url') => {
     const fieldLabel = field === 'short_video_url' ? 'short video' : 'sankalp video';
     if (!confirm(`Remove the ${fieldLabel} from this event?`)) return;
     try {
-      await pujaEventService.update(eventId, { [field]: null });
+      await pujaEventService.updateMedia(eventId, { [field]: null });
       if (selectedEvent?.id === eventId) await fetchEventDetail(eventId);
     } catch (err: any) {
       alert(err.response?.data?.message || err.message || 'Failed to remove video');
@@ -464,6 +509,10 @@ function PujaBookingsPageInner() {
         search={search}
         onSearchChange={setSearch}
         onAdd={openCreateModal}
+        showDateNav
+        fromDate={fromDate}
+        toDate={toDate}
+        onDateChange={({ from, to }) => { setFromDate(from); setToDate(to); }}
       />
 
       {(filterPujaId || filterPujariId) && (
@@ -656,9 +705,12 @@ function PujaBookingsPageInner() {
               </p>
             )}
 
-            {/* Videos: real player with replace + remove. Visible from
-                SHORT_VIDEO_ADDED onwards (matches the stage gate above). */}
-            {eventStage && ['SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'].includes(eventStage) && (
+            {/* Videos: real player with replace + remove.
+                PDF item 5a: slots are visible regardless of stage so the admin
+                can always upload, replace, or delete intro/sankalp media —
+                including after the event has reached SHIPPED. When a slot is
+                empty we render an Upload button instead of a dead placeholder. */}
+            {eventStage && eventStage !== 'YET_TO_START' && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="border border-border rounded-lg p-3">
                   <p className="text-[10px] font-bold mb-2 uppercase tracking-wider text-muted-foreground">Short Video</p>
@@ -669,7 +721,13 @@ function PujaBookingsPageInner() {
                       onRemove={() => handleRemoveVideo(selectedEvent.id, 'short_video_url')}
                     />
                   ) : (
-                    <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">Not uploaded</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowVideoModal(true)}
+                      className="w-full bg-accent rounded-lg h-20 flex items-center justify-center text-xs text-primary hover:bg-accent/80 border border-dashed border-border"
+                    >
+                      + Upload Short Video
+                    </button>
                   )}
                 </div>
                 <div className="border border-border rounded-lg p-3">
@@ -681,7 +739,13 @@ function PujaBookingsPageInner() {
                       onRemove={() => handleRemoveVideo(selectedEvent.id, 'sankalp_video_url')}
                     />
                   ) : (
-                    <div className="bg-accent rounded-lg h-20 flex items-center justify-center text-muted-foreground text-xs">Yet to be uploaded</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSankalpModal(true)}
+                      className="w-full bg-accent rounded-lg h-20 flex items-center justify-center text-xs text-primary hover:bg-accent/80 border border-dashed border-border"
+                    >
+                      + Upload Sankalp Video
+                    </button>
                   )}
                 </div>
               </div>
@@ -692,7 +756,11 @@ function PujaBookingsPageInner() {
               <p className="text-[11px] text-muted-foreground">Rating: ⭐ 5 Star (99)</p>
             )}
 
-            {/* Stage-based action buttons (hidden when event is cancelled) */}
+            {/* PDF item 1 — restructured button layout:
+                  row 1: Edit Event Meta  |  <stage-specific primary action>
+                  row 2: Delete Event     |  Cancel All & Refund
+                The redundant "Close" button (top-right ✕ already closes the
+                modal) is gone. */}
             {isEventCancelled ? (
               <div className="mt-4 p-3 rounded-md border border-red-200 bg-red-50 text-xs text-red-700">
                 This event is <strong>CANCELLED</strong>. Stage progression is locked.
@@ -700,11 +768,9 @@ function PujaBookingsPageInner() {
               </div>
             ) : (
               <div className="flex gap-3 mt-4">
+                <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(true)}>Edit Event Meta</OutlineButton>
                 {eventStage === 'YET_TO_START' && (
-                  <>
-                    <OutlineButton className="flex-1" onClick={() => setSelectedEvent(null)}>Close</OutlineButton>
-                    <PrimaryButton className="flex-1" onClick={() => { setShowLiveModal(true); }}>Add Live Feed Link</PrimaryButton>
-                  </>
+                  <PrimaryButton className="flex-1" onClick={() => { setShowLiveModal(true); }}>Add Live Feed Link</PrimaryButton>
                 )}
                 {eventStage === 'LIVE_ADDED' && (
                   <PrimaryButton className="flex-1" onClick={() => { setShowVideoModal(true); }}>Add Short Video</PrimaryButton>
@@ -724,10 +790,16 @@ function PujaBookingsPageInner() {
               </div>
             )}
 
-            {/* Admin meta tools — only Edit Meta + Cancel-All remain when not cancelled */}
+            {/* Admin meta tools — Delete Event takes the slot previously held by
+                Edit Event Meta (now moved to row 1). Cancel All & Refund stays. */}
             {!isEventCancelled && (
               <div className="flex gap-3 mt-2 pt-3 border-t border-border">
-                <OutlineButton className="flex-1" onClick={() => setShowEditEventModal(true)}>Edit Event Meta</OutlineButton>
+                <OutlineButton
+                  className="flex-1 text-red-500 border-red-300 hover:bg-red-50"
+                  onClick={() => handleDeleteEvent(selectedEvent.id)}
+                >
+                  Delete Event
+                </OutlineButton>
                 <OutlineButton
                   className="flex-1 text-red-500 border-red-300 hover:bg-red-50"
                   onClick={() => handleCancelAllBookings(selectedEvent.id)}
@@ -806,8 +878,10 @@ function PujaBookingsPageInner() {
                 }
                 if ((selectedEvent.bookingsData?.length ?? 0) === 0) {
                   // Admin can either set a new start time or clear it (null).
+                  // Treat the datetime-local input as IST wall-clock, convert
+                  // to UTC ISO before sending (matches the toLocal… prefill).
                   data.start_time = editEventStartTime
-                    ? new Date(editEventStartTime).toISOString()
+                    ? fromLocalDatetimeInputIST(editEventStartTime)
                     : null;
                 }
                 if (editEventMaxBookings && editEventMaxBookings !== (selectedEvent as any).max_bookings) {
@@ -879,7 +953,23 @@ function PujaBookingsPageInner() {
           />
           <PrimaryButton className="w-full" onClick={async () => {
             if (!shortVideoUrl.trim()) return alert('Please upload a video');
-            if (selectedEvent) await handleAdvanceStage(selectedEvent.id, { short_video_url: shortVideoUrl });
+            if (selectedEvent) {
+              // PDF item 5c: advance only when transitioning LIVE_ADDED → SHORT_VIDEO_ADDED.
+              // Any other current stage means admin is replacing the short video.
+              const currentStage = (selectedEvent as any).stage as string | undefined;
+              try {
+                if (currentStage === 'LIVE_ADDED') {
+                  await handleAdvanceStage(selectedEvent.id, { short_video_url: shortVideoUrl });
+                } else {
+                  await pujaEventService.updateMedia(selectedEvent.id, { short_video_url: shortVideoUrl });
+                  await fetchEvents();
+                  await fetchEventDetail(selectedEvent.id);
+                }
+              } catch (err: any) {
+                alert(err?.response?.data?.message || err?.message || 'Failed to save short video');
+                return;
+              }
+            }
             setShortVideoUrl('');
             setShowVideoModal(false);
           }}>Submit</PrimaryButton>
@@ -935,8 +1025,24 @@ function PujaBookingsPageInner() {
           <PrimaryButton className="w-full" onClick={async () => {
             if (!sankalpVideoUrl.trim()) return alert('Please upload a video');
             if (selectedEvent) {
-              await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
-              // Save per-booking timestamps
+              // PDF item 5c: only advance the stage when transitioning OUT of
+              // SHORT_VIDEO_ADDED. For any other stage (admin is replacing the
+              // sankalp video on an already-progressed or SHIPPED event) hit
+              // the media route so STAGE_TRANSITIONS doesn't reject the call.
+              const currentStage = (selectedEvent as any).stage as string | undefined;
+              try {
+                if (currentStage === 'SHORT_VIDEO_ADDED') {
+                  await handleAdvanceStage(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+                } else {
+                  await pujaEventService.updateMedia(selectedEvent.id, { sankalp_video_url: sankalpVideoUrl });
+                  await fetchEvents();
+                  await fetchEventDetail(selectedEvent.id);
+                }
+              } catch (err: any) {
+                alert(err?.response?.data?.message || err?.message || 'Failed to save sankalp video');
+                return;
+              }
+              // Save per-booking timestamps (always — replacements need them too).
               await Promise.allSettled(
                 Object.entries(sankalpTimestamps).map(([bookingId, ts]) => {
                   const m = parseInt(ts.minute || '0');

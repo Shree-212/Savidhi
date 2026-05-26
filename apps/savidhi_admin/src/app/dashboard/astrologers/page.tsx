@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { astrologerService } from '@/lib/services';
+import { useDebouncedValue } from '@/lib/hooks';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -50,6 +51,7 @@ interface ApiLedgerEntry {
 
 export default function AstrologersPage() {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [editing, setEditing] = useState<AstrologerAdmin | null>(null);
   const [showLedger, setShowLedger] = useState(false);
   const [showOffDays, setShowOffDays] = useState(false);
@@ -87,7 +89,7 @@ export default function AstrologersPage() {
   const fetchAstrologers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await astrologerService.list({ search: search || undefined });
+      const res = await astrologerService.list({ search: debouncedSearch || undefined });
       const raw: ApiAstrologer[] = res.data?.data || res.data || [];
 
       const mapped: AstrologerAdmin[] = await Promise.all(
@@ -138,7 +140,7 @@ export default function AstrologersPage() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     fetchAstrologers();
@@ -146,7 +148,7 @@ export default function AstrologersPage() {
 
   useEffect(() => {
     fetchAstrologers();
-  }, [search]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchLedger = async (astrologerId: string) => {
     try {
