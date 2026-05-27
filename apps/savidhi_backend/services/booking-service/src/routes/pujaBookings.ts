@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { cancelToken } from '../lib/razorpayHelpers';
 
 export const pujaBookingsRouter = Router();
 
@@ -114,15 +115,50 @@ pujaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Response, 
   } catch (err) { next(err); }
 });
 
-/** POST / – create puja booking (devotee-facing) */
+/** POST / – create puja booking (devotee-facing).
+ *
+ *  Phase A of subscription rollout (migration 023):
+ *    - Accepts `booking_type` ('ONE_TIME' | 'SUBSCRIPTION', default ONE_TIME).
+ *    - Accepts `subscription_count` (2-12) when type is SUBSCRIPTION.
+ *    - Validates against the parent puja's `booking_mode` (ONE_TIME / SUBSCRIPTION / BOTH).
+ *    - On SUBSCRIPTION: persists subscription_count, subscription_remaining = N-1,
+ *      and sets next_charge_at = the booked event's start_time so Phase B's
+ *      weekly rollover worker has a hook.
+ *    - No child bookings are created here — that's the worker's job (Phase B).
+ *    - No Razorpay subscription/mandate is set up here — that's Phase B.
+ */
 pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const { puja_event_id, devotee_count = 1, sankalp, prasad_delivery_address, devotees, idempotency_key } = req.body;
+    const {
+      puja_event_id,
+      devotee_count = 1,
+      sankalp,
+      prasad_delivery_address,
+      devotees,
+      idempotency_key,
+      booking_type: rawBookingType,
+      subscription_count: rawSubscriptionCount,
+    } = req.body;
 
     if (!puja_event_id) {
       return res.status(400).json({ success: false, message: 'puja_event_id is required' });
+    }
+
+    // ── Subscription params validation ─────────────────────────────────────
+    const bookingType = String(rawBookingType ?? 'ONE_TIME').toUpperCase();
+    if (bookingType !== 'ONE_TIME' && bookingType !== 'SUBSCRIPTION') {
+      return res.status(400).json({ success: false, message: `booking_type must be ONE_TIME or SUBSCRIPTION (got "${rawBookingType}")` });
+    }
+    let subscriptionCount: number | null = null;
+    if (bookingType === 'SUBSCRIPTION') {
+      subscriptionCount = Number(rawSubscriptionCount);
+      // Range guard: 2 (otherwise it's a one-time booking) — 12 (anti-abuse;
+      // tune later if devotees actually want longer commitments).
+      if (!Number.isInteger(subscriptionCount) || subscriptionCount < 2 || subscriptionCount > 12) {
+        return res.status(400).json({ success: false, message: 'subscription_count must be an integer between 2 and 12 for SUBSCRIPTION bookings' });
+      }
     }
 
     // Idempotency: replay-safe inserts. See chadhavaBookings.ts for rationale.
@@ -144,9 +180,9 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
 
     await client.query('BEGIN');
 
-    // Fetch event + puja to calculate cost
+    // Fetch event + puja to calculate cost and validate booking_mode
     const eventResult = await client.query(
-      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee
+      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee, p.booking_mode
        FROM puja_events pe
        JOIN pujas p ON p.id = pe.puja_id
        WHERE pe.id = $1`,
@@ -158,6 +194,20 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
     }
 
     const event = eventResult.rows[0];
+
+    // Validate booking_type against the parent puja's booking_mode.
+    //   ONE_TIME mode      → reject SUBSCRIPTION requests
+    //   SUBSCRIPTION mode  → reject ONE_TIME requests
+    //   BOTH               → both allowed
+    const pujaMode = String(event.booking_mode ?? 'ONE_TIME').toUpperCase();
+    if (pujaMode === 'ONE_TIME' && bookingType === 'SUBSCRIPTION') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'This puja does not support subscription bookings' });
+    }
+    if (pujaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'This puja is subscription-only; one-time bookings are not allowed' });
+    }
 
     // Check capacity
     const countResult = await client.query(
@@ -185,10 +235,29 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
       });
     }
 
+    // Subscription bookkeeping (Phase A):
+    //   - subscription_remaining starts at N-1 because the current booking IS
+    //     the first cycle. The worker decrements as it materialises children.
+    //   - next_charge_at hooks the worker to the first event we already booked;
+    //     the verify step (Phase B) will advance this to the NEXT event after
+    //     capturing the Razorpay token.
+    const subscriptionRemaining = bookingType === 'SUBSCRIPTION' && subscriptionCount
+      ? subscriptionCount - 1
+      : null;
+    const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
+
     const bookingResult = await client.query(
-      `INSERT INTO puja_bookings (puja_event_id, devotee_id, devotee_count, cost, sankalp, prasad_delivery_address, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [puja_event_id, userId, dc, cost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null],
+      `INSERT INTO puja_bookings (
+         puja_event_id, devotee_id, devotee_count, cost,
+         sankalp, prasad_delivery_address, idempotency_key,
+         booking_type, subscription_count, subscription_remaining, next_charge_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [
+        puja_event_id, userId, dc, cost,
+        sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null,
+        bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
+      ],
     );
     const booking = bookingResult.rows[0];
 
@@ -212,7 +281,14 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
     );
     booking.devotees = devRows.rows;
 
-    console.log('[puja-bookings.create]', { id: booking.id, devotee_id: userId, devotee_count: dc, cost });
+    console.log('[puja-bookings.create]', {
+      id: booking.id,
+      devotee_id: userId,
+      devotee_count: dc,
+      cost,
+      booking_type: bookingType,
+      subscription_count: subscriptionCount,
+    });
     res.status(201).json({ success: true, data: booking });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -226,7 +302,22 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
 /**
  * PATCH /:id/cancel-repeat
  * Stops a SUBSCRIPTION booking from re-occurring on future events without
- * cancelling the already-booked one. Flips `booking_type` to 'ONE_TIME'.
+ * cancelling the already-booked one.
+ *
+ * Three things happen, in order:
+ *   1. Flip parent.booking_type → 'ONE_TIME' so the weekly rollover worker
+ *      stops picking it up.
+ *   2. Cancel any CHILD bookings the worker already pre-created but hasn't
+ *      charged yet (status='NOT_STARTED' AND payment_status IS NULL) — those
+ *      are placeholder rows representing future cycles, not real attendance.
+ *      Past PAID children stay untouched.
+ *   3. Tell Razorpay to revoke the e-mandate token (`customers.deleteToken`)
+ *      so the customer's bank won't allow any further debit even if our worker
+ *      somehow tried. Soft-fail: a Razorpay error here doesn't undo the DB
+ *      changes — we surface mandate_cancel_status so the caller can warn.
+ *
+ * Auth: devotee can only cancel their own subscription. Admin/operator can
+ * cancel anyone's (the existing requireAuth + role check already covers this).
  */
 pujaBookingsRouter.patch('/:id/cancel-repeat', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -234,7 +325,11 @@ pujaBookingsRouter.patch('/:id/cancel-repeat', requireAuth, async (req: Request,
     const role = req.headers['x-user-role'] as string;
     const userId = req.headers['x-user-id'] as string;
 
-    const check = await pool.query(`SELECT devotee_id, booking_type FROM puja_bookings WHERE id = $1`, [id]);
+    const check = await pool.query(
+      `SELECT devotee_id, booking_type, razorpay_customer_id, razorpay_token_id
+         FROM puja_bookings WHERE id = $1`,
+      [id],
+    );
     if (check.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Booking not found' });
     }
@@ -245,11 +340,47 @@ pujaBookingsRouter.patch('/:id/cancel-repeat', requireAuth, async (req: Request,
       return res.status(400).json({ success: false, message: 'Booking is not a subscription' });
     }
 
+    // 1. Flip parent.
     const { rows } = await pool.query(
       `UPDATE puja_bookings SET booking_type = 'ONE_TIME', updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id],
     );
-    res.json({ success: true, data: rows[0], message: 'Subscription stopped; current booking remains active.' });
+
+    // 2. Cancel pre-created but uncharged child placeholders.
+    const childCancel = await pool.query(
+      `UPDATE puja_bookings
+          SET status = 'CANCELLED', booking_type = 'ONE_TIME', updated_at = NOW()
+        WHERE parent_booking_id = $1
+          AND status = 'NOT_STARTED'
+          AND (payment_status IS NULL OR payment_status <> 'PAID')
+        RETURNING id`,
+      [id],
+    );
+
+    // 3. Revoke the Razorpay mandate token.
+    let mandateCancelStatus: 'ok' | 'failed' | 'not_required' = 'not_required';
+    let mandateCancelError: string | undefined;
+    const { razorpay_token_id, razorpay_customer_id } = check.rows[0];
+    if (razorpay_token_id && razorpay_customer_id) {
+      const cancel = await cancelToken(razorpay_customer_id, razorpay_token_id);
+      mandateCancelStatus = cancel.ok ? 'ok' : 'failed';
+      if (!cancel.ok) mandateCancelError = cancel.error;
+    }
+
+    console.log('[puja-bookings.cancel-repeat]', {
+      id, child_placeholders_cancelled: childCancel.rowCount ?? 0, mandate_cancel_status: mandateCancelStatus,
+    });
+
+    res.json({
+      success: true,
+      data: rows[0],
+      message: 'Subscription stopped; current booking remains active.',
+      meta: {
+        child_placeholders_cancelled: childCancel.rowCount ?? 0,
+        mandate_cancel_status: mandateCancelStatus,
+        mandate_cancel_error: mandateCancelError,
+      },
+    });
   } catch (err) { next(err); }
 });
 

@@ -1,0 +1,50 @@
+# Weekly subscription rollover (PDF item 6, Phase B).
+# For every active SUBSCRIPTION puja/chadhava booking whose next_charge_at
+# falls within the next 7 days, this job materialises a child booking and
+# charges via the saved Razorpay e-mandate token. See
+# services/booking-service/src/workers/subscriptionRollover.ts.
+#
+# Schedule: every Monday at 04:00 IST (22:30 UTC Sunday). Off-peak window;
+# leaves the working day to handle any failures surfaced in admin.
+#
+# Concurrency: Forbid — never run two ticks at once. Each parent row is also
+# SELECT ... FOR UPDATE-locked inside the worker as a second line of defence.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: subscription-rollover
+  namespace: savidhi
+spec:
+  schedule: "30 22 * * 0"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0   # No auto-retry — the worker itself is idempotent and a
+                        # failed Razorpay call leaves a PENDING child the next
+                        # tick will pick up. Retrying a whole tick would risk
+                        # double-charging anything that succeeded mid-run.
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          serviceAccountName: savidhi-eso
+          restartPolicy: OnFailure
+          containers:
+            - name: rollover
+              image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v25
+              command:
+                - node
+                - -e
+                - |
+                  require('./dist/src/workers/subscriptionRollover')
+                    .tickSubscriptionRollover()
+                    .then((stats) => { console.log('rollover-stats', stats); process.exit(0); })
+                    .catch((e) => { console.error(e); process.exit(1); });
+              envFrom:
+                - configMapRef: { name: savidhi-config }
+                - secretRef: { name: savidhi-env }
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits:   { cpu: 500m, memory: 512Mi }

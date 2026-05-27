@@ -57,6 +57,10 @@ export interface DevoteeDetail {
   gotra: string;
 }
 
+/** Subscription bookkeeping shared by puja and chadhava booking rows
+ *  (added in migration 023). Surfaced into the admin table's Type column. */
+export type BookingType = 'ONE_TIME' | 'SUBSCRIPTION';
+
 export interface PujaBooking {
   id: string;
   bookedBy: string;
@@ -73,6 +77,9 @@ export interface PujaBooking {
   prasadDeliveryAddress: string;
   pujari: string;
   sankalpVideoTimeStamp?: string;
+  bookingType?: BookingType;
+  subscriptionCount?: number | null;
+  subscriptionRemaining?: number | null;
 }
 
 /* ── Chadhava Booking Status ─────────────────────────── */
@@ -120,6 +127,9 @@ export interface ChadhavaBooking {
   prasadDeliveryAddress: string;
   pujari: string;
   sankalpVideoTimeStamp?: string;
+  bookingType?: BookingType;
+  subscriptionCount?: number | null;
+  subscriptionRemaining?: number | null;
 }
 
 /* ── Appointment ─────────────────────────────────────── */

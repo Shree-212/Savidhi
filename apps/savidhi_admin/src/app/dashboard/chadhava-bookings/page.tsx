@@ -95,6 +95,10 @@ function mapBooking(b: any): ChadhavaBooking {
     prasadDeliveryAddress: b.prasad_delivery_address ?? b.prasadDeliveryAddress ?? '',
     pujari:               b.pujari_name ?? b.pujari ?? '',
     sankalpVideoTimeStamp: b.sankalp_video_timestamp ?? b.sankalpVideoTimeStamp,
+    // Subscription bookkeeping surfaced via the new Type column (migration 023).
+    bookingType:           b.booking_type ?? 'ONE_TIME',
+    subscriptionCount:     b.subscription_count ?? null,
+    subscriptionRemaining: b.subscription_remaining ?? null,
   };
 }
 
@@ -405,6 +409,27 @@ function ChadhavaBookingsPageInner() {
     }
   };
 
+  // Subscription Phase C — see puja-bookings sibling for full doc.
+  const handleCancelSubscription = async (booking: ChadhavaBooking & { subscriptionRemaining?: number | null }) => {
+    const remaining = booking.subscriptionRemaining ?? 0;
+    const confirmMsg = remaining > 0
+      ? `Stop subscription on this booking?\n\nThe next ${remaining} auto-paid chadhava${remaining > 1 ? 's' : ''} will be cancelled and the Razorpay e-mandate revoked. The current booking stays active — no refund on past charges.`
+      : `Stop subscription on this booking?\n\nThe Razorpay e-mandate will be revoked. The current booking stays active.`;
+    if (!confirm(confirmMsg)) return;
+    try {
+      const res = await chadhavaBookingService.cancelRepeat(booking.id);
+      const mandate = res.data?.meta?.mandate_cancel_status;
+      const cancelledChildren = res.data?.meta?.child_placeholders_cancelled ?? 0;
+      let msg = `Subscription stopped. ${cancelledChildren} future booking${cancelledChildren !== 1 ? 's' : ''} cancelled.`;
+      if (mandate === 'failed') msg += '\n\nNote: Razorpay mandate cancel failed at the gateway. We will retry. Watch for unexpected debits.';
+      alert(msg);
+      if (expandedId) fetchBookings(expandedId);
+      fetchEvents();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Failed to stop subscription');
+    }
+  };
+
   /* ── Columns ── */
   const eventColumns = [
     { key: 'id', label: 'ID', render: (r: any) => <span className="text-[10px] font-mono">{r.id.slice(0, 8)}</span> },
@@ -440,9 +465,26 @@ function ChadhavaBookingsPageInner() {
     { key: 'devoteeCount', label: 'Devotees' },
     { key: 'cost',        label: 'Cost', render: (r: ChadhavaBooking) => <span className="text-primary">₹{r.cost}</span> },
     { key: 'status',      label: 'Status', render: (r: ChadhavaBooking) => <StatusBadge status={r.status} /> },
+    // Subscription Phase A — see puja-bookings sibling for the same chip.
+    { key: 'bookingType', label: 'Type', render: (r: ChadhavaBooking) => (
+      r.bookingType === 'SUBSCRIPTION'
+        ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+            Sub {r.subscriptionRemaining ?? '?'}/{r.subscriptionCount ?? '?'}
+          </span>
+        : <span className="text-muted-foreground text-[10px]">—</span>
+    )},
     { key: 'action',      label: 'Action', render: (r: ChadhavaBooking) => (
       <div className="flex items-center gap-1">
         <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
+        {r.bookingType === 'SUBSCRIPTION' && (r.subscriptionRemaining ?? 0) > 0 && (
+          <button
+            onClick={() => handleCancelSubscription(r)}
+            title="Stop future auto-paid bookings + revoke Razorpay mandate"
+            className="text-[10px] text-red-600 hover:text-red-700 px-1 border border-red-200 rounded hover:bg-red-50"
+          >
+            Stop Sub
+          </button>
+        )}
         <DeleteButton onClick={() => handleCancelBooking(r.id)} title="Cancel this booking" />
       </div>
     )},

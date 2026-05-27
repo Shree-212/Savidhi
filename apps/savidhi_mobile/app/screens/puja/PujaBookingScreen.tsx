@@ -21,6 +21,9 @@ interface Puja {
   price_for_4: number;
   price_for_6: number;
   send_hamper: boolean;
+  // Subscription rollout Phase A — the puja's booking_mode locks the
+  // booking_type picker on the customer side. 'BOTH' shows the toggle.
+  booking_mode: 'ONE_TIME' | 'SUBSCRIPTION' | 'BOTH';
 }
 
 interface PujaEvent {
@@ -50,6 +53,9 @@ export function PujaBookingScreen({ navigation, route }: Props) {
 
   const [eventId, setEventId] = useState<string>('');
   const [devoteeCount, setDevoteeCount] = useState<number>(1);
+  // Subscription Phase A — mirrors the web booking page.
+  const [bookingType, setBookingType] = useState<'ONE_TIME' | 'SUBSCRIPTION'>('ONE_TIME');
+  const [subscriptionCount, setSubscriptionCount] = useState<number>(4);
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string; relation: string }>>([
     { name: '', gotra: '', relation: 'Self' },
   ]);
@@ -76,7 +82,12 @@ export function PujaBookingScreen({ navigation, route }: Props) {
         price_for_4: Number(raw.price_for_4 ?? 0),
         price_for_6: Number(raw.price_for_6 ?? 0),
         send_hamper: !!raw.send_hamper,
+        booking_mode: (raw.booking_mode ?? 'ONE_TIME') as Puja['booking_mode'],
       });
+      // Honour the puja's booking_mode: lock the type when restricted, else
+      // default to ONE_TIME and let the user toggle on the Event step.
+      if (raw.booking_mode === 'SUBSCRIPTION') setBookingType('SUBSCRIPTION');
+      else if (raw.booking_mode === 'ONE_TIME') setBookingType('ONE_TIME');
       setEvents(eventsRes.data?.data ?? []);
       if (meRes?.data?.data) {
         const me = meRes.data.data;
@@ -133,6 +144,8 @@ export function PujaBookingScreen({ navigation, route }: Props) {
         sankalp: sankalp || undefined,
         prasad_delivery_address: puja.send_hamper ? `${address}${pincode ? `, PIN: ${pincode}` : ''}` : undefined,
         devotees: devotees.map((d) => ({ name: d.name.trim(), gotra: d.gotra.trim(), relation: d.relation.trim() || undefined })),
+        booking_type: bookingType,
+        ...(bookingType === 'SUBSCRIPTION' ? { subscription_count: subscriptionCount } : {}),
       });
       const booking = bookingRes.data?.data;
       if (!booking?.id) throw new Error('Booking creation failed');
@@ -192,6 +205,60 @@ export function PujaBookingScreen({ navigation, route }: Props) {
         {/* Step 0: pick event */}
         {step === 0 && (
           <View>
+            {/* Subscription Phase A — booking_type toggle (BOTH only),
+                count picker, and a locked-mode banner. */}
+            {puja.booking_mode === 'BOTH' && (
+              <View style={styles.subSection}>
+                <Text style={styles.subLabel}>Booking Type</Text>
+                <View style={styles.subToggleRow}>
+                  {(['ONE_TIME', 'SUBSCRIPTION'] as const).map((opt) => {
+                    const active = bookingType === opt;
+                    return (
+                      <TouchableOpacity
+                        key={opt}
+                        onPress={() => setBookingType(opt)}
+                        style={[styles.subToggleBtn, active && styles.subToggleBtnActive]}
+                      >
+                        <Text style={[styles.subToggleTxt, active && styles.subToggleTxtActive]}>
+                          {opt === 'ONE_TIME' ? 'One Time' : 'Subscription'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {puja.booking_mode === 'SUBSCRIPTION' && (
+              <View style={styles.subBanner}>
+                <Text style={styles.subBannerTxt}>
+                  This puja is subscription-only. You&apos;ll be auto-billed for the next N upcoming events.
+                </Text>
+              </View>
+            )}
+
+            {bookingType === 'SUBSCRIPTION' && (
+              <View style={styles.subSection}>
+                <Text style={styles.subLabel}>Number of events to auto-pay for</Text>
+                <View style={styles.subCountRow}>
+                  <TouchableOpacity
+                    onPress={() => setSubscriptionCount((n) => Math.max(2, n - 1))}
+                    style={styles.subCountBtn}
+                  >
+                    <Text style={styles.subCountBtnTxt}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.subCountValue}>{subscriptionCount}</Text>
+                  <TouchableOpacity
+                    onPress={() => setSubscriptionCount((n) => Math.min(12, n + 1))}
+                    style={styles.subCountBtn}
+                  >
+                    <Text style={styles.subCountBtnTxt}>+</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.subCountHelp}>events (2–12)</Text>
+                </View>
+              </View>
+            )}
+
             <Text style={styles.sectionTitle}>Pick An Upcoming Event</Text>
             {events.length === 0 ? (
               <View style={styles.emptyCard}>
@@ -337,11 +404,23 @@ export function PujaBookingScreen({ navigation, route }: Props) {
                 </Text>
               )}
               <Text style={styles.reviewItem}>Devotees: <Text style={styles.reviewValue}>{devoteeCount}</Text></Text>
+              {bookingType === 'SUBSCRIPTION' && (
+                <Text style={styles.reviewItem}>Auto-pay for: <Text style={styles.reviewValue}>{subscriptionCount} events</Text></Text>
+              )}
               {puja.send_hamper && (
                 <Text style={styles.reviewItem}>Address: <Text style={styles.reviewValue}>{address}{pincode ? `, ${pincode}` : ''}</Text></Text>
               )}
               <View style={styles.reviewDivider} />
-              <Text style={styles.reviewTotal}>Total: ₹{totalPrice.toLocaleString()}</Text>
+              <Text style={styles.reviewTotal}>
+                {bookingType === 'SUBSCRIPTION'
+                  ? `Pay today (event 1 of ${subscriptionCount}): ₹${totalPrice.toLocaleString()}`
+                  : `Total: ₹${totalPrice.toLocaleString()}`}
+              </Text>
+              {bookingType === 'SUBSCRIPTION' && (
+                <Text style={styles.reviewSubscriptionNote}>
+                  Auto-debit ₹{totalPrice.toLocaleString()} for the next {subscriptionCount - 1} events. Cancel anytime from Bookings.
+                </Text>
+              )}
             </View>
           </View>
         )}
@@ -400,5 +479,21 @@ const styles = StyleSheet.create({
   reviewValue: { color: Colors.textPrimary, fontWeight: '600' },
   reviewDivider: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.md },
   reviewTotal: { ...Typography.subtitle, color: Colors.primary, textAlign: 'right', fontWeight: '800' },
+  reviewSubscriptionNote: { ...Typography.small, color: Colors.textMuted, textAlign: 'right', marginTop: Spacing.xs },
+  // Subscription Phase A styles
+  subSection: { marginBottom: Spacing.md },
+  subLabel: { ...Typography.small, color: Colors.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Spacing.sm },
+  subToggleRow: { flexDirection: 'row', gap: Spacing.sm },
+  subToggleBtn: { flex: 1, paddingVertical: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center' },
+  subToggleBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight ?? Colors.surface },
+  subToggleTxt: { ...Typography.body, color: Colors.textSecondary, fontWeight: '600' },
+  subToggleTxtActive: { color: Colors.primary },
+  subBanner: { padding: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryLight ?? Colors.surface, marginBottom: Spacing.md },
+  subBannerTxt: { ...Typography.small, color: Colors.primary },
+  subCountRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  subCountBtn: { width: 40, height: 40, borderRadius: BorderRadius.md, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface },
+  subCountBtnTxt: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary },
+  subCountValue: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, minWidth: 36, textAlign: 'center' },
+  subCountHelp: { ...Typography.small, color: Colors.textMuted },
   ctaContainer: { padding: Spacing.lg, backgroundColor: Colors.surface, borderTopWidth: 1, borderTopColor: Colors.borderLight },
 });

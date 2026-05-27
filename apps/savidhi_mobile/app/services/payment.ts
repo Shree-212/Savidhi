@@ -78,7 +78,7 @@ export async function checkoutBooking(args: CheckoutArgs): Promise<CheckoutResul
     }
 
     // 2b. Production path — open the real Razorpay modal
-    const options = {
+    const options: any = {
       key: pay.razorpay_key_id,
       order_id: pay.gateway_order_id,
       amount: Math.round(args.amount * 100),
@@ -88,6 +88,13 @@ export async function checkoutBooking(args: CheckoutArgs): Promise<CheckoutResul
       prefill: args.prefill,
       theme: { color: '#E8813A' },
     };
+    // Phase B — SUBSCRIPTION first payment: tells Razorpay to show only
+    // e-mandate-capable methods (UPI Autopay etc.) and binds the resulting
+    // token to the backend-provisioned customer_id.
+    if (pay.recurring) {
+      options.recurring = '1';
+      if (pay.razorpay_customer_id) options.customer_id = pay.razorpay_customer_id;
+    }
 
     let rzpResponse: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
     try {

@@ -34,6 +34,11 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
   const [step, setStep] = useState(0);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [offeringsQty, setOfferingsQty] = useState<Record<string, number>>({});
+  // Subscription Phase A — mirrors puja booking page. bookingType is locked by
+  // the chadhava's booking_mode (ONE_TIME / SUBSCRIPTION / BOTH); only BOTH
+  // shows the toggle. subscriptionCount range matches the 2–12 backend guard.
+  const [bookingType, setBookingType] = useState<'ONE_TIME' | 'SUBSCRIPTION'>('ONE_TIME');
+  const [subscriptionCount, setSubscriptionCount] = useState<number>(4);
 
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string }>>([
     { name: '', gotra: '' },
@@ -85,7 +90,13 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
         ]);
         if (cancelled) return;
         const chRaw = chRes.data?.data ?? chRes.data;
-        if (chRaw) setChadhava({ mapped: mapChadhava(chRaw), raw: chRaw });
+        if (chRaw) {
+          setChadhava({ mapped: mapChadhava(chRaw), raw: chRaw });
+          // Honour the chadhava's booking_mode: lock the booking type when the
+          // admin restricted it, otherwise let the user choose on Step 0.
+          if (chRaw.booking_mode === 'SUBSCRIPTION') setBookingType('SUBSCRIPTION');
+          else if (chRaw.booking_mode === 'ONE_TIME') setBookingType('ONE_TIME');
+        }
         const evs = (evRes.data?.data ?? []) as ChadhavaEvent[];
         // Only show events that haven't started yet — once status flips to
         // INPROGRESS (or COMPLETED), no new bookings should be accepted.
@@ -180,6 +191,8 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
           offering_id: o.id,
           quantity: offeringsQty[o.id],
         })),
+        booking_type: bookingType,
+        ...(bookingType === 'SUBSCRIPTION' ? { subscription_count: subscriptionCount } : {}),
         idempotency_key: idempotencyKey,
       };
       const bookingRes = await chadhavaBookingService.create(payload);
@@ -214,6 +227,8 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
         name: 'Savidhi',
         description: `${chadhava.mapped.name} — ${selectedOfferings.length} offering${selectedOfferings.length > 1 ? 's' : ''}`,
         notes: { booking_id: booking.id, chadhava_event_id: selectedEventId },
+        recurring: !!pay.recurring,
+        customer_id: pay.razorpay_customer_id ?? null,
         onSuccess: async (resp) => {
           try {
             await paymentService.verify({
@@ -339,6 +354,78 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-text-primary mb-1">Select an upcoming event</h2>
                 <p className="text-sm text-text-secondary mb-5">Choose a date for your chadhava.</p>
+
+                {/* Booking type picker (only when chadhava.booking_mode === BOTH) */}
+                {chadhava.raw.booking_mode === 'BOTH' && (
+                  <div className="mb-5">
+                    <p className="text-[11px] uppercase tracking-wider font-semibold text-text-muted mb-2">Booking Type</p>
+                    <div className="flex gap-2">
+                      {(['ONE_TIME', 'SUBSCRIPTION'] as const).map((opt) => {
+                        const active = bookingType === opt;
+                        return (
+                          <button
+                            key={opt}
+                            onClick={() => setBookingType(opt)}
+                            className={`flex-1 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                              active
+                                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                                : 'border-orange-100 bg-white text-text-secondary hover:border-primary-300'
+                            }`}
+                          >
+                            {opt === 'ONE_TIME' ? 'One Time' : 'Subscription (Auto-recurring)'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {bookingType === 'SUBSCRIPTION' && (
+                      <p className="text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2 mt-2">
+                        You&apos;ll be auto-billed for the next N upcoming chadhava events. You can stop auto-renewal anytime from your bookings page.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Subscription-only banner */}
+                {chadhava.raw.booking_mode === 'SUBSCRIPTION' && (
+                  <div className="mb-5 text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2">
+                    This chadhava is offered as a subscription only — you&apos;ll be auto-billed for the next N upcoming events. You can stop auto-renewal anytime.
+                  </div>
+                )}
+
+                {/* Subscription count picker */}
+                {bookingType === 'SUBSCRIPTION' && (
+                  <div className="mb-5">
+                    <label className="text-[11px] uppercase tracking-wider font-semibold text-text-muted mb-2 block">
+                      Number of events to auto-pay for
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSubscriptionCount((n) => Math.max(2, n - 1))}
+                        className="w-10 h-10 rounded-lg border-2 border-orange-100 bg-white text-lg font-bold text-text-secondary hover:border-primary-300"
+                        aria-label="Decrease"
+                      >−</button>
+                      <input
+                        type="number"
+                        min={2}
+                        max={12}
+                        value={subscriptionCount}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (Number.isInteger(n)) setSubscriptionCount(Math.min(12, Math.max(2, n)));
+                        }}
+                        className="w-20 h-10 text-center font-bold text-lg border-2 border-orange-100 rounded-lg focus:outline-none focus:border-primary-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSubscriptionCount((n) => Math.min(12, n + 1))}
+                        className="w-10 h-10 rounded-lg border-2 border-orange-100 bg-white text-lg font-bold text-text-secondary hover:border-primary-300"
+                        aria-label="Increase"
+                      >+</button>
+                      <span className="text-xs text-text-muted">events (2–12)</span>
+                    </div>
+                  </div>
+                )}
 
                 {events.length === 0 ? (
                   <div className="border border-orange-100 bg-white rounded-xl p-8 text-center text-text-secondary">
@@ -586,10 +673,23 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
                     ))}
                   </div>
                 )}
+                {bookingType === 'SUBSCRIPTION' && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-text-secondary">Auto-pay for</span>
+                    <span className="font-semibold text-primary-700 tabular-nums">{subscriptionCount} events</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 pt-3 border-t border-orange-50">
-                  <span className="font-bold text-text-primary">Total</span>
+                  <span className="font-bold text-text-primary">
+                    {bookingType === 'SUBSCRIPTION' ? 'Pay today (event 1 of ' + subscriptionCount + ')' : 'Total'}
+                  </span>
                   <span className="font-bold text-primary-600 text-xl tabular-nums">₹{totalPrice.toLocaleString()}</span>
                 </div>
+                {bookingType === 'SUBSCRIPTION' && (
+                  <p className="text-[10px] text-text-muted pt-1 leading-snug">
+                    Auto-debit ₹{totalPrice.toLocaleString()} for the next {subscriptionCount - 1} events. Cancel anytime from your bookings page.
+                  </p>
+                )}
               </div>
             </div>
           </aside>

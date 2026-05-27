@@ -167,6 +167,11 @@ export const pujaBookingService = {
   getById: (id: string) => apiClient.get(`/bookings/puja-bookings/${id}`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/puja-bookings/${id}/cancel`),
+  // Stops a SUBSCRIPTION booking from re-occurring on future events
+  // (Phase A flips booking_type → ONE_TIME; Phase C also cancels Razorpay
+  // mandate). Safe to call from the admin "Cancel Subscription" action.
+  cancelRepeat: (id: string) =>
+    apiClient.patch(`/bookings/puja-bookings/${id}/cancel-repeat`),
   setSankalpTimestamp: (id: string, sankalp_video_timestamp: string) =>
     apiClient.patch(`/bookings/puja-bookings/${id}/sankalp-timestamp`, { sankalp_video_timestamp }),
 };
@@ -219,6 +224,9 @@ export const chadhavaBookingService = {
   getById: (id: string) => apiClient.get(`/bookings/chadhava-bookings/${id}`),
   cancel: (id: string) =>
     apiClient.patch(`/bookings/chadhava-bookings/${id}/cancel`),
+  // See pujaBookingService.cancelRepeat for rationale.
+  cancelRepeat: (id: string) =>
+    apiClient.patch(`/bookings/chadhava-bookings/${id}/cancel-repeat`),
   setSankalpTimestamp: (id: string, sankalp_video_timestamp: string) =>
     apiClient.patch(`/bookings/chadhava-bookings/${id}/sankalp-timestamp`, { sankalp_video_timestamp }),
 };

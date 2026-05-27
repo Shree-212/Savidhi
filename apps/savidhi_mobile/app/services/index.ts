@@ -38,13 +38,13 @@ export const templeService = {
 };
 
 export const pujaService = {
-  list: (params?: { page?: number; temple_id?: string; search?: string }) =>
+  list: (params?: { page?: number; limit?: number; temple_id?: string; search?: string }) =>
     api.get('/catalog/pujas', { params }),
   getById: (id: string) => api.get(`/catalog/pujas/${id}`),
 };
 
 export const chadhavaService = {
-  list: (params?: { page?: number; temple_id?: string }) =>
+  list: (params?: { page?: number; limit?: number; temple_id?: string }) =>
     api.get('/catalog/chadhavas', { params }),
   getById: (id: string) => api.get(`/catalog/chadhavas/${id}`),
 };
@@ -74,8 +74,13 @@ export const pujaBookingService = {
     sankalp?: string;
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; relation?: string; gotra: string }>;
+    // Subscription Phase A — see services.ts on web for parallel signature.
+    booking_type?: 'ONE_TIME' | 'SUBSCRIPTION';
+    subscription_count?: number;
+    idempotency_key?: string;
   }) => api.post('/bookings/puja-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/puja-bookings/${id}/cancel`),
+  cancelRepeat: (id: string) => api.patch(`/bookings/puja-bookings/${id}/cancel-repeat`),
 };
 
 export const chadhavaBookingService = {
@@ -88,8 +93,12 @@ export const chadhavaBookingService = {
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; gotra: string }>;
     offerings: Array<{ offering_id: string; quantity: number }>;
+    booking_type?: 'ONE_TIME' | 'SUBSCRIPTION';
+    subscription_count?: number;
+    idempotency_key?: string;
   }) => api.post('/bookings/chadhava-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/chadhava-bookings/${id}/cancel`),
+  cancelRepeat: (id: string) => api.patch(`/bookings/chadhava-bookings/${id}/cancel-repeat`),
 };
 
 export const appointmentService = {

@@ -44,6 +44,10 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
   // ONE_TIME-only puja → forced to ONE_TIME; SUBSCRIPTION-only → forced to SUBSCRIPTION;
   // BOTH → user picks via the toggle on Step 0.
   const [bookingType, setBookingType] = useState<'ONE_TIME' | 'SUBSCRIPTION'>('ONE_TIME');
+  // Subscription Phase A — when bookingType is SUBSCRIPTION the user picks how
+  // many of the puja's upcoming events to auto-pay for. Range matches the
+  // backend's 2–12 guard in pujaBookings.ts. Default 4 ≈ a month of weekly.
+  const [subscriptionCount, setSubscriptionCount] = useState<number>(4);
 
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string; relation: string }>>([
     { name: '', gotra: '', relation: 'Self' },
@@ -166,6 +170,9 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
           relation: d.relation.trim() || undefined,
         })),
         booking_type: bookingType,
+        // Only send subscription_count when type is SUBSCRIPTION; the backend
+        // ignores it for ONE_TIME but rejects out-of-range values.
+        ...(bookingType === 'SUBSCRIPTION' ? { subscription_count: subscriptionCount } : {}),
         idempotency_key: idempotencyKey,
       };
       const bookingRes = await pujaBookingService.create(payload);
@@ -200,6 +207,10 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
         name: 'Savidhi',
         description: `${puja.mapped.name} × ${devoteeCount} devotee${devoteeCount > 1 ? 's' : ''}`,
         notes: { booking_id: booking.id, puja_event_id: selectedEventId },
+        // Phase B — restricts Razorpay checkout to e-mandate-capable methods
+        // when the backend flagged this order as recurring.
+        recurring: !!pay.recurring,
+        customer_id: pay.razorpay_customer_id ?? null,
         onSuccess: async (resp) => {
           try {
             await paymentService.verify({
@@ -353,7 +364,7 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                     </div>
                     {bookingType === 'SUBSCRIPTION' && (
                       <p className="text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2 mt-2">
-                        You&apos;ll be auto-billed for every upcoming event in this puja&apos;s schedule. You can stop auto-renewal anytime from your bookings page.
+                        You&apos;ll be auto-billed for the next N upcoming events of this puja. You can stop auto-renewal anytime from your bookings page.
                       </p>
                     )}
                   </div>
@@ -362,7 +373,42 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                 {/* Subscription-only banner */}
                 {puja.raw.booking_mode === 'SUBSCRIPTION' && (
                   <div className="mb-5 text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2">
-                    This puja is offered as a subscription only — you&apos;ll be auto-billed for every upcoming event. You can stop auto-renewal anytime.
+                    This puja is offered as a subscription only — you&apos;ll be auto-billed for the next N upcoming events. You can stop auto-renewal anytime.
+                  </div>
+                )}
+
+                {/* Subscription count picker — only when SUBSCRIPTION is active */}
+                {bookingType === 'SUBSCRIPTION' && (
+                  <div className="mb-5">
+                    <label className="text-[11px] uppercase tracking-wider font-semibold text-text-muted mb-2 block">
+                      Number of events to auto-pay for
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSubscriptionCount((n) => Math.max(2, n - 1))}
+                        className="w-10 h-10 rounded-lg border-2 border-orange-100 bg-white text-lg font-bold text-text-secondary hover:border-primary-300"
+                        aria-label="Decrease"
+                      >−</button>
+                      <input
+                        type="number"
+                        min={2}
+                        max={12}
+                        value={subscriptionCount}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (Number.isInteger(n)) setSubscriptionCount(Math.min(12, Math.max(2, n)));
+                        }}
+                        className="w-20 h-10 text-center font-bold text-lg border-2 border-orange-100 rounded-lg focus:outline-none focus:border-primary-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSubscriptionCount((n) => Math.min(12, n + 1))}
+                        className="w-10 h-10 rounded-lg border-2 border-orange-100 bg-white text-lg font-bold text-text-secondary hover:border-primary-300"
+                        aria-label="Increase"
+                      >+</button>
+                      <span className="text-xs text-text-muted">events (2–12)</span>
+                    </div>
                   </div>
                 )}
 
@@ -565,10 +611,26 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                   <span className="text-text-secondary">Devotees</span>
                   <span className="font-semibold text-text-primary tabular-nums">{devoteeCount}</span>
                 </div>
+                {/* Subscription summary line — only when SUBSCRIPTION active.
+                    Today's payment is for the first event; remaining events get
+                    auto-charged by the worker week by week (Phase B). */}
+                {bookingType === 'SUBSCRIPTION' && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-text-secondary">Auto-pay for</span>
+                    <span className="font-semibold text-primary-700 tabular-nums">{subscriptionCount} events</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 pt-3 border-t border-orange-50">
-                  <span className="font-bold text-text-primary">Total</span>
+                  <span className="font-bold text-text-primary">
+                    {bookingType === 'SUBSCRIPTION' ? 'Pay today (event 1 of ' + subscriptionCount + ')' : 'Total'}
+                  </span>
                   <span className="font-bold text-primary-600 text-xl tabular-nums">₹{totalPrice.toLocaleString()}</span>
                 </div>
+                {bookingType === 'SUBSCRIPTION' && (
+                  <p className="text-[10px] text-text-muted pt-1 leading-snug">
+                    Auto-debit ₹{totalPrice.toLocaleString()} for the next {subscriptionCount - 1} events. Cancel anytime from your bookings page.
+                  </p>
+                )}
               </div>
             </div>
           </aside>

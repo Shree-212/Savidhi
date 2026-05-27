@@ -48,13 +48,24 @@ export interface OpenCheckoutArgs {
   prefill?: { name?: string; email?: string; contact?: string };
   notes?: Record<string, string>;
   theme?: { color?: string };
+  /** Phase B (subscriptions): pass `true` for the FIRST payment of a
+   *  SUBSCRIPTION booking. Razorpay restricts the visible methods to
+   *  e-mandate-capable ones (UPI Autopay, NetBanking eMandate, recurring-
+   *  enabled Cards) and captures the mandate token we use for later weekly
+   *  rollover charges. The backend must also pass `customer_id` + recurring
+   *  flag on the order; see services/booking-service/src/routes/payments.ts. */
+  recurring?: boolean;
+  /** Razorpay customer_id captured by the backend during /create-order.
+   *  Required when `recurring` is true so the token is associated with the
+   *  right customer record. */
+  customer_id?: string | null;
   onSuccess: (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => void;
   onFailure?: (response: { code?: string; description?: string; source?: string; step?: string; reason?: string; metadata?: Record<string, string> }) => void;
   onDismiss?: () => void;
 }
 
 export function openCheckout(Razorpay: any, args: OpenCheckoutArgs): void {
-  const rzp = new Razorpay({
+  const options: any = {
     key: args.key,
     order_id: args.order.id,
     amount: args.order.amount,
@@ -68,7 +79,12 @@ export function openCheckout(Razorpay: any, args: OpenCheckoutArgs): void {
       ondismiss: () => args.onDismiss?.(),
     },
     handler: (response: any) => args.onSuccess(response),
-  });
+  };
+  if (args.recurring) {
+    options.recurring = '1';
+    if (args.customer_id) options.customer_id = args.customer_id;
+  }
+  const rzp = new Razorpay(options);
   rzp.on('payment.failed', (response: any) => args.onFailure?.(response.error ?? response));
   rzp.open();
 }

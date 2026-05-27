@@ -3,6 +3,10 @@ import crypto from 'crypto';
 import Razorpay from 'razorpay';
 import { pool } from '../lib/db';
 import { requireAuth } from '../middleware/auth';
+import {
+  createOrFetchCustomer,
+  fetchPaymentToken,
+} from '../lib/razorpayHelpers';
 
 export const paymentsRouter = Router();
 
@@ -90,10 +94,17 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       return res.status(400).json({ success: false, message: 'Amount must be at least ₹1 (100 paise)' });
     }
 
-    // Ensure the booking belongs to this devotee
+    // Ensure the booking belongs to this devotee.
+    // Phase B: also pull booking_type / razorpay_customer_id so SUBSCRIPTION
+    // first payments can open Razorpay in recurring (Auth Transaction) mode.
+    // booking_type column doesn't exist on the appointments table, so guard
+    // its inclusion in the SELECT list.
     const table = tableForBookingType(booking_type);
+    const hasSubscriptionCols = booking_type === 'PUJA' || booking_type === 'CHADHAVA';
     const bookingCheck = await pool.query(
-      `SELECT id, devotee_id, cost FROM ${table} WHERE id = $1`,
+      hasSubscriptionCols
+        ? `SELECT id, devotee_id, cost, booking_type, razorpay_customer_id FROM ${table} WHERE id = $1`
+        : `SELECT id, devotee_id, cost FROM ${table} WHERE id = $1`,
       [booking_id],
     );
     if (bookingCheck.rows.length === 0) {
@@ -112,6 +123,41 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       });
     }
 
+    // Phase B — for SUBSCRIPTION puja/chadhava bookings, the FIRST payment is
+    // an "Auth Transaction" that authorises a Razorpay e-mandate token. We
+    // need a Razorpay customer_id for that flow.
+    const isSubscription = hasSubscriptionCols && bookingCheck.rows[0].booking_type === 'SUBSCRIPTION';
+    let recurringCustomerId: string | null = isSubscription
+      ? (bookingCheck.rows[0].razorpay_customer_id ?? null)
+      : null;
+    if (isSubscription && !recurringCustomerId) {
+      try {
+        const devoteeRow = (await pool.query(
+          `SELECT id, name, phone FROM devotees WHERE id = $1`,
+          [userId],
+        )).rows[0];
+        const cust = await createOrFetchCustomer({
+          id: userId,
+          name: devoteeRow?.name ?? 'Savidhi Devotee',
+          phone: devoteeRow?.phone ?? '',
+          email: null,
+        });
+        recurringCustomerId = cust.customer_id;
+        // Persist immediately so retry safely reuses the same customer.
+        await pool.query(
+          `UPDATE ${table} SET razorpay_customer_id = $1 WHERE id = $2`,
+          [recurringCustomerId, booking_id],
+        );
+      } catch (err: any) {
+        // Razorpay customer creation failure shouldn't break ONE_TIME-style
+        // booking flow — fall back to a non-recurring order. The /verify step
+        // will skip token capture if no customer_id is on the booking.
+        console.warn('[payments.create-order] customer create failed; falling back to non-recurring',
+          err?.error?.description ?? err?.message);
+        recurringCustomerId = null;
+      }
+    }
+
     // Create Razorpay order. In dev / non-prod we fall back to stub mode if
     // either the keys are missing OR the gateway rejects them (e.g. invalid
     // test keys), so booking flows remain testable end-to-end without a live
@@ -125,12 +171,26 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       usedStub = true;
     } else if (razorpayConfigured()) {
       try {
-        const rzpOrder = await razorpayClient!.orders.create({
+        // For SUBSCRIPTION first payments include customer_id (and explicit
+        // payment_capture) so Razorpay treats this as an Auth Transaction —
+        // the eligible payment methods will be e-mandate-capable instruments
+        // when the checkout opens with `recurring: 1`.
+        const orderOptions: any = {
           amount: amountPaise,
           currency: 'INR',
           receipt: `bkg_${booking_id.slice(0, 18)}`,
-          notes: { booking_type, booking_id, devotee_id: userId },
-        });
+          notes: {
+            booking_type,
+            booking_id,
+            devotee_id: userId,
+            ...(isSubscription ? { subscription: 'true' } : {}),
+          },
+        };
+        if (isSubscription && recurringCustomerId) {
+          orderOptions.customer_id = recurringCustomerId;
+          orderOptions.payment_capture = true;
+        }
+        const rzpOrder = await razorpayClient!.orders.create(orderOptions);
         gatewayOrderId = rzpOrder.id;
       } catch (err: any) {
         const detail = err?.error?.description ?? err?.message ?? 'unknown';
@@ -162,6 +222,10 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
         ...rows[0],
         razorpay_key_id: usedStub ? null : RAZORPAY_KEY_ID || null,
         stub: usedStub,
+        // Phase B: tells the frontend to open Razorpay Checkout with
+        // `recurring: 1` so the user is offered e-mandate-capable methods.
+        recurring: isSubscription && !!recurringCustomerId,
+        razorpay_customer_id: isSubscription ? recurringCustomerId : null,
       },
     });
   } catch (err) {
@@ -256,6 +320,70 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
       [payment_id, payment.booking_id],
     );
 
+    // Phase B — for SUBSCRIPTION puja/chadhava bookings, capture the Razorpay
+    // token (e-mandate). With the token saved, the weekly rollover worker can
+    // create + charge child bookings without re-prompting the devotee.
+    //
+    // Also advance `next_charge_at` to the START_TIME of the NEXT puja/chadhava
+    // event after the one we just paid for (the current event_id on the parent
+    // booking) so the worker has a hook for the second cycle. If there's no
+    // next event yet, we leave next_charge_at as-is — admin must schedule more
+    // events for the rollover to continue.
+    if (
+      (payment.booking_type === 'PUJA' || payment.booking_type === 'CHADHAVA') &&
+      !isStubOrder
+    ) {
+      try {
+        const bookingRow = (await client.query(
+          `SELECT booking_type, razorpay_token_id,
+                  ${payment.booking_type === 'PUJA' ? 'puja_event_id' : 'chadhava_event_id'} AS event_id
+             FROM ${table} WHERE id = $1`,
+          [payment.booking_id],
+        )).rows[0];
+
+        if (
+          bookingRow?.booking_type === 'SUBSCRIPTION' &&
+          !bookingRow.razorpay_token_id &&
+          gateway_payment_id
+        ) {
+          const tokenRes = await fetchPaymentToken(gateway_payment_id);
+          // Find the next event after the current one for this puja/chadhava.
+          const eventsTable = payment.booking_type === 'PUJA' ? 'puja_events' : 'chadhava_events';
+          const parentFkCol = payment.booking_type === 'PUJA' ? 'puja_id' : 'chadhava_id';
+          const nextEv = (await client.query(
+            `SELECT start_time FROM ${eventsTable}
+              WHERE ${parentFkCol} = (SELECT ${parentFkCol} FROM ${eventsTable} WHERE id = $1)
+                AND start_time > (SELECT start_time FROM ${eventsTable} WHERE id = $1)
+                AND status NOT IN ('CANCELLED', 'COMPLETED')
+              ORDER BY start_time ASC LIMIT 1`,
+            [bookingRow.event_id],
+          )).rows[0];
+
+          await client.query(
+            `UPDATE ${table}
+                SET razorpay_token_id = COALESCE($1, razorpay_token_id),
+                    razorpay_customer_id = COALESCE($2, razorpay_customer_id),
+                    next_charge_at = COALESCE($3, next_charge_at),
+                    updated_at = NOW()
+              WHERE id = $4`,
+            [tokenRes.token_id, tokenRes.customer_id, nextEv?.start_time ?? null, payment.booking_id],
+          );
+          console.log('[payments.verify] subscription token captured', {
+            booking_id: payment.booking_id,
+            token_id: tokenRes.token_id,
+            stub: tokenRes.stub,
+            next_charge_at: nextEv?.start_time ?? null,
+          });
+        }
+      } catch (err: any) {
+        // Failing to capture the token shouldn't fail the verify — the parent
+        // payment already succeeded. Log so the daily monitor catches it and
+        // an admin can re-trigger or manually fill the field.
+        console.warn('[payments.verify] subscription token capture failed',
+          err?.error?.description ?? err?.message);
+      }
+    }
+
     await client.query('COMMIT');
 
     console.log('[payments.verify] CAPTURED', { payment_id, booking_type: payment.booking_type, booking_id: payment.booking_id });
@@ -314,10 +442,52 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     const paymentEntity = body?.payload?.payment?.entity;
     const orderId = paymentEntity?.order_id as string | undefined;
     const rzpPaymentId = paymentEntity?.id as string | undefined;
+    // Token-level events (e-mandate lifecycle, Phase B) carry a different
+    // payload shape — the token entity rather than the payment entity.
+    const tokenEntity = body?.payload?.token?.entity;
+    const tokenId = tokenEntity?.id as string | undefined;
+    const tokenCustomerId = tokenEntity?.customer_id as string | undefined;
 
-    console.log('[razorpay webhook] received', { event, orderId, rzpPaymentId });
+    console.log('[razorpay webhook] received', { event, orderId, rzpPaymentId, tokenId });
 
-    if (!event || !orderId) {
+    if (!event) {
+      return res.status(200).json({ success: true, ignored: true });
+    }
+
+    // ─── Token lifecycle (e-mandate cancellation / expiry) ────────────────
+    // When Razorpay tells us a token is no longer chargeable we flip the
+    // affected SUBSCRIPTION parent bookings back to ONE_TIME so the weekly
+    // rollover worker skips them. Past bookings remain untouched.
+    if (event === 'token.cancelled' || event === 'token.expired') {
+      if (!tokenId) {
+        console.warn('[razorpay webhook] token event with no token_id', { event });
+        return res.status(200).json({ success: true, ignored: true, reason: 'no token id' });
+      }
+      const pujaRows = await pool.query(
+        `UPDATE puja_bookings
+            SET booking_type = 'ONE_TIME', updated_at = NOW()
+          WHERE razorpay_token_id = $1 AND booking_type = 'SUBSCRIPTION'
+          RETURNING id`,
+        [tokenId],
+      );
+      const chadhavaRows = await pool.query(
+        `UPDATE chadhava_bookings
+            SET booking_type = 'ONE_TIME', updated_at = NOW()
+          WHERE razorpay_token_id = $1 AND booking_type = 'SUBSCRIPTION'
+          RETURNING id`,
+        [tokenId],
+      );
+      console.log('[razorpay webhook] subscription lapsed via token event', {
+        event,
+        tokenId,
+        tokenCustomerId,
+        puja_flipped: pujaRows.rowCount,
+        chadhava_flipped: chadhavaRows.rowCount,
+      });
+      return res.json({ success: true, processed: event });
+    }
+
+    if (!orderId) {
       return res.status(200).json({ success: true, ignored: true });
     }
 

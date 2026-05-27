@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Calendar, Gift, MapPin, Package, Loader2, Users } from 'lucide-react';
+import { ArrowLeft, Calendar, Gift, MapPin, Package, Loader2, Users, Ban } from 'lucide-react';
 import { chadhavaBookingService } from '@/lib/services';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { YourVideosCard } from '@/components/booking/YourVideosCard';
@@ -96,6 +96,9 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Subscription Phase C — Stop future bookings flow.
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     chadhavaBookingService
@@ -107,6 +110,29 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load booking'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleStopSubscription = async () => {
+    const remaining = booking?.subscription_remaining ?? 0;
+    const confirmMsg = remaining > 0
+      ? `Stop future bookings? The next ${remaining} auto-paid event${remaining > 1 ? 's' : ''} will be cancelled. Past bookings and charges remain — no refund.`
+      : `Stop future bookings? Past bookings remain — no refund.`;
+    if (!confirm(confirmMsg)) return;
+    try {
+      setCancelling(true);
+      setCancelError(null);
+      const res = await chadhavaBookingService.cancelRepeat(id);
+      const mandate = res.data?.meta?.mandate_cancel_status;
+      if (mandate === 'failed') {
+        alert('Subscription stopped on Savidhi, but the bank mandate could not be cancelled at Razorpay. We will retry automatically. Contact support if you see any unexpected debit.');
+      }
+      const fresh = await chadhavaBookingService.getById(id);
+      setBooking(fresh.data?.data ?? fresh.data ?? null);
+    } catch (err: any) {
+      setCancelError(err?.response?.data?.message ?? err?.message ?? 'Failed to stop subscription');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -239,6 +265,33 @@ export default function ChadhavaStatusPage({ params }: { params: Promise<{ id: s
         sankalpVideoUrl={sankalpVideoUrl}
         sankalpTimestamps={sankalpTimestamps}
       />
+
+      {/* Subscription Phase C — Stop future bookings (only on active subs). */}
+      {booking.booking_type === 'SUBSCRIPTION' && (booking.subscription_remaining ?? 0) > 0 && (
+        <div className="bg-white border border-orange-100 rounded-xl p-4 mb-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-text-primary mb-1">Subscription Active</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                {booking.subscription_remaining} future chadhava{booking.subscription_remaining > 1 ? 's' : ''} will be auto-paid
+                via your saved e-mandate. Stop anytime — past bookings stay active.
+              </p>
+              {cancelError && (
+                <p className="text-xs text-red-600 mt-2">{cancelError}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleStopSubscription}
+              disabled={cancelling}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 disabled:opacity-60 flex-shrink-0"
+            >
+              {cancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+              {cancelling ? 'Stopping…' : 'Stop future bookings'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       {!isCancelled && (

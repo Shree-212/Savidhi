@@ -82,6 +82,10 @@ function mapBooking(b: any): PujaBooking {
     prasadDeliveryAddress: b.prasad_delivery_address ?? b.prasadDeliveryAddress ?? '',
     pujari: b.pujari_name ?? b.pujari ?? '',
     sankalpVideoTimeStamp: b.sankalp_video_timestamp ?? b.sankalpVideoTimeStamp,
+    // Subscription bookkeeping surfaced via the new Type column.
+    bookingType: b.booking_type ?? 'ONE_TIME',
+    subscriptionCount: b.subscription_count ?? null,
+    subscriptionRemaining: b.subscription_remaining ?? null,
   };
 }
 
@@ -370,6 +374,30 @@ function PujaBookingsPageInner() {
     }
   };
 
+  // Subscription Phase C — Admin "Cancel Subscription": flips parent
+  // booking_type → ONE_TIME, cancels any uncharged child placeholders, and
+  // revokes the Razorpay e-mandate at the backend. The current booking row
+  // stays active.
+  const handleCancelSubscription = async (booking: PujaBooking & { subscriptionRemaining?: number | null }) => {
+    const remaining = booking.subscriptionRemaining ?? 0;
+    const confirmMsg = remaining > 0
+      ? `Stop subscription on this booking?\n\nThe next ${remaining} auto-paid event${remaining > 1 ? 's' : ''} will be cancelled and the Razorpay e-mandate revoked. The current booking stays active — no refund on past charges.`
+      : `Stop subscription on this booking?\n\nThe Razorpay e-mandate will be revoked. The current booking stays active.`;
+    if (!confirm(confirmMsg)) return;
+    try {
+      const res = await pujaBookingService.cancelRepeat(booking.id);
+      const mandate = res.data?.meta?.mandate_cancel_status;
+      const cancelledChildren = res.data?.meta?.child_placeholders_cancelled ?? 0;
+      let msg = `Subscription stopped. ${cancelledChildren} future booking${cancelledChildren !== 1 ? 's' : ''} cancelled.`;
+      if (mandate === 'failed') msg += '\n\nNote: Razorpay mandate cancel failed at the gateway. We will retry. Watch for unexpected debits.';
+      alert(msg);
+      if (expandedId) fetchBookings(expandedId);
+      fetchEvents();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Failed to stop subscription');
+    }
+  };
+
   // ── Delete event handler (wired to real DELETE) ───────────
   const handleDeleteEvent = async (eventId: string) => {
     if (!confirm('Delete this event? This cannot be undone.')) return;
@@ -443,9 +471,29 @@ function PujaBookingsPageInner() {
     { key: 'bookingTime', label: 'Booking Time' },
     { key: 'cost', label: 'Cost', render: (r: PujaBooking) => <span className="text-primary">₹{r.cost}</span> },
     { key: 'status', label: 'Status', render: (r: PujaBooking) => <StatusBadge status={r.status} /> },
+    // Subscription rollout Phase A: ONE_TIME plain dash, SUBSCRIPTION shown as
+    // "Sub R/N" chip where R = subscription_remaining, N = subscription_count.
+    // Cancel-subscription action lands in Phase C.
+    { key: 'bookingType', label: 'Type', render: (r: PujaBooking) => (
+      r.bookingType === 'SUBSCRIPTION'
+        ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+            Sub {r.subscriptionRemaining ?? '?'}/{r.subscriptionCount ?? '?'}
+          </span>
+        : <span className="text-muted-foreground text-[10px]">—</span>
+    )},
     { key: 'action', label: 'Action', render: (r: PujaBooking) => (
       <div className="flex items-center gap-1">
         <button onClick={() => handleViewBooking(r.id)} className="text-primary text-[10px] hover:underline">View</button>
+        {/* Subscription Phase C — stop-subscription action; only for active subs. */}
+        {r.bookingType === 'SUBSCRIPTION' && (r.subscriptionRemaining ?? 0) > 0 && (
+          <button
+            onClick={() => handleCancelSubscription(r)}
+            title="Stop future auto-paid bookings + revoke Razorpay mandate"
+            className="text-[10px] text-red-600 hover:text-red-700 px-1 border border-red-200 rounded hover:bg-red-50"
+          >
+            Stop Sub
+          </button>
+        )}
         <DeleteButton onClick={() => handleCancelBooking(r.id)} title="Cancel this booking" />
       </div>
     )},

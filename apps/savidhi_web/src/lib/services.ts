@@ -72,10 +72,16 @@ export const pujaBookingService = {
     sankalp?: string;
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; relation?: string; gotra: string }>;
+    // Subscription Phase A — backend validates against puja.booking_mode
+    // and persists subscription_count / subscription_remaining.
     booking_type?: 'ONE_TIME' | 'SUBSCRIPTION';
+    subscription_count?: number;
     idempotency_key?: string;
   }) => api.post('/bookings/puja-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/puja-bookings/${id}/cancel`),
+  // Stop a SUBSCRIPTION booking from re-occurring on future events without
+  // cancelling the already-booked one. Phase C extends to cancel Razorpay mandate.
+  cancelRepeat: (id: string) => api.patch(`/bookings/puja-bookings/${id}/cancel-repeat`),
 };
 
 export const chadhavaBookingService = {
@@ -88,9 +94,12 @@ export const chadhavaBookingService = {
     prasad_delivery_address?: string;
     devotees: Array<{ name: string; gotra: string }>;
     offerings: Array<{ offering_id: string; quantity: number }>;
+    booking_type?: 'ONE_TIME' | 'SUBSCRIPTION';
+    subscription_count?: number;
     idempotency_key?: string;
   }) => api.post('/bookings/chadhava-bookings', data),
   cancel: (id: string) => api.patch(`/bookings/chadhava-bookings/${id}/cancel`),
+  cancelRepeat: (id: string) => api.patch(`/bookings/chadhava-bookings/${id}/cancel-repeat`),
 };
 
 export const appointmentService = {

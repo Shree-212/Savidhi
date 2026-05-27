@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { cancelToken } from '../lib/razorpayHelpers';
 
 export const chadhavaBookingsRouter = Router();
 
@@ -113,12 +114,27 @@ chadhavaBookingsRouter.get('/:id', requireAuth, async (req: Request, res: Respon
   } catch (err) { next(err); }
 });
 
-/** POST / – create chadhava booking */
+/** POST / – create chadhava booking.
+ *
+ *  Phase A of subscription rollout (migration 023): accepts `booking_type` +
+ *  `subscription_count`, validates against the parent chadhava's `booking_mode`,
+ *  and persists subscription bookkeeping (subscription_remaining, next_charge_at).
+ *  No child bookings or Razorpay mandate yet — that's Phase B.
+ */
 chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const { chadhava_event_id, sankalp, prasad_delivery_address, devotees, offerings, idempotency_key } = req.body;
+    const {
+      chadhava_event_id,
+      sankalp,
+      prasad_delivery_address,
+      devotees,
+      offerings,
+      idempotency_key,
+      booking_type: rawBookingType,
+      subscription_count: rawSubscriptionCount,
+    } = req.body;
 
     if (!chadhava_event_id) {
       return res.status(400).json({ success: false, message: 'chadhava_event_id is required' });
@@ -131,6 +147,19 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
         success: false,
         message: 'A chadhava booking must have between 1 and 6 devotees.',
       });
+    }
+
+    // ── Subscription params validation (see pujaBookings sibling) ──────────
+    const bookingType = String(rawBookingType ?? 'ONE_TIME').toUpperCase();
+    if (bookingType !== 'ONE_TIME' && bookingType !== 'SUBSCRIPTION') {
+      return res.status(400).json({ success: false, message: `booking_type must be ONE_TIME or SUBSCRIPTION (got "${rawBookingType}")` });
+    }
+    let subscriptionCount: number | null = null;
+    if (bookingType === 'SUBSCRIPTION') {
+      subscriptionCount = Number(rawSubscriptionCount);
+      if (!Number.isInteger(subscriptionCount) || subscriptionCount < 2 || subscriptionCount > 12) {
+        return res.status(400).json({ success: false, message: 'subscription_count must be an integer between 2 and 12 for SUBSCRIPTION bookings' });
+      }
     }
 
     // Idempotency: if the client retried (network blip, double-tap, React
@@ -161,9 +190,10 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
 
     await client.query('BEGIN');
 
-    // Validate event exists
+    // Validate event exists; also pull the parent chadhava's booking_mode to
+    // gate SUBSCRIPTION requests.
     const eventResult = await client.query(
-      `SELECT ce.*, c.max_bookings_per_event
+      `SELECT ce.*, c.max_bookings_per_event, c.booking_mode
        FROM chadhava_events ce
        JOIN chadhavas c ON c.id = ce.chadhava_id
        WHERE ce.id = $1`,
@@ -175,6 +205,17 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
     }
 
     const event = eventResult.rows[0];
+
+    // Validate booking_type against the parent chadhava's booking_mode.
+    const chadhavaMode = String(event.booking_mode ?? 'ONE_TIME').toUpperCase();
+    if (chadhavaMode === 'ONE_TIME' && bookingType === 'SUBSCRIPTION') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'This chadhava does not support subscription bookings' });
+    }
+    if (chadhavaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'This chadhava is subscription-only; one-time bookings are not allowed' });
+    }
 
     // Check capacity
     const countResult = await client.query(
@@ -218,10 +259,22 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
       });
     }
 
+    // Subscription bookkeeping — see pujaBookings sibling.
+    const subscriptionRemaining = bookingType === 'SUBSCRIPTION' && subscriptionCount
+      ? subscriptionCount - 1
+      : null;
+    const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
+
     const bookingResult = await client.query(
-      `INSERT INTO chadhava_bookings (chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [chadhava_event_id, userId, totalCost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null],
+      `INSERT INTO chadhava_bookings (
+         chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address, idempotency_key,
+         booking_type, subscription_count, subscription_remaining, next_charge_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [
+        chadhava_event_id, userId, totalCost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null,
+        bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
+      ],
     );
     const booking = bookingResult.rows[0];
 
@@ -263,7 +316,14 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
     );
     booking.offerings = offRows.rows;
 
-    console.log('[chadhava-bookings.create]', { id: booking.id, devotee_id: userId, cost: totalCost, offering_count: offeringDetails.length });
+    console.log('[chadhava-bookings.create]', {
+      id: booking.id,
+      devotee_id: userId,
+      cost: totalCost,
+      offering_count: offeringDetails.length,
+      booking_type: bookingType,
+      subscription_count: subscriptionCount,
+    });
     res.status(201).json({ success: true, data: booking });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -272,6 +332,73 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
   } finally {
     client.release();
   }
+});
+
+/**
+ * PATCH /:id/cancel-repeat
+ * See pujaBookings sibling for the full doc — same three-step flow: flip
+ * parent → cancel uncharged child placeholders → revoke Razorpay token.
+ */
+chadhavaBookingsRouter.patch('/:id/cancel-repeat', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const role = req.headers['x-user-role'] as string;
+    const userId = req.headers['x-user-id'] as string;
+
+    const check = await pool.query(
+      `SELECT devotee_id, booking_type, razorpay_customer_id, razorpay_token_id
+         FROM chadhava_bookings WHERE id = $1`,
+      [id],
+    );
+    if (check.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+    if (role === 'DEVOTEE' && check.rows[0].devotee_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    if (check.rows[0].booking_type !== 'SUBSCRIPTION') {
+      return res.status(400).json({ success: false, message: 'Booking is not a subscription' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE chadhava_bookings SET booking_type = 'ONE_TIME', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id],
+    );
+
+    const childCancel = await pool.query(
+      `UPDATE chadhava_bookings
+          SET status = 'CANCELLED', booking_type = 'ONE_TIME', updated_at = NOW()
+        WHERE parent_booking_id = $1
+          AND status = 'NOT_STARTED'
+          AND (payment_status IS NULL OR payment_status <> 'PAID')
+        RETURNING id`,
+      [id],
+    );
+
+    let mandateCancelStatus: 'ok' | 'failed' | 'not_required' = 'not_required';
+    let mandateCancelError: string | undefined;
+    const { razorpay_token_id, razorpay_customer_id } = check.rows[0];
+    if (razorpay_token_id && razorpay_customer_id) {
+      const cancel = await cancelToken(razorpay_customer_id, razorpay_token_id);
+      mandateCancelStatus = cancel.ok ? 'ok' : 'failed';
+      if (!cancel.ok) mandateCancelError = cancel.error;
+    }
+
+    console.log('[chadhava-bookings.cancel-repeat]', {
+      id, child_placeholders_cancelled: childCancel.rowCount ?? 0, mandate_cancel_status: mandateCancelStatus,
+    });
+
+    res.json({
+      success: true,
+      data: rows[0],
+      message: 'Subscription stopped; current booking remains active.',
+      meta: {
+        child_placeholders_cancelled: childCancel.rowCount ?? 0,
+        mandate_cancel_status: mandateCancelStatus,
+        mandate_cancel_error: mandateCancelError,
+      },
+    });
+  } catch (err) { next(err); }
 });
 
 /** PATCH /:id/sankalp-timestamp – admin sets the devotee-name timestamp for a chadhava booking */
