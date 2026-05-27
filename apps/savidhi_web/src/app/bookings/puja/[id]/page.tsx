@@ -11,10 +11,50 @@ import type { SankalpTimestamp } from '@/components/booking/SankalpTimestamps';
 
 const STAGE_ORDER = ['YET_TO_START', 'LIVE_ADDED', 'SHORT_VIDEO_ADDED', 'SANKALP_VIDEO_ADDED', 'TO_BE_SHIPPED', 'SHIPPED'];
 
+// Shiprocket lifecycle statuses considered "post-pickup" — once a booking
+// reaches any of these, the courier has the parcel and Prasad Dispatched
+// should light up regardless of event_stage. Lifecycle source-of-truth lives
+// in services/booking-service/src/lib/shiprocket.ts:mapShiprocketStatus.
+const POST_PICKUP_STATUSES = new Set(['PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED']);
+
 function buildSteps(booking: any): TimelineStep[] {
   const stage = booking.event_stage ?? booking.stage ?? 'YET_TO_START';
   const stageIdx = STAGE_ORDER.indexOf(stage);
   const liveLink = booking.event_live_link ?? booking.live_link;
+
+  // Real Shiprocket fields from migration 024; backend GET /puja-bookings/:id
+  // returns these via `SELECT pb.*`. Fall back to the legacy stage-only model
+  // when the booking is pre-migration or shipment_status hasn't been set yet.
+  const shipmentStatus: string | null = booking.shipment_status ?? null;
+  const awbCode: string | null = booking.sr_awb_code ?? null;
+  const courierName: string | null = booking.sr_courier_name ?? null;
+  const eta: string | null = booking.sr_expected_delivery ?? null;
+
+  const isDispatched =
+    (awbCode && POST_PICKUP_STATUSES.has(shipmentStatus ?? '')) ||
+    stageIdx >= STAGE_ORDER.indexOf('SHIPPED');
+  const isDelivered = shipmentStatus === 'DELIVERED';
+
+  // Build the "Prasad Dispatched" subtitle from live Shiprocket data so the
+  // devotee sees AWB + courier + finer-grained status (Picked Up / In Transit
+  // / Out for Delivery) instead of a binary checkmark.
+  let dispatchSubtitle: string | undefined;
+  if (awbCode) {
+    const statusLabel =
+      shipmentStatus === 'OUT_FOR_DELIVERY' ? 'Out for Delivery'
+      : shipmentStatus === 'IN_TRANSIT' ? 'In Transit'
+      : shipmentStatus === 'PICKED_UP' ? 'Picked Up'
+      : shipmentStatus === 'PICKUP_SCHEDULED' ? 'Pickup Scheduled'
+      : null;
+    const parts = [`AWB ${awbCode}`];
+    if (courierName) parts.push(courierName);
+    if (statusLabel) parts.push(statusLabel);
+    if (eta && !isDelivered) parts.push(`ETA ${new Date(eta).toLocaleDateString('en-IN')}`);
+    dispatchSubtitle = parts.join(' · ');
+  } else if (stageIdx >= STAGE_ORDER.indexOf('TO_BE_SHIPPED')) {
+    dispatchSubtitle = 'Awaiting courier pickup';
+  }
+
   return [
     {
       label: 'Booking Confirmed',
@@ -38,13 +78,14 @@ function buildSteps(booking: any): TimelineStep[] {
     },
     {
       label: 'Prasad Dispatched',
-      subtitle: booking.tracking_id ? `Tracking: ${booking.tracking_id}` : undefined,
-      completed: stageIdx >= STAGE_ORDER.indexOf('TO_BE_SHIPPED'),
+      subtitle: dispatchSubtitle,
+      completed: !!isDispatched,
       isPrasadStep: true,
     },
     {
       label: 'Delivered',
-      completed: stageIdx >= STAGE_ORDER.indexOf('SHIPPED'),
+      subtitle: isDelivered && eta ? `Delivered on ${new Date(eta).toLocaleDateString('en-IN')}` : undefined,
+      completed: isDelivered,
       isPrasadStep: true,
     },
   ];

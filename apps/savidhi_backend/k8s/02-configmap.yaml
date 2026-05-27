@@ -20,3 +20,9 @@ data:
   JWT_REFRESH_EXPIRES: 7d
   # The booking-service runs autocomplete via CronJob in prod, not in-process.
   RUN_AUTOCOMPLETE_WORKER: "false"
+  # ─── Shiprocket (puja prasad hamper shipping) ──────────────────────────────
+  # Non-secret config — credentials live in savidhi-env (via External Secrets).
+  FEATURE_SHIPROCKET_ENABLED: "true"
+  SHIPROCKET_API_BASE: https://apiv2.shiprocket.in
+  SHIPROCKET_PICKUP_NICKNAME: work
+  SHIPROCKET_CHANNEL_ID: "10487279"

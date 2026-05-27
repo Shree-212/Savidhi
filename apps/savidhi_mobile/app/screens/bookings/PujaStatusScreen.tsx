@@ -48,14 +48,42 @@ export function PujaStatusScreen({ navigation, route }: { navigation: any; route
         const stageOrder = ['YET_TO_START','LIVE_ADDED','SHORT_VIDEO_ADDED','SANKALP_VIDEO_ADDED','TO_BE_SHIPPED','SHIPPED'];
         const stageIdx = stageOrder.indexOf(d.event_stage ?? 'YET_TO_START');
         const hasPrasad = d.event_has_prasad !== false;
+
+        // Real Shiprocket fields from migration 024 (`SELECT pb.*` returns them).
+        // Mirrors the web booking-detail timeline so the devotee sees live AWB +
+        // courier + finer status instead of a binary "stage = SHIPPED" flip.
+        const shipmentStatus: string | null = d.shipment_status ?? null;
+        const awbCode: string | null = d.sr_awb_code ?? null;
+        const courierName: string | null = d.sr_courier_name ?? null;
+        const eta: string | null = d.sr_expected_delivery ?? null;
+        const POST_PICKUP = new Set(['PICKED_UP','IN_TRANSIT','OUT_FOR_DELIVERY','DELIVERED']);
+        const isDispatched = (awbCode && POST_PICKUP.has(shipmentStatus ?? '')) || stageIdx >= stageOrder.indexOf('SHIPPED');
+        const isDelivered = shipmentStatus === 'DELIVERED';
+        let dispatchSubtitle: string | undefined;
+        if (awbCode) {
+          const statusLabel =
+            shipmentStatus === 'OUT_FOR_DELIVERY' ? 'Out for Delivery'
+            : shipmentStatus === 'IN_TRANSIT' ? 'In Transit'
+            : shipmentStatus === 'PICKED_UP' ? 'Picked Up'
+            : shipmentStatus === 'PICKUP_SCHEDULED' ? 'Pickup Scheduled'
+            : null;
+          const parts: string[] = [`AWB ${awbCode}`];
+          if (courierName) parts.push(courierName);
+          if (statusLabel) parts.push(statusLabel);
+          if (eta && !isDelivered) parts.push(`ETA ${new Date(eta).toLocaleDateString('en-IN')}`);
+          dispatchSubtitle = parts.join(' · ');
+        } else if (stageIdx >= stageOrder.indexOf('TO_BE_SHIPPED')) {
+          dispatchSubtitle = 'Awaiting courier pickup';
+        }
+
         const allSteps = [
           { label: 'Booking Confirmed', subtitle: d.created_at ? `Booked on ${new Date(d.created_at).toLocaleDateString('en-IN')}` : '', completed: true },
           { label: 'Live Puja Stream', subtitle: d.event_live_link ? `Watch live: ${d.event_live_link}` : 'Live link will be shared before puja', completed: stageIdx >= stageOrder.indexOf('LIVE_ADDED'), videoThumbnail: undefined },
           { label: 'Puja Video', subtitle: d.event_short_video_url ? 'Short puja video available' : 'Video will be shared after puja', completed: stageIdx >= stageOrder.indexOf('SHORT_VIDEO_ADDED'), videoThumbnail: d.event_short_video_url ?? undefined },
           { label: 'Sankalp Video', subtitle: d.event_sankalp_video_url ? 'Your sankalp video is ready' : 'Personalized sankalp video', completed: stageIdx >= stageOrder.indexOf('SANKALP_VIDEO_ADDED'), videoThumbnail: d.event_sankalp_video_url ?? undefined },
           ...(hasPrasad ? [
-            { label: 'Prasad Dispatched', subtitle: d.shipment_id ? `Tracking: ${d.shipment_id}` : undefined, completed: stageIdx >= stageOrder.indexOf('TO_BE_SHIPPED') },
-            { label: 'Delivered', completed: stageIdx >= stageOrder.indexOf('SHIPPED') },
+            { label: 'Prasad Dispatched', subtitle: dispatchSubtitle, completed: !!isDispatched },
+            { label: 'Delivered', subtitle: isDelivered && eta ? `Delivered on ${new Date(eta).toLocaleDateString('en-IN')}` : undefined, completed: isDelivered },
           ] : []),
         ];
         setStatus({

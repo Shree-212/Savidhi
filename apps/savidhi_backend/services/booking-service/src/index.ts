@@ -12,6 +12,7 @@ import { appointmentsRouter } from './routes/appointments';
 import { paymentsRouter } from './routes/payments';
 import { dashboardRouter } from './routes/dashboard';
 import { reportsRouter } from './routes/reports';
+import { shiprocketWebhookRouter } from './routes/shiprocketWebhook';
 import { startAppointmentAutoCompleteWorker } from './workers/appointmentAutoComplete';
 
 const app = express();
@@ -53,6 +54,13 @@ app.use('/api/v1/bookings/appointments', appointmentsRouter);
 app.use('/api/v1/bookings/payments', paymentsRouter);
 app.use('/api/v1/bookings/dashboard', dashboardRouter);
 app.use('/api/v1/bookings/reports', reportsRouter);
+
+// Shiprocket pushes status updates here. Mounted as `/courier` (NOT
+// `/shiprocket`) because the Shiprocket panel rejects webhook URLs that
+// contain the words "shiprocket", "kartrocket", "sr", or "kr" — they
+// detect those as their own infra and refuse to send to them. See the
+// panel note under the Webhooks → URL field.
+app.use('/api/v1/webhooks/courier', shiprocketWebhookRouter);
 
 // ─── Error handling ───────────────────────────────────────────────────────────
 app.use(errorHandler);

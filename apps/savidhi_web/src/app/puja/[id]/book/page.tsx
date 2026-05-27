@@ -52,7 +52,15 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string; relation: string }>>([
     { name: '', gotra: '', relation: 'Self' },
   ]);
-  const [address, setAddress] = useState('');
+  // Structured shipping address — required when puja.send_hamper is true.
+  // The backend builds the legacy prasad_delivery_address string server-side
+  // from these fields, so the client only sends the structured form.
+  const [shipToName, setShipToName] = useState('');
+  const [shipToPhone, setShipToPhone] = useState('');
+  const [shipToLine1, setShipToLine1] = useState('');
+  const [shipToLine2, setShipToLine2] = useState('');
+  const [shipToCity, setShipToCity] = useState('');
+  const [shipToState, setShipToState] = useState('');
   const [pincode, setPincode] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
@@ -147,7 +155,11 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
     if (s === 1) return devoteeCount >= 1;
     if (s === 2) {
       if (devotees.some((d) => !d.name.trim() || !d.gotra.trim())) return false;
-      if (sendHamper && !address.trim()) return false;
+      if (sendHamper) {
+        if (!shipToName.trim() || !shipToLine1.trim() || !shipToCity.trim() || !shipToState.trim()) return false;
+        if (pincode.length !== 6) return false;
+        if (shipToPhone.replace(/\D/g, '').length !== 10) return false;
+      }
       return true;
     }
     return true;
@@ -161,9 +173,18 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
       const payload = {
         puja_event_id: selectedEventId,
         devotee_count: devoteeCount,
-        prasad_delivery_address: sendHamper
-          ? `${address}${pincode ? `, PIN: ${pincode}` : ''}`
-          : undefined,
+        // Structured shipping fields when this puja ships a hamper; backend
+        // builds the legacy prasad_delivery_address from these on insert.
+        ...(sendHamper ? {
+          ship_to_name: shipToName.trim(),
+          ship_to_phone: shipToPhone.replace(/\D/g, '').slice(-10),
+          ship_to_line1: shipToLine1.trim(),
+          ship_to_line2: shipToLine2.trim() || undefined,
+          ship_to_city: shipToCity.trim(),
+          ship_to_state: shipToState.trim(),
+          ship_to_pincode: pincode,
+          ship_to_country: 'India',
+        } : {}),
         devotees: devotees.map((d) => ({
           name: d.name.trim(),
           gotra: d.gotra.trim(),
@@ -534,15 +555,50 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
                     <p className="text-sm text-text-secondary mb-3">Where should we send the prasad hamper?</p>
                     <div className="space-y-2.5 mb-6">
                       <input
-                        placeholder="Full address (line 1 + locality + city + state)"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="Recipient full name"
+                        value={shipToName}
+                        onChange={(e) => setShipToName(e.target.value)}
                         className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
                       />
                       <input
-                        placeholder="Pincode"
+                        placeholder="10-digit phone number"
+                        value={shipToPhone}
+                        onChange={(e) => setShipToPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        inputMode="numeric"
+                        maxLength={10}
+                        className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
+                      />
+                      <input
+                        placeholder="Address line 1 (house no., street)"
+                        value={shipToLine1}
+                        onChange={(e) => setShipToLine1(e.target.value)}
+                        className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
+                      />
+                      <input
+                        placeholder="Address line 2 (apartment, landmark — optional)"
+                        value={shipToLine2}
+                        onChange={(e) => setShipToLine2(e.target.value)}
+                        className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
+                      />
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <input
+                          placeholder="City"
+                          value={shipToCity}
+                          onChange={(e) => setShipToCity(e.target.value)}
+                          className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
+                        />
+                        <input
+                          placeholder="State"
+                          value={shipToState}
+                          onChange={(e) => setShipToState(e.target.value)}
+                          className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
+                        />
+                      </div>
+                      <input
+                        placeholder="6-digit Pincode"
                         value={pincode}
-                        onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
+                        onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        inputMode="numeric"
                         maxLength={6}
                         className="w-full border border-orange-100 rounded-xl px-4 py-3 text-sm bg-white focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition"
                       />

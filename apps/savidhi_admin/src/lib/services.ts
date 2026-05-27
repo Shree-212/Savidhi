@@ -152,6 +152,19 @@ export const pujaEventService = {
     id: string,
     data: { short_video_url?: string | null; sankalp_video_url?: string | null },
   ) => apiClient.patch(`/bookings/puja-events/${id}/media`, data),
+  // POST /:id/ship — Shiprocket bulk-create one order per booking on the
+  // event, allocate AWBs, and schedule pickup. Returns a structured summary
+  // with per-booking succeeded / failed entries. The event stage only
+  // advances to SHIPPED if every booking succeeded.
+  ship: (id: string) =>
+    apiClient.post<{ success: boolean; data: { total: number; succeeded_count: number; failed_count: number; pickup_scheduled: boolean; pickup_error?: string; stage_advanced: boolean; succeeded: any[]; failed: Array<{ booking_id: string; devotee_name: string; reason: string }> } }>(`/bookings/puja-events/${id}/ship`),
+  // GET /:id/shipments?refresh=<bool> — list per-booking shipment fields.
+  // Pass refresh=true to poll Shiprocket /track/awb for every active AWB
+  // and persist the latest status before returning.
+  getShipments: (id: string, opts?: { refresh?: boolean }) =>
+    apiClient.get<{ success: boolean; data: Array<any> }>(`/bookings/puja-events/${id}/shipments`, {
+      params: opts?.refresh ? { refresh: 'true' } : undefined,
+    }),
 };
 
 export const pujaBookingService = {
@@ -174,6 +187,12 @@ export const pujaBookingService = {
     apiClient.patch(`/bookings/puja-bookings/${id}/cancel-repeat`),
   setSankalpTimestamp: (id: string, sankalp_video_timestamp: string) =>
     apiClient.patch(`/bookings/puja-bookings/${id}/sankalp-timestamp`, { sankalp_video_timestamp }),
+  // PATCH /:id/ship-address — admin edits a single booking's shipping address
+  // in the Ship Package modal before triggering pujaEventService.ship().
+  updateShipAddress: (
+    id: string,
+    data: { ship_to_name?: string; ship_to_phone?: string; ship_to_line1?: string; ship_to_line2?: string; ship_to_city?: string; ship_to_state?: string; ship_to_pincode?: string; ship_to_country?: string },
+  ) => apiClient.patch(`/bookings/puja-bookings/${id}/ship-address`, data),
 };
 
 export const chadhavaEventService = {

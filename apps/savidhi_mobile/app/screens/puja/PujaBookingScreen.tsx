@@ -59,7 +59,16 @@ export function PujaBookingScreen({ navigation, route }: Props) {
   const [devotees, setDevotees] = useState<Array<{ name: string; gotra: string; relation: string }>>([
     { name: '', gotra: '', relation: 'Self' },
   ]);
-  const [address, setAddress] = useState('');
+  // Structured shipping address — required by the Shiprocket integration
+  // when puja.send_hamper is true. Backend builds the legacy
+  // prasad_delivery_address text on insert from these fields, so older
+  // consumers keep working without us sending it from the client.
+  const [shipToName, setShipToName] = useState('');
+  const [shipToPhone, setShipToPhone] = useState('');
+  const [shipToLine1, setShipToLine1] = useState('');
+  const [shipToLine2, setShipToLine2] = useState('');
+  const [shipToCity, setShipToCity] = useState('');
+  const [shipToState, setShipToState] = useState('');
   const [pincode, setPincode] = useState('');
   const [sankalp, setSankalp] = useState('');
 
@@ -92,6 +101,10 @@ export function PujaBookingScreen({ navigation, route }: Props) {
       if (meRes?.data?.data) {
         const me = meRes.data.data;
         setDevotees([{ name: me.name ?? '', gotra: me.gotra ?? '', relation: 'Self' }]);
+        // Pre-fill structured ship-to fields from profile so devotees aren't
+        // forced to retype their name/phone for every booking.
+        setShipToName((prev) => prev || me.name || '');
+        setShipToPhone((prev) => prev || (me.phone ? String(me.phone).replace(/\D/g, '').slice(-10) : ''));
       }
     } catch (err) {
       console.warn('PujaBooking load', err);
@@ -128,7 +141,14 @@ export function PujaBookingScreen({ navigation, route }: Props) {
   const canAdvance = (s: number): boolean => {
     if (s === 0) return !!eventId;
     if (s === 1) return devotees.every((d) => d.name.trim() && d.gotra.trim());
-    if (s === 2) return !puja.send_hamper || address.trim().length > 0;
+    if (s === 2) {
+      if (!puja.send_hamper) return true;
+      // Structured fields required; pincode 6 digits; phone 10 digits.
+      if (!shipToName.trim() || !shipToLine1.trim() || !shipToCity.trim() || !shipToState.trim()) return false;
+      if (pincode.length !== 6) return false;
+      if (shipToPhone.replace(/\D/g, '').length !== 10) return false;
+      return true;
+    }
     return true;
   };
 
@@ -142,7 +162,18 @@ export function PujaBookingScreen({ navigation, route }: Props) {
         puja_event_id: eventId,
         devotee_count: devoteeCount,
         sankalp: sankalp || undefined,
-        prasad_delivery_address: puja.send_hamper ? `${address}${pincode ? `, PIN: ${pincode}` : ''}` : undefined,
+        // Structured shipping fields — backend builds the legacy
+        // prasad_delivery_address string server-side from these.
+        ...(puja.send_hamper ? {
+          ship_to_name: shipToName.trim(),
+          ship_to_phone: shipToPhone.replace(/\D/g, '').slice(-10),
+          ship_to_line1: shipToLine1.trim(),
+          ship_to_line2: shipToLine2.trim() || undefined,
+          ship_to_city: shipToCity.trim(),
+          ship_to_state: shipToState.trim(),
+          ship_to_pincode: pincode,
+          ship_to_country: 'India',
+        } : {}),
         devotees: devotees.map((d) => ({ name: d.name.trim(), gotra: d.gotra.trim(), relation: d.relation.trim() || undefined })),
         booking_type: bookingType,
         ...(bookingType === 'SUBSCRIPTION' ? { subscription_count: subscriptionCount } : {}),
@@ -353,17 +384,54 @@ export function PujaBookingScreen({ navigation, route }: Props) {
                 <Text style={styles.sectionTitle}>Prasad Delivery Address</Text>
                 <TextInput
                   style={styles.input}
-                  value={address}
-                  onChangeText={setAddress}
-                  placeholder="Full Address"
+                  value={shipToName}
+                  onChangeText={setShipToName}
+                  placeholder="Recipient Full Name"
                   placeholderTextColor={Colors.textMuted}
-                  multiline
                 />
+                <TextInput
+                  style={styles.input}
+                  value={shipToPhone}
+                  onChangeText={(v) => setShipToPhone(v.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="10-digit Phone Number"
+                  keyboardType="number-pad"
+                  placeholderTextColor={Colors.textMuted}
+                />
+                <TextInput
+                  style={styles.input}
+                  value={shipToLine1}
+                  onChangeText={setShipToLine1}
+                  placeholder="Address Line 1 (house no., street)"
+                  placeholderTextColor={Colors.textMuted}
+                />
+                <TextInput
+                  style={styles.input}
+                  value={shipToLine2}
+                  onChangeText={setShipToLine2}
+                  placeholder="Address Line 2 (apartment, landmark — optional)"
+                  placeholderTextColor={Colors.textMuted}
+                />
+                <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={shipToCity}
+                    onChangeText={setShipToCity}
+                    placeholder="City"
+                    placeholderTextColor={Colors.textMuted}
+                  />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={shipToState}
+                    onChangeText={setShipToState}
+                    placeholder="State"
+                    placeholderTextColor={Colors.textMuted}
+                  />
+                </View>
                 <TextInput
                   style={styles.input}
                   value={pincode}
                   onChangeText={(v) => setPincode(v.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="Pincode"
+                  placeholder="6-digit Pincode"
                   keyboardType="number-pad"
                   placeholderTextColor={Colors.textMuted}
                 />
@@ -408,7 +476,11 @@ export function PujaBookingScreen({ navigation, route }: Props) {
                 <Text style={styles.reviewItem}>Auto-pay for: <Text style={styles.reviewValue}>{subscriptionCount} events</Text></Text>
               )}
               {puja.send_hamper && (
-                <Text style={styles.reviewItem}>Address: <Text style={styles.reviewValue}>{address}{pincode ? `, ${pincode}` : ''}</Text></Text>
+                <Text style={styles.reviewItem}>
+                  Address: <Text style={styles.reviewValue}>
+                    {[shipToName, shipToLine1, shipToLine2, shipToCity, shipToState, pincode].filter(Boolean).join(', ')}
+                  </Text>
+                </Text>
               )}
               <View style={styles.reviewDivider} />
               <Text style={styles.reviewTotal}>

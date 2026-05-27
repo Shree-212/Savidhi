@@ -13,6 +13,13 @@ interface Hamper {
   name: string;
   content_description: string;
   stock_qty: number;
+  // Shipping dims/weight/value — used by booking-service when building the
+  // Shiprocket /orders/create/adhoc payload. Defaults set in migration 024.
+  length_cm?: number;
+  breadth_cm?: number;
+  height_cm?: number;
+  weight_kg?: number;
+  declared_value?: number;
 }
 
 export default function HampersPage() {
@@ -27,6 +34,11 @@ export default function HampersPage() {
   const nameRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
+  const lengthRef = useRef<HTMLInputElement>(null);
+  const breadthRef = useRef<HTMLInputElement>(null);
+  const heightRef = useRef<HTMLInputElement>(null);
+  const weightRef = useRef<HTMLInputElement>(null);
+  const valueRef = useRef<HTMLInputElement>(null);
 
   const loadData = async () => {
     try {
@@ -46,7 +58,12 @@ export default function HampersPage() {
 
   const handleAdd = () => {
     setIsNew(true);
-    setEditing({ id: '', name: '', content_description: '', stock_qty: 0 });
+    // Defaults mirror migration 024 so the create form doesn't leave the
+    // Shiprocket payload with zero dims if the admin saves before editing.
+    setEditing({
+      id: '', name: '', content_description: '', stock_qty: 0,
+      length_cm: 20, breadth_cm: 15, height_cm: 10, weight_kg: 0.5, declared_value: 100,
+    });
   };
 
   const handleSave = async () => {
@@ -57,6 +74,11 @@ export default function HampersPage() {
         name: nameRef.current?.value || '',
         content_description: descRef.current?.value || '',
         stock_qty: Number(qtyRef.current?.value) || 0,
+        length_cm: Number(lengthRef.current?.value) || undefined,
+        breadth_cm: Number(breadthRef.current?.value) || undefined,
+        height_cm: Number(heightRef.current?.value) || undefined,
+        weight_kg: Number(weightRef.current?.value) || undefined,
+        declared_value: Number(valueRef.current?.value) || undefined,
       };
       if (isNew) {
         await hamperService.create(payload);
@@ -126,6 +148,58 @@ export default function HampersPage() {
             <input ref={nameRef} defaultValue={editing.name} placeholder="Hamper Name" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
             <textarea ref={descRef} defaultValue={editing.content_description} placeholder="Content Description" className="w-full h-20 px-3 py-2 bg-accent border border-border rounded-md text-xs text-foreground resize-none" />
             <input ref={qtyRef} defaultValue={editing.stock_qty || ''} placeholder="Quantity in Stock" className="w-full h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground" />
+
+            {/* Shipping dims / weight / declared value — required by Shiprocket
+                /orders/create/adhoc when this hamper is shipped. */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Shipment dimensions (Shiprocket)
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  ref={lengthRef}
+                  type="number"
+                  step="0.1"
+                  defaultValue={editing.length_cm ?? 20}
+                  placeholder="Length (cm)"
+                  className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+                />
+                <input
+                  ref={breadthRef}
+                  type="number"
+                  step="0.1"
+                  defaultValue={editing.breadth_cm ?? 15}
+                  placeholder="Breadth (cm)"
+                  className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+                />
+                <input
+                  ref={heightRef}
+                  type="number"
+                  step="0.1"
+                  defaultValue={editing.height_cm ?? 10}
+                  placeholder="Height (cm)"
+                  className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <input
+                  ref={weightRef}
+                  type="number"
+                  step="0.001"
+                  defaultValue={editing.weight_kg ?? 0.5}
+                  placeholder="Weight (kg)"
+                  className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+                />
+                <input
+                  ref={valueRef}
+                  type="number"
+                  step="0.01"
+                  defaultValue={editing.declared_value ?? 100}
+                  placeholder="Declared value (₹)"
+                  className="h-9 px-3 bg-accent border border-border rounded-md text-xs text-foreground"
+                />
+              </div>
+            </div>
 
             <div className="flex gap-3">
               <OutlineButton className="flex-1" onClick={() => { setEditing(null); setIsNew(false); }}>Cancel</OutlineButton>

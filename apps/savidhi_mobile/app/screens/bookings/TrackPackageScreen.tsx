@@ -10,13 +10,17 @@ import api from '../../services/api';
  * Route params: { bookingId, bookingType: 'PUJA' | 'CHADHAVA' }
  */
 
-const MOCK_EVENTS = [
-  { status: 'ORDERED', label: 'Order Placed', by: 'Savidhi' },
-  { status: 'PACKED', label: 'Prasad Packed', by: 'Temple Office' },
-  { status: 'PICKED_UP', label: 'Picked up by Courier', by: 'ShipRocket' },
-  { status: 'IN_TRANSIT', label: 'In Transit', by: 'ShipRocket' },
-  { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', by: 'Local Courier' },
-  { status: 'DELIVERED', label: 'Delivered', by: 'Recipient' },
+// Lifecycle aligned with backend mapShiprocketStatus() in
+// services/booking-service/src/lib/shiprocket.ts. The timeline lights up each
+// stage as the booking's shipment_status reaches or passes it.
+const TIMELINE_STAGES: Array<{ status: string; label: string; by: string }> = [
+  { status: 'NEW',              label: 'Order Created',         by: 'Savidhi' },
+  { status: 'AWB_ASSIGNED',     label: 'Tracking ID Assigned',  by: 'Shiprocket' },
+  { status: 'PICKUP_SCHEDULED', label: 'Pickup Scheduled',      by: 'Shiprocket' },
+  { status: 'PICKED_UP',        label: 'Picked up by Courier',  by: 'Courier' },
+  { status: 'IN_TRANSIT',       label: 'In Transit',            by: 'Courier' },
+  { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery',      by: 'Local Courier' },
+  { status: 'DELIVERED',        label: 'Delivered',             by: 'Recipient' },
 ];
 
 export const TrackPackageScreen: React.FC = () => {
@@ -42,42 +46,59 @@ export const TrackPackageScreen: React.FC = () => {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>;
   if (!booking) return <View style={styles.center}><Text style={{ color: Colors.textSecondary }}>Booking not found</Text></View>;
 
-  const shipmentId = booking.shipment_id;
-  const shipmentStatus = booking.shipment_status ?? (booking.event_stage === 'SHIPPED' ? 'IN_TRANSIT' : 'NOT_YET_SHIPPED');
-  const currentIdx = MOCK_EVENTS.findIndex((e) => e.status === shipmentStatus);
+  // AWB is the canonical tracking id once Shiprocket assigns it. We fall back
+  // to the legacy shipment_id column for older rows that pre-date the
+  // structured columns from migration 024.
+  const awb = booking.sr_awb_code ?? booking.shipment_id ?? null;
+  const courier = booking.sr_courier_name ?? null;
+  const eta = booking.sr_expected_delivery ?? null;
+  const shipmentStatus =
+    booking.shipment_status ?? (booking.event_stage === 'SHIPPED' ? 'IN_TRANSIT' : null);
+  const currentIdx = shipmentStatus ? TIMELINE_STAGES.findIndex((e) => e.status === shipmentStatus) : -1;
+  const trackingUrl = awb ? `https://shiprocket.co/tracking/${awb}` : null;
+  const errored = shipmentStatus === 'NDR' || shipmentStatus === 'RTO_INITIATED' || shipmentStatus === 'RTO_DELIVERED';
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>Track Prasad Shipment</Text>
         <Text style={styles.subtitle}>{booking.puja_name ?? booking.chadhava_name}</Text>
-        {shipmentId ? (
+        {awb ? (
           <View style={{ marginTop: 12 }}>
-            <Text style={styles.label}>Tracking ID</Text>
+            <Text style={styles.label}>Tracking ID (AWB)</Text>
             <View style={styles.trackingRow}>
-              <Text style={styles.trackingId}>{shipmentId}</Text>
-              <TouchableOpacity
-                onPress={() => Linking.openURL(`https://shiprocket.co/tracking/${shipmentId}`).catch(() => {})}
-                style={styles.trackBtn}
-              >
-                <Text style={styles.trackBtnText}>Open on ShipRocket</Text>
-                <Icon name="open-in-new" size={14} color={Colors.textWhite} />
-              </TouchableOpacity>
+              <Text style={styles.trackingId}>{awb}</Text>
+              {trackingUrl && (
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(trackingUrl).catch(() => {})}
+                  style={styles.trackBtn}
+                >
+                  <Text style={styles.trackBtnText}>Track</Text>
+                  <Icon name="open-in-new" size={14} color={Colors.textWhite} />
+                </TouchableOpacity>
+              )}
             </View>
+            {(courier || eta) && (
+              <Text style={[styles.eventBy, { marginTop: 8 }]}>
+                {courier ? `Courier: ${courier}` : ''}
+                {courier && eta ? '  ·  ' : ''}
+                {eta ? `Expected: ${new Date(eta).toLocaleDateString()}` : ''}
+              </Text>
+            )}
           </View>
         ) : (
           <View style={styles.emptyShipment}>
             <Icon name="package-variant-closed" size={48} color={Colors.textMuted} />
             <Text style={styles.emptyText}>Not yet shipped</Text>
-            <Text style={styles.emptySub}>You’ll see tracking details here once the admin marks the puja as SHIPPED.</Text>
+            <Text style={styles.emptySub}>You’ll see tracking details here once the temple ships your prasad.</Text>
           </View>
         )}
       </View>
 
-      {shipmentId && (
+      {awb && (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Timeline</Text>
-          {MOCK_EVENTS.map((e, i) => {
+          {TIMELINE_STAGES.map((e, i) => {
             const done = currentIdx >= 0 && i <= currentIdx;
             const active = i === currentIdx;
             return (
@@ -92,6 +113,16 @@ export const TrackPackageScreen: React.FC = () => {
               </View>
             );
           })}
+          {errored && (
+            <View style={{ marginTop: 8, padding: 10, backgroundColor: '#FEF2F2', borderRadius: 8 }}>
+              <Text style={{ fontSize: 12, color: '#B91C1C', fontWeight: '600' }}>
+                {shipmentStatus === 'NDR' ? 'Delivery attempt failed' : 'Return to origin'}
+              </Text>
+              <Text style={{ fontSize: 11, color: '#7F1D1D', marginTop: 2 }}>
+                Please contact support at the temple office to resolve.
+              </Text>
+            </View>
+          )}
         </View>
       )}
 

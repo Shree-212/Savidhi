@@ -97,6 +97,8 @@ app.use(createProxyMiddleware({ pathFilter: '/api/v1/auth',     target: AUTH_SER
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/users',    target: USER_SERVICE_URL,    changeOrigin: true }));
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/catalog',  target: CATALOG_SERVICE_URL, changeOrigin: true }));
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/bookings', target: BOOKING_SERVICE_URL, changeOrigin: true }));
+// 3rd-party webhooks (Shiprocket, etc.) live on the booking-service.
+app.use(createProxyMiddleware({ pathFilter: '/api/v1/webhooks', target: BOOKING_SERVICE_URL, changeOrigin: true }));
 app.use(createProxyMiddleware({ pathFilter: '/api/v1/media',    target: MEDIA_SERVICE_URL,   changeOrigin: true }));
 
 // Serve uploaded static files via media-service

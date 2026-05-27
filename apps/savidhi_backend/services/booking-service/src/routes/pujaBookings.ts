@@ -140,6 +140,18 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
       idempotency_key,
       booking_type: rawBookingType,
       subscription_count: rawSubscriptionCount,
+      // Structured shipping address — required when the parent puja.send_hamper
+      // is true (validated below). Legacy callers that still send only the TEXT
+      // prasad_delivery_address keep working — we just won't have an AWB-able
+      // address until the admin fills these in from the Ship modal.
+      ship_to_name,
+      ship_to_phone,
+      ship_to_line1,
+      ship_to_line2,
+      ship_to_city,
+      ship_to_state,
+      ship_to_pincode,
+      ship_to_country,
     } = req.body;
 
     if (!puja_event_id) {
@@ -182,7 +194,7 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
 
     // Fetch event + puja to calculate cost and validate booking_mode
     const eventResult = await client.query(
-      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee, p.booking_mode
+      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee, p.booking_mode, p.send_hamper
        FROM puja_events pe
        JOIN pujas p ON p.id = pe.puja_id
        WHERE pe.id = $1`,
@@ -207,6 +219,25 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
     if (pujaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: 'This puja is subscription-only; one-time bookings are not allowed' });
+    }
+
+    // Structured shipping address validation. When the puja ships a hamper,
+    // we require the new fields so the admin Ship modal has AWB-able data.
+    // The legacy TEXT field stays accepted for backward compat.
+    const sendsHamper = !!event.send_hamper;
+    if (sendsHamper) {
+      const pin = String(ship_to_pincode ?? '').replace(/\D/g, '');
+      const phoneDigits = String(ship_to_phone ?? '').replace(/\D/g, '').slice(-10);
+      const required = { ship_to_name, ship_to_line1, ship_to_city, ship_to_state };
+      const missing = Object.entries(required).filter(([, v]) => !String(v ?? '').trim()).map(([k]) => k);
+      if (missing.length || pin.length !== 6 || phoneDigits.length !== 10) {
+        // Don't hard-fail here yet — legacy clients still POST only the TEXT
+        // blob. Just log so the admin Ship modal can later refuse to ship
+        // until the address is fixed. (Strict validation lives in /:id/ship.)
+        console.warn('[puja-bookings.create] incomplete structured ship_to_*', {
+          missing, pin_len: pin.length, phone_len: phoneDigits.length,
+        });
+      }
     }
 
     // Check capacity
@@ -246,17 +277,39 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
       : null;
     const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
 
+    // If structured fields are present but the legacy TEXT field is not, build
+    // it server-side so any code still reading prasad_delivery_address keeps
+    // working without forcing the client to send both copies.
+    const builtLegacyAddress = (() => {
+      if (prasad_delivery_address) return prasad_delivery_address;
+      if (!sendsHamper) return null;
+      const parts = [ship_to_name, ship_to_line1, ship_to_line2, ship_to_city, ship_to_state, ship_to_pincode]
+        .map((p) => String(p ?? '').trim()).filter(Boolean);
+      return parts.length > 0 ? parts.join(', ') : null;
+    })();
+
     const bookingResult = await client.query(
       `INSERT INTO puja_bookings (
          puja_event_id, devotee_id, devotee_count, cost,
          sankalp, prasad_delivery_address, idempotency_key,
-         booking_type, subscription_count, subscription_remaining, next_charge_at
+         booking_type, subscription_count, subscription_remaining, next_charge_at,
+         ship_to_name, ship_to_phone, ship_to_line1, ship_to_line2,
+         ship_to_city, ship_to_state, ship_to_pincode, ship_to_country
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+               $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
       [
         puja_event_id, userId, dc, cost,
-        sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null,
+        sankalp ?? null, builtLegacyAddress, idempotency_key ?? null,
         bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
+        ship_to_name ?? null,
+        ship_to_phone ? String(ship_to_phone).replace(/\D/g, '').slice(-10) : null,
+        ship_to_line1 ?? null,
+        ship_to_line2 ?? null,
+        ship_to_city ?? null,
+        ship_to_state ?? null,
+        ship_to_pincode ? String(ship_to_pincode).replace(/\D/g, '') : null,
+        ship_to_country ?? 'India',
       ],
     );
     const booking = bookingResult.rows[0];
@@ -381,6 +434,39 @@ pujaBookingsRouter.patch('/:id/cancel-repeat', requireAuth, async (req: Request,
         mandate_cancel_error: mandateCancelError,
       },
     });
+  } catch (err) { next(err); }
+});
+
+/** PATCH /:id/ship-address — admin edits a booking's structured shipping
+ *  address from the Ship Prashad modal (used to fix typos / missing pin codes
+ *  before triggering the bulk shiprocket order). */
+pujaBookingsRouter.patch('/:id/ship-address', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['ship_to_name', 'ship_to_phone', 'ship_to_line1', 'ship_to_line2', 'ship_to_city', 'ship_to_state', 'ship_to_pincode', 'ship_to_country'];
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+    for (const f of allowed) {
+      if (req.body[f] !== undefined) {
+        let v = req.body[f];
+        if (f === 'ship_to_phone' && v) v = String(v).replace(/\D/g, '').slice(-10);
+        if (f === 'ship_to_pincode' && v) v = String(v).replace(/\D/g, '');
+        sets.push(`${f} = $${idx++}`);
+        params.push(v || null);
+      }
+    }
+    if (sets.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid fields to update' });
+    }
+    sets.push(`updated_at = NOW()`);
+    params.push(id);
+    const { rows } = await pool.query(
+      `UPDATE puja_bookings SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+      params,
+    );
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Booking not found' });
+    res.json({ success: true, data: rows[0] });
   } catch (err) { next(err); }
 });
 

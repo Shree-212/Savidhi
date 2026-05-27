@@ -136,6 +136,18 @@ function PujaBookingsPageInner() {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showSankalpModal, setShowSankalpModal] = useState(false);
   const [showShipModal, setShowShipModal] = useState(false);
+  // Ship Package modal state — per-booking inline-edit + Shiprocket result map.
+  const [shipEditingId, setShipEditingId] = useState<string | null>(null);
+  const [shipEditDraft, setShipEditDraft] = useState<Record<string, string>>({});
+  const [shipSubmitting, setShipSubmitting] = useState(false);
+  const [shipRefreshing, setShipRefreshing] = useState(false);
+  const [shipResult, setShipResult] = useState<{
+    succeeded: any[];
+    failed: Array<{ booking_id: string; devotee_name: string; reason: string }>;
+    pickup_scheduled?: boolean;
+    pickup_error?: string;
+    stage_advanced?: boolean;
+  } | null>(null);
   const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [editEventPujariId, setEditEventPujariId] = useState('');
   const [editEventStartTime, setEditEventStartTime] = useState('');
@@ -525,10 +537,29 @@ function PujaBookingsPageInner() {
   const allDevotees = ((selectedEvent as any)?.bookingsData ?? []).flatMap((b: any) =>
     (b.devotees ?? []).map((d: any) => ({ name: d.name, gotra: d.gotra, relation: d.relation }))
   );
-  const shipAddresses = ((selectedEvent as any)?.bookingsData ?? []).filter((b: any) => b.prasad_delivery_address).map((b: any) => ({
-    name: b.devotee_name ?? 'Devotee',
-    address: b.prasad_delivery_address,
-  }));
+  // Address rows for the Ship Package modal. We keep ALL active bookings
+  // (not just the ones with prasad_delivery_address) so the admin can fix
+  // missing structured fields inline before triggering Shiprocket.
+  const shipAddresses = ((selectedEvent as any)?.bookingsData ?? [])
+    .filter((b: any) => b.status !== 'CANCELLED')
+    .map((b: any) => ({
+      booking_id: b.id,
+      devotee_name: b.devotee_name ?? 'Devotee',
+      ship_to_name: b.ship_to_name ?? '',
+      ship_to_phone: b.ship_to_phone ?? '',
+      ship_to_line1: b.ship_to_line1 ?? '',
+      ship_to_line2: b.ship_to_line2 ?? '',
+      ship_to_city: b.ship_to_city ?? '',
+      ship_to_state: b.ship_to_state ?? '',
+      ship_to_pincode: b.ship_to_pincode ?? '',
+      ship_to_country: b.ship_to_country ?? 'India',
+      legacy_address: b.prasad_delivery_address ?? '',
+      sr_awb_code: b.sr_awb_code ?? null,
+      sr_courier_name: b.sr_courier_name ?? null,
+      shipment_status: b.shipment_status ?? null,
+      sr_expected_delivery: b.sr_expected_delivery ?? null,
+      sr_last_error: b.sr_last_error ?? null,
+    }));
 
   // ── Loading / Error states ───────────────────────────────
   if (loading && pujaEvents.length === 0) {
@@ -1183,22 +1214,189 @@ function PujaBookingsPageInner() {
       </Modal>
 
       {/* ── Ship Package Modal ──────────────────────────── */}
-      <Modal open={showShipModal} onClose={() => setShowShipModal(false)} title="Ship Package" onBack={() => setShowShipModal(false)}>
-        <div className="space-y-3">
-          {shipAddresses.length > 0 ? shipAddresses.map((addr: any, i: number) => (
-            <div key={i} className="border border-border rounded-lg p-3">
-              <p className="text-xs font-bold text-foreground">{addr.name}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{addr.address}</p>
-            </div>
-          )) : (
-            <p className="text-[11px] text-muted-foreground">No delivery addresses found</p>
+      <Modal
+        open={showShipModal}
+        onClose={() => { setShowShipModal(false); setShipResult(null); setShipEditingId(null); }}
+        title="Ship Prasad via Shiprocket"
+        onBack={() => { setShowShipModal(false); setShipResult(null); setShipEditingId(null); }}
+      >
+        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          {shipAddresses.length === 0 && (
+            <p className="text-[11px] text-muted-foreground">No active bookings on this event.</p>
           )}
-          <PrimaryButton className="w-full" onClick={async () => {
-            if (selectedEvent) await handleAdvanceStage(selectedEvent.id);
-            setShowShipModal(false);
-          }}>
-            Create Bulk Pickup in Ship Rocket
-          </PrimaryButton>
+          {shipAddresses.map((row: any) => {
+            const editing = shipEditingId === row.booking_id;
+            const missing = ['ship_to_name', 'ship_to_phone', 'ship_to_line1', 'ship_to_city', 'ship_to_state', 'ship_to_pincode']
+              .filter((f) => !row[f]);
+            const sentResult = shipResult?.failed.find((f) => f.booking_id === row.booking_id);
+            const sentOk = shipResult?.succeeded.find((s) => s.booking_id === row.booking_id);
+            return (
+              <div key={row.booking_id} className="border border-border rounded-lg p-3 text-[11px]">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-bold text-foreground">{row.devotee_name}</p>
+                  {row.shipment_status && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-foreground">{row.shipment_status}</span>
+                  )}
+                </div>
+
+                {!editing ? (
+                  <>
+                    {row.ship_to_line1 ? (
+                      <p className="text-muted-foreground leading-snug">
+                        {row.ship_to_name}, {row.ship_to_line1}
+                        {row.ship_to_line2 ? `, ${row.ship_to_line2}` : ''}, {row.ship_to_city}, {row.ship_to_state} — {row.ship_to_pincode}
+                        <br />Phone: {row.ship_to_phone || '—'}
+                      </p>
+                    ) : row.legacy_address ? (
+                      <>
+                        <p className="text-muted-foreground italic">Legacy free-text only — please fill structured fields:</p>
+                        <p className="text-muted-foreground">{row.legacy_address}</p>
+                      </>
+                    ) : (
+                      <p className="text-red-500">No delivery address on file.</p>
+                    )}
+
+                    {missing.length > 0 && (
+                      <p className="text-red-500 mt-1">Missing: {missing.join(', ')}</p>
+                    )}
+
+                    {row.sr_awb_code && (
+                      <p className="text-emerald-600 mt-1">
+                        AWB <code>{row.sr_awb_code}</code> · {row.sr_courier_name}
+                        {row.sr_expected_delivery ? ` · ETA ${row.sr_expected_delivery}` : ''}
+                      </p>
+                    )}
+                    {row.sr_last_error && (
+                      <p className="text-red-500 mt-1">Last error: {row.sr_last_error}</p>
+                    )}
+                    {sentResult && (
+                      <p className="text-red-500 mt-1">Just failed: {sentResult.reason}</p>
+                    )}
+                    {sentOk?.sr_awb_code && !row.sr_awb_code && (
+                      <p className="text-emerald-600 mt-1">Just shipped: AWB {sentOk.sr_awb_code}</p>
+                    )}
+
+                    {!row.sr_awb_code && (
+                      <button
+                        type="button"
+                        className="text-[10px] underline text-primary mt-1"
+                        onClick={() => {
+                          setShipEditingId(row.booking_id);
+                          setShipEditDraft({
+                            ship_to_name: row.ship_to_name || row.devotee_name || '',
+                            ship_to_phone: row.ship_to_phone || '',
+                            ship_to_line1: row.ship_to_line1 || '',
+                            ship_to_line2: row.ship_to_line2 || '',
+                            ship_to_city: row.ship_to_city || '',
+                            ship_to_state: row.ship_to_state || '',
+                            ship_to_pincode: row.ship_to_pincode || '',
+                          });
+                        }}
+                      >
+                        Edit address
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-1.5">
+                    {(['ship_to_name', 'ship_to_phone', 'ship_to_line1', 'ship_to_line2', 'ship_to_city', 'ship_to_state', 'ship_to_pincode'] as const).map((f) => (
+                      <input
+                        key={f}
+                        className="w-full h-7 px-2 bg-accent border border-border rounded text-[11px]"
+                        placeholder={f.replace('ship_to_', '').replace('_', ' ')}
+                        value={shipEditDraft[f] ?? ''}
+                        onChange={(e) => setShipEditDraft((d) => ({ ...d, [f]: e.target.value }))}
+                      />
+                    ))}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        className="text-[10px] px-2 py-1 rounded bg-accent border border-border"
+                        onClick={() => { setShipEditingId(null); setShipEditDraft({}); }}
+                      >Cancel</button>
+                      <button
+                        type="button"
+                        className="text-[10px] px-2 py-1 rounded bg-primary text-primary-foreground"
+                        onClick={async () => {
+                          try {
+                            await pujaBookingService.updateShipAddress(row.booking_id, shipEditDraft);
+                            setShipEditingId(null);
+                            setShipEditDraft({});
+                            if (selectedEvent) await fetchEventDetail(selectedEvent.id);
+                          } catch (err: any) {
+                            alert(err?.response?.data?.message || 'Address save failed');
+                          }
+                        }}
+                      >Save</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {shipResult && (
+            <div className="border border-border rounded-lg p-3 text-[11px] bg-accent/30">
+              <p className="font-bold text-foreground">Last run</p>
+              <p className="text-muted-foreground">
+                Succeeded: {shipResult.succeeded.length} · Failed: {shipResult.failed.length}
+                {shipResult.pickup_scheduled ? ' · Pickup scheduled' : ''}
+                {shipResult.stage_advanced ? ' · Stage → SHIPPED' : ''}
+              </p>
+              {shipResult.pickup_error && (
+                <p className="text-red-500 mt-1">Pickup error: {shipResult.pickup_error}</p>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2 sticky bottom-0 bg-background pt-2 border-t border-border">
+            <OutlineButton
+              className="flex-1"
+              disabled={shipRefreshing}
+              onClick={async () => {
+                if (!selectedEvent) return;
+                setShipRefreshing(true);
+                try {
+                  await pujaEventService.getShipments(selectedEvent.id, { refresh: true });
+                  await fetchEventDetail(selectedEvent.id);
+                } catch (err: any) {
+                  alert(err?.response?.data?.message || 'Refresh failed');
+                } finally {
+                  setShipRefreshing(false);
+                }
+              }}
+            >
+              {shipRefreshing ? 'Refreshing…' : 'Refresh status'}
+            </OutlineButton>
+            <PrimaryButton
+              className="flex-1"
+              disabled={shipSubmitting || shipAddresses.every((r: any) => !!r.sr_awb_code)}
+              onClick={async () => {
+                if (!selectedEvent) return;
+                setShipSubmitting(true);
+                setShipResult(null);
+                try {
+                  const r = await pujaEventService.ship(selectedEvent.id);
+                  setShipResult(r.data?.data ?? null);
+                  await fetchEventDetail(selectedEvent.id);
+                  if (r.data?.data?.failed_count === 0) {
+                    await fetchEvents();
+                  }
+                } catch (err: any) {
+                  const body = err?.response?.data;
+                  if (body?.data?.missing) {
+                    alert(`Cannot ship — addresses incomplete. Edit each booking, then retry.\n\n${body.data.missing.map((m: any) => `• ${m.devotee_name}: missing ${m.missing.join(', ')}`).join('\n')}`);
+                  } else {
+                    alert(body?.message || err?.message || 'Ship failed');
+                  }
+                } finally {
+                  setShipSubmitting(false);
+                }
+              }}
+            >
+              {shipSubmitting ? 'Creating orders…' : 'Create Shiprocket orders'}
+            </PrimaryButton>
+          </div>
         </div>
       </Modal>
     </div>

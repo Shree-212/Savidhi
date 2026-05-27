@@ -42,10 +42,17 @@ hampersRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
 
 hampersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, content_description, stock_qty } = req.body;
+    const { name, content_description, stock_qty, length_cm, breadth_cm, height_cm, weight_kg, declared_value } = req.body;
     const result = await pool.query(
-      `INSERT INTO hampers (name, content_description, stock_qty) VALUES ($1,$2,$3) RETURNING *`,
-      [name, content_description || '', stock_qty || 0]
+      `INSERT INTO hampers (name, content_description, stock_qty,
+                            length_cm, breadth_cm, height_cm, weight_kg, declared_value)
+       VALUES ($1,$2,$3, COALESCE($4, 20), COALESCE($5, 15), COALESCE($6, 10),
+               COALESCE($7, 0.5), COALESCE($8, 100)) RETURNING *`,
+      [
+        name, content_description || '', stock_qty || 0,
+        length_cm ?? null, breadth_cm ?? null, height_cm ?? null,
+        weight_kg ?? null, declared_value ?? null,
+      ],
     );
     res.status(201).json({ success: true, data: result.rows[0], message: 'Hamper created' });
   } catch (err) { next(err); }
@@ -54,7 +61,7 @@ hampersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Request,
 hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const fields = ['name', 'content_description', 'stock_qty'];
+    const fields = ['name', 'content_description', 'stock_qty', 'length_cm', 'breadth_cm', 'height_cm', 'weight_kg', 'declared_value'];
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
