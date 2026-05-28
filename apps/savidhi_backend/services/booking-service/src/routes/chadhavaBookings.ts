@@ -1,9 +1,201 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import type { PoolClient } from 'pg';
 import { pool } from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { cancelToken } from '../lib/razorpayHelpers';
 
 export const chadhavaBookingsRouter = Router();
+
+export type ChadhavaBookingPayload = {
+  chadhava_event_id: string;
+  sankalp?: string | null;
+  prasad_delivery_address?: string | null;
+  devotees?: Array<{ name: string; gotra?: string }>;
+  offerings?: Array<{ offering_id: string; quantity?: number }>;
+  idempotency_key?: string | null;
+  booking_type?: string;
+  subscription_count?: number;
+};
+
+export class ChadhavaBookingError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Core chadhava-booking creation. Same contract as createPujaBookingTx. */
+export async function createChadhavaBookingTx(
+  client: PoolClient,
+  body: ChadhavaBookingPayload,
+  userId: string,
+): Promise<any> {
+  const {
+    chadhava_event_id,
+    sankalp,
+    prasad_delivery_address,
+    devotees,
+    offerings,
+    idempotency_key,
+    booking_type: rawBookingType,
+    subscription_count: rawSubscriptionCount,
+  } = body;
+
+  if (!chadhava_event_id) throw new ChadhavaBookingError(400, 'chadhava_event_id is required');
+  if (!Array.isArray(offerings) || offerings.length === 0) {
+    throw new ChadhavaBookingError(400, 'At least one offering is required');
+  }
+  if (!Array.isArray(devotees) || devotees.length < 1 || devotees.length > 6) {
+    throw new ChadhavaBookingError(400, 'A chadhava booking must have between 1 and 6 devotees.');
+  }
+
+  const bookingType = String(rawBookingType ?? 'ONE_TIME').toUpperCase();
+  if (bookingType !== 'ONE_TIME' && bookingType !== 'SUBSCRIPTION') {
+    throw new ChadhavaBookingError(400, `booking_type must be ONE_TIME or SUBSCRIPTION (got "${rawBookingType}")`);
+  }
+  let subscriptionCount: number | null = null;
+  if (bookingType === 'SUBSCRIPTION') {
+    subscriptionCount = Number(rawSubscriptionCount);
+    if (!Number.isInteger(subscriptionCount) || subscriptionCount < 2 || subscriptionCount > 12) {
+      throw new ChadhavaBookingError(400, 'subscription_count must be an integer between 2 and 12 for SUBSCRIPTION bookings');
+    }
+  }
+
+  if (idempotency_key) {
+    const existing = await client.query(
+      `SELECT * FROM chadhava_bookings WHERE devotee_id = $1 AND idempotency_key = $2`,
+      [userId, idempotency_key],
+    );
+    if (existing.rows.length > 0) {
+      const booking = existing.rows[0];
+      const devRows = await client.query(
+        `SELECT id, name, gotra FROM chadhava_booking_devotees WHERE chadhava_booking_id = $1`,
+        [booking.id],
+      );
+      booking.devotees = devRows.rows;
+      const offRows = await client.query(
+        `SELECT cbo.*, co.item_name
+         FROM chadhava_booking_offerings cbo
+         JOIN chadhava_offerings co ON co.id = cbo.offering_id
+         WHERE cbo.chadhava_booking_id = $1`,
+        [booking.id],
+      );
+      booking.offerings = offRows.rows;
+      (booking as any).idempotent_replay = true;
+      return booking;
+    }
+  }
+
+  const eventResult = await client.query(
+    `SELECT ce.*, c.max_bookings_per_event, c.booking_mode
+     FROM chadhava_events ce
+     JOIN chadhavas c ON c.id = ce.chadhava_id
+     WHERE ce.id = $1`,
+    [chadhava_event_id],
+  );
+  if (eventResult.rows.length === 0) throw new ChadhavaBookingError(404, 'Chadhava event not found');
+
+  const event = eventResult.rows[0];
+
+  const chadhavaMode = String(event.booking_mode ?? 'ONE_TIME').toUpperCase();
+  if (chadhavaMode === 'ONE_TIME' && bookingType === 'SUBSCRIPTION') {
+    throw new ChadhavaBookingError(400, 'This chadhava does not support subscription bookings');
+  }
+  if (chadhavaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
+    throw new ChadhavaBookingError(400, 'This chadhava is subscription-only; one-time bookings are not allowed');
+  }
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS cnt FROM chadhava_bookings WHERE chadhava_event_id = $1 AND status != 'CANCELLED'`,
+    [chadhava_event_id],
+  );
+  if (countResult.rows[0].cnt >= event.max_bookings) {
+    throw new ChadhavaBookingError(400, 'Event is fully booked');
+  }
+
+  let totalCost = 0;
+  const offeringDetails: { offering_id: string; quantity: number; unit_price: number }[] = [];
+
+  for (const off of offerings) {
+    const priceResult = await client.query(
+      `SELECT id, price FROM chadhava_offerings WHERE id = $1`,
+      [off.offering_id],
+    );
+    if (priceResult.rows.length === 0) {
+      throw new ChadhavaBookingError(400, `Offering ${off.offering_id} not found`);
+    }
+    const unitPrice = Number(priceResult.rows[0].price);
+    const qty = off.quantity ?? 1;
+    totalCost += unitPrice * qty;
+    offeringDetails.push({ offering_id: off.offering_id, quantity: qty, unit_price: unitPrice });
+  }
+  totalCost = totalCost * devotees.length;
+
+  if (!Number.isFinite(totalCost) || totalCost <= 0) {
+    throw new ChadhavaBookingError(400, 'Total cost is zero — please select at least one offering with a price.');
+  }
+
+  const subscriptionRemaining = bookingType === 'SUBSCRIPTION' && subscriptionCount
+    ? subscriptionCount - 1
+    : null;
+  const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
+
+  const bookingResult = await client.query(
+    `INSERT INTO chadhava_bookings (
+       chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address, idempotency_key,
+       booking_type, subscription_count, subscription_remaining, next_charge_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [
+      chadhava_event_id, userId, totalCost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null,
+      bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
+    ],
+  );
+  const booking = bookingResult.rows[0];
+
+  for (const dev of devotees) {
+    await client.query(
+      `INSERT INTO chadhava_booking_devotees (chadhava_booking_id, name, gotra)
+       VALUES ($1, $2, $3)`,
+      [booking.id, dev.name, dev.gotra ?? null],
+    );
+  }
+
+  for (const off of offeringDetails) {
+    await client.query(
+      `INSERT INTO chadhava_booking_offerings (chadhava_booking_id, offering_id, quantity, unit_price)
+       VALUES ($1, $2, $3, $4)`,
+      [booking.id, off.offering_id, off.quantity, off.unit_price],
+    );
+  }
+
+  const devRowsTx = await client.query(
+    `SELECT id, name, gotra FROM chadhava_booking_devotees WHERE chadhava_booking_id = $1`,
+    [booking.id],
+  );
+  booking.devotees = devRowsTx.rows;
+
+  const offRowsTx = await client.query(
+    `SELECT cbo.*, co.item_name
+     FROM chadhava_booking_offerings cbo
+     JOIN chadhava_offerings co ON co.id = cbo.offering_id
+     WHERE cbo.chadhava_booking_id = $1`,
+    [booking.id],
+  );
+  booking.offerings = offRowsTx.rows;
+
+  console.log('[chadhava-bookings.create]', {
+    id: booking.id,
+    devotee_id: userId,
+    cost: totalCost,
+    offering_count: offeringDetails.length,
+    booking_type: bookingType,
+    subscription_count: subscriptionCount,
+  });
+
+  return booking;
+}
 
 /** GET / – list chadhava bookings */
 chadhavaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
@@ -22,6 +214,7 @@ chadhavaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response,
     if (role === 'DEVOTEE') {
       conditions.push(`cb.devotee_id = $${idx++}`);
       params.push(userId);
+      conditions.push(`cb.payment_status = 'PAID'`);
     }
 
     if (status) { conditions.push(`cb.status = $${idx++}`); params.push(status); }
@@ -125,208 +318,16 @@ chadhavaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response
   const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const {
-      chadhava_event_id,
-      sankalp,
-      prasad_delivery_address,
-      devotees,
-      offerings,
-      idempotency_key,
-      booking_type: rawBookingType,
-      subscription_count: rawSubscriptionCount,
-    } = req.body;
-
-    if (!chadhava_event_id) {
-      return res.status(400).json({ success: false, message: 'chadhava_event_id is required' });
-    }
-    if (!Array.isArray(offerings) || offerings.length === 0) {
-      return res.status(400).json({ success: false, message: 'At least one offering is required' });
-    }
-    if (!Array.isArray(devotees) || devotees.length < 1 || devotees.length > 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'A chadhava booking must have between 1 and 6 devotees.',
-      });
-    }
-
-    // ── Subscription params validation (see pujaBookings sibling) ──────────
-    const bookingType = String(rawBookingType ?? 'ONE_TIME').toUpperCase();
-    if (bookingType !== 'ONE_TIME' && bookingType !== 'SUBSCRIPTION') {
-      return res.status(400).json({ success: false, message: `booking_type must be ONE_TIME or SUBSCRIPTION (got "${rawBookingType}")` });
-    }
-    let subscriptionCount: number | null = null;
-    if (bookingType === 'SUBSCRIPTION') {
-      subscriptionCount = Number(rawSubscriptionCount);
-      if (!Number.isInteger(subscriptionCount) || subscriptionCount < 2 || subscriptionCount > 12) {
-        return res.status(400).json({ success: false, message: 'subscription_count must be an integer between 2 and 12 for SUBSCRIPTION bookings' });
-      }
-    }
-
-    // Idempotency: if the client retried (network blip, double-tap, React
-    // StrictMode dev double-render), return the row we already created.
-    if (idempotency_key) {
-      const existing = await pool.query(
-        `SELECT * FROM chadhava_bookings WHERE devotee_id = $1 AND idempotency_key = $2`,
-        [userId, idempotency_key],
-      );
-      if (existing.rows.length > 0) {
-        const booking = existing.rows[0];
-        const devRows = await pool.query(
-          `SELECT id, name, gotra FROM chadhava_booking_devotees WHERE chadhava_booking_id = $1`,
-          [booking.id],
-        );
-        booking.devotees = devRows.rows;
-        const offRows = await pool.query(
-          `SELECT cbo.*, co.item_name
-           FROM chadhava_booking_offerings cbo
-           JOIN chadhava_offerings co ON co.id = cbo.offering_id
-           WHERE cbo.chadhava_booking_id = $1`,
-          [booking.id],
-        );
-        booking.offerings = offRows.rows;
-        return res.status(200).json({ success: true, data: booking, idempotent_replay: true });
-      }
-    }
-
     await client.query('BEGIN');
-
-    // Validate event exists; also pull the parent chadhava's booking_mode to
-    // gate SUBSCRIPTION requests.
-    const eventResult = await client.query(
-      `SELECT ce.*, c.max_bookings_per_event, c.booking_mode
-       FROM chadhava_events ce
-       JOIN chadhavas c ON c.id = ce.chadhava_id
-       WHERE ce.id = $1`,
-      [chadhava_event_id],
-    );
-    if (eventResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, message: 'Chadhava event not found' });
-    }
-
-    const event = eventResult.rows[0];
-
-    // Validate booking_type against the parent chadhava's booking_mode.
-    const chadhavaMode = String(event.booking_mode ?? 'ONE_TIME').toUpperCase();
-    if (chadhavaMode === 'ONE_TIME' && bookingType === 'SUBSCRIPTION') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'This chadhava does not support subscription bookings' });
-    }
-    if (chadhavaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'This chadhava is subscription-only; one-time bookings are not allowed' });
-    }
-
-    // Check capacity
-    const countResult = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM chadhava_bookings WHERE chadhava_event_id = $1 AND status != 'CANCELLED'`,
-      [chadhava_event_id],
-    );
-    if (countResult.rows[0].cnt >= event.max_bookings) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Event is fully booked' });
-    }
-
-    // Fetch offering prices and calculate total cost.
-    // Offerings selected at step 2 apply *per devotee*, so the final cost
-    // multiplies by devotees.length. chadhava_booking_offerings still stores
-    // the per-devotee unit_price + quantity (it documents the selection);
-    // only chadhava_bookings.cost is the multiplied total.
-    let totalCost = 0;
-    const offeringDetails: { offering_id: string; quantity: number; unit_price: number }[] = [];
-
-    for (const off of offerings) {
-      const priceResult = await client.query(
-        `SELECT id, price FROM chadhava_offerings WHERE id = $1`,
-        [off.offering_id],
-      );
-      if (priceResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ success: false, message: `Offering ${off.offering_id} not found` });
-      }
-      const unitPrice = Number(priceResult.rows[0].price);
-      const qty = off.quantity ?? 1;
-      totalCost += unitPrice * qty;
-      offeringDetails.push({ offering_id: off.offering_id, quantity: qty, unit_price: unitPrice });
-    }
-    totalCost = totalCost * devotees.length;
-
-    if (!Number.isFinite(totalCost) || totalCost <= 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'Total cost is zero — please select at least one offering with a price.',
-      });
-    }
-
-    // Subscription bookkeeping — see pujaBookings sibling.
-    const subscriptionRemaining = bookingType === 'SUBSCRIPTION' && subscriptionCount
-      ? subscriptionCount - 1
-      : null;
-    const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
-
-    const bookingResult = await client.query(
-      `INSERT INTO chadhava_bookings (
-         chadhava_event_id, devotee_id, cost, sankalp, prasad_delivery_address, idempotency_key,
-         booking_type, subscription_count, subscription_remaining, next_charge_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [
-        chadhava_event_id, userId, totalCost, sankalp ?? null, prasad_delivery_address ?? null, idempotency_key ?? null,
-        bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
-      ],
-    );
-    const booking = bookingResult.rows[0];
-
-    // Insert booking devotees
-    if (Array.isArray(devotees)) {
-      for (const dev of devotees) {
-        await client.query(
-          `INSERT INTO chadhava_booking_devotees (chadhava_booking_id, name, gotra)
-           VALUES ($1, $2, $3)`,
-          [booking.id, dev.name, dev.gotra],
-        );
-      }
-    }
-
-    // Insert booking offerings
-    for (const off of offeringDetails) {
-      await client.query(
-        `INSERT INTO chadhava_booking_offerings (chadhava_booking_id, offering_id, quantity, unit_price)
-         VALUES ($1, $2, $3, $4)`,
-        [booking.id, off.offering_id, off.quantity, off.unit_price],
-      );
-    }
-
+    const booking = await createChadhavaBookingTx(client, req.body, userId);
     await client.query('COMMIT');
-
-    // Fetch nested data
-    const devRows = await pool.query(
-      `SELECT id, name, gotra FROM chadhava_booking_devotees WHERE chadhava_booking_id = $1`,
-      [booking.id],
-    );
-    booking.devotees = devRows.rows;
-
-    const offRows = await pool.query(
-      `SELECT cbo.*, co.item_name
-       FROM chadhava_booking_offerings cbo
-       JOIN chadhava_offerings co ON co.id = cbo.offering_id
-       WHERE cbo.chadhava_booking_id = $1`,
-      [booking.id],
-    );
-    booking.offerings = offRows.rows;
-
-    console.log('[chadhava-bookings.create]', {
-      id: booking.id,
-      devotee_id: userId,
-      cost: totalCost,
-      offering_count: offeringDetails.length,
-      booking_type: bookingType,
-      subscription_count: subscriptionCount,
-    });
-    res.status(201).json({ success: true, data: booking });
+    const status = (booking as any).idempotent_replay ? 200 : 201;
+    res.status(status).json({ success: true, data: booking, ...(booking as any).idempotent_replay ? { idempotent_replay: true } : {} });
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err instanceof ChadhavaBookingError) {
+      return res.status(err.status).json({ success: false, message: err.message });
+    }
     console.error('[chadhava-bookings.create] error', err);
     next(err);
   } finally {

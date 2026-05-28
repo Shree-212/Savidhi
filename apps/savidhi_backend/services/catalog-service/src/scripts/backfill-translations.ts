@@ -1,18 +1,18 @@
-// One-shot backfill: translate every English text field on existing pujas,
-// chadhavas, chadhava_offerings, temples, and deities into Hindi (`_hi`
-// columns). Idempotent — skips rows that already have a populated
-// `<field>_hi`.
+// One-shot backfill: for every translatable catalog table, populate the
+// `_en` and `_hi` sibling columns. Detects the source language of the
+// canonical column and translates to the other side. Idempotent — skips
+// rows that already have both siblings populated.
 //
 // Run inside a catalog-service pod (so ADC + DB access work):
 //
 //   kubectl -n savidhi exec -it deploy/catalog-service -- \
-//     node dist/scripts/backfill-translations.js
+//     node dist/src/scripts/backfill-translations.js
 //
-// Cost guard: a typical full backfill of seed data runs ~$0.001 in Cloud
-// Translate spend. Re-running is safe.
+// Cost guard: a typical full backfill of seed data runs ~$0.002 in Cloud
+// Translate spend (both directions). Re-running is safe.
 
 import pool from '../lib/db';
-import { translateToHindi, translateArrayToHindi } from '../lib/translate';
+import { translateScalarBoth, translateArrayBoth } from '../lib/translate';
 
 interface ColumnSpec {
   name: string;
@@ -36,6 +36,7 @@ const TABLES: TableSpec[] = [
       { name: 'description' },
       { name: 'benefits' },
       { name: 'rituals_included' },
+      { name: 'shlok' },
       { name: 'items_used', isArray: true },
       { name: 'how_will_it_happen', isArray: true },
     ],
@@ -49,6 +50,7 @@ const TABLES: TableSpec[] = [
       { name: 'description' },
       { name: 'benefits' },
       { name: 'rituals_included' },
+      { name: 'shlok' },
       { name: 'items_used', isArray: true },
       { name: 'how_will_it_happen', isArray: true },
     ],
@@ -78,19 +80,52 @@ const TABLES: TableSpec[] = [
       { name: 'name' },
     ],
   },
+  {
+    table: 'pujaris',
+    idCol: 'id',
+    where: 'is_active = true',
+    columns: [
+      { name: 'name' },
+      { name: 'designation' },
+    ],
+  },
+  {
+    table: 'astrologers',
+    idCol: 'id',
+    where: 'is_active = true',
+    columns: [
+      { name: 'name' },
+      { name: 'designation' },
+      { name: 'expertise' },
+      { name: 'about' },
+    ],
+  },
+  {
+    table: 'hampers',
+    idCol: 'id',
+    columns: [
+      { name: 'name' },
+      { name: 'content_description' },
+    ],
+  },
 ];
 
-function isEmpty(v: unknown): boolean {
+function isEmptyScalar(v: unknown): boolean {
   if (v === null || v === undefined) return true;
   if (typeof v === 'string' && v.trim() === '') return true;
+  return false;
+}
+
+function isEmptyArray(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
   if (Array.isArray(v) && v.length === 0) return true;
   return false;
 }
 
 async function backfillTable(spec: TableSpec): Promise<{ table: string; updated: number; skipped: number }> {
-  const cols = spec.columns.flatMap((c) => [c.name, `${c.name}_hi`]).join(', ');
+  const selectCols = [spec.idCol, ...spec.columns.flatMap((c) => [c.name, `${c.name}_en`, `${c.name}_hi`])].join(', ');
   const where = spec.where ? `WHERE ${spec.where}` : '';
-  const rows = await pool.query(`SELECT ${spec.idCol}, ${cols} FROM ${spec.table} ${where}`);
+  const rows = await pool.query(`SELECT ${selectCols} FROM ${spec.table} ${where}`);
 
   let updated = 0;
   let skipped = 0;
@@ -101,36 +136,50 @@ async function backfillTable(spec: TableSpec): Promise<{ table: string; updated:
     let idx = 1;
 
     for (const col of spec.columns) {
-      const enVal = row[col.name];
+      const canonical = row[col.name];
+      const enVal = row[`${col.name}_en`];
       const hiVal = row[`${col.name}_hi`];
-      if (isEmpty(enVal)) continue;          // nothing to translate
-      if (!isEmpty(hiVal)) continue;         // already translated — skip
 
-      const translated = col.isArray
-        ? await translateArrayToHindi(enVal as string[])
-        : await translateToHindi(enVal as string);
+      const isEmptyFn = col.isArray ? isEmptyArray : isEmptyScalar;
+      if (isEmptyFn(canonical)) continue;          // nothing to translate
+      if (!isEmptyFn(enVal) && !isEmptyFn(hiVal)) continue; // both already filled
 
-      // For arrays, store empty array (not NULL) to preserve schema default.
-      if (col.isArray && (!translated || (translated as string[]).length === 0)) continue;
-      if (!col.isArray && (translated === null || translated === '')) continue;
+      const result = col.isArray
+        ? await translateArrayBoth(canonical as string[])
+        : await translateScalarBoth(canonical as string);
 
-      updates.push(`${col.name}_hi = $${idx}`);
-      values.push(translated);
-      idx++;
+      if (!result) continue;
+      if (col.isArray) {
+        const r = result as { en: string[]; hi: string[] };
+        if (isEmptyFn(enVal) && r.en.length > 0) {
+          updates.push(`${col.name}_en = $${idx}`); values.push(r.en); idx++;
+        }
+        if (isEmptyFn(hiVal) && r.hi.length > 0) {
+          updates.push(`${col.name}_hi = $${idx}`); values.push(r.hi); idx++;
+        }
+      } else {
+        const r = result as { en: string | null; hi: string | null };
+        if (isEmptyFn(enVal) && r.en) {
+          updates.push(`${col.name}_en = $${idx}`); values.push(r.en); idx++;
+        }
+        if (isEmptyFn(hiVal) && r.hi) {
+          updates.push(`${col.name}_hi = $${idx}`); values.push(r.hi); idx++;
+        }
+      }
     }
 
     if (updates.length === 0) { skipped++; continue; }
     values.push(row[spec.idCol]);
     await pool.query(`UPDATE ${spec.table} SET ${updates.join(', ')} WHERE ${spec.idCol} = $${idx}`, values);
     updated++;
-    console.log(`  ${spec.table}#${String(row[spec.idCol]).slice(0, 8)}: translated ${updates.length} field(s)`);
+    console.log(`  ${spec.table}#${String(row[spec.idCol]).slice(0, 8)}: filled ${updates.length} sibling(s)`);
   }
 
   return { table: spec.table, updated, skipped };
 }
 
 async function main() {
-  console.log('Backfill translations: starting…');
+  console.log('Backfill translations (bidirectional): starting…');
   const results: Awaited<ReturnType<typeof backfillTable>>[] = [];
   for (const spec of TABLES) {
     console.log(`\n>> ${spec.table}`);

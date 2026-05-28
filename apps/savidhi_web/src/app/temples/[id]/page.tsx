@@ -11,11 +11,13 @@ import { templeService } from '@/lib/services';
 import { mapTemple } from '@/lib/mappers';
 import type { Temple } from '@/data/models';
 import { normaliseMediaUrl } from '@/lib/utils';
+import { useLocale } from '@/lib/i18n';
 
 export default function TempleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [temple, setTemple] = useState<Temple | null>(null);
   const [loading, setLoading] = useState(true);
+  const { locale } = useLocale();
 
   useEffect(() => {
     templeService.getById(id)
@@ -25,7 +27,7 @@ export default function TempleDetailPage({ params }: { params: Promise<{ id: str
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, locale]);
 
   if (loading) {
     return (

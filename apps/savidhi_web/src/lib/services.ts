@@ -117,9 +117,16 @@ export const appointmentService = {
 };
 
 // ─── Payments (Razorpay) ─────────────────────────────────────────────────────
+// Deferred-booking flow (May 2026): the booking row is created server-side ONLY
+// after /verify succeeds. The client never calls *BookingService.create from
+// the checkout page — instead it sends the FULL booking payload to
+// /payments/create-order, and reads `booking.id` out of the /verify response.
 export const paymentService = {
-  createOrder: (data: { booking_type: 'PUJA' | 'CHADHAVA' | 'APPOINTMENT'; booking_id: string; amount: number }) =>
-    api.post('/bookings/payments/create-order', data),
+  createOrder: (data: {
+    booking_type: 'PUJA' | 'CHADHAVA' | 'APPOINTMENT';
+    booking_payload: Record<string, unknown>;
+    booking_idempotency_key: string;
+  }) => api.post('/bookings/payments/create-order', data),
   verify: (data: {
     payment_id: string;
     gateway_order_id: string;

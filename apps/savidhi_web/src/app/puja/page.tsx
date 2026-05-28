@@ -6,12 +6,17 @@ import { SearchBar } from '@/components/shared/SearchBar';
 import { PujaCard } from '@/components/shared/PujaCard';
 import { pujaService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
+import { useLocale } from '@/lib/i18n';
 
 export default function PujaListPage() {
   const [search, setSearch] = useState('');
   const [pujas, setPujas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Refetch when the language toggle changes — `pujaService.list` reads the
+  // active locale via the axios interceptor, so swapping locale needs a
+  // fresh API hit to get translated rows.
+  const { locale } = useLocale();
 
   useEffect(() => {
     async function load() {
@@ -27,7 +32,7 @@ export default function PujaListPage() {
       }
     }
     load();
-  }, []);
+  }, [locale]);
 
   const filtered = pujas.filter((p: any) =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||

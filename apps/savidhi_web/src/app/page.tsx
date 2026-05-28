@@ -23,7 +23,7 @@ import { HomeBannerCarousel } from '@/components/shared/HomeBannerCarousel';
 import { templeService, pujaService, chadhavaService } from '@/lib/services';
 import { mapPuja, mapChadhava, mapTemple } from '@/lib/mappers';
 import heroBg from '@/assets/hero-bg.png';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 
 /**
  * Reveal more cards from a longer pre-fetched list when the sentinel scrolls
@@ -242,6 +242,7 @@ function HowToVideoThumbnail() {
 
 export default function HomePage() {
   const t = useT();
+  const { locale } = useLocale();
   const templeScroll = useHorizontalScroll();
 
   // Fetch real data from the API
@@ -272,7 +273,7 @@ export default function HomePage() {
       }
     }
     loadData();
-  }, []);
+  }, [locale]);
 
   return (
     <div className="min-h-screen">

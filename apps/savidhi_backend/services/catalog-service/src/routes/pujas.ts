@@ -7,41 +7,20 @@ import {
   combineDateAndISTTime,
   type RepeatDuration,
 } from '../lib/tithiCalendar';
-import { translateToHindi, translateArrayToHindi } from '../lib/translate';
 import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
-import { scheduleBackfill } from '../lib/lazyTranslate';
+import { scheduleBackfill, writeBothSiblings } from '../lib/lazyTranslate';
 
-// Translatable English fields whose values get auto-mirrored into the
-// `<field>_hi` columns when the admin POSTs/PATCHes a puja, and which the
-// GET handlers swap based on `?locale=hi`.
+// Translatable text columns. On POST/PATCH catalog-service detects the source
+// language and populates BOTH `<field>_en` and `<field>_hi` siblings so the
+// web client can render the correct locale regardless of which language the
+// admin originally typed (see lib/lazyTranslate.writeBothSiblings).
 const PUJA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included', 'shlok'] as const;
 const PUJA_TX_ARRAYS  = ['items_used', 'how_will_it_happen'] as const;
 const PUJA_LOCALE_FIELDS = [...PUJA_TX_SCALARS, ...PUJA_TX_ARRAYS];
+const PUJA_TX_CONFIG = { scalars: PUJA_TX_SCALARS, arrays: PUJA_TX_ARRAYS };
 
-// Best-effort translation pass. Failures fall back to NULL so the COALESCE
-// in the GET handler still returns the English value — never blocking a save.
-async function translateAndUpdatePuja(client: { query: typeof pool.query }, id: string, body: Record<string, unknown>) {
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-
-  for (const f of PUJA_TX_SCALARS) {
-    if (body[f] === undefined) continue;
-    const hi = await translateToHindi(body[f] as string | null);
-    updates.push(`${f}_hi = $${idx}`);
-    values.push(hi);
-    idx++;
-  }
-  for (const f of PUJA_TX_ARRAYS) {
-    if (body[f] === undefined) continue;
-    const hi = await translateArrayToHindi(body[f] as string[] | null);
-    updates.push(`${f}_hi = $${idx}`);
-    values.push(hi);
-    idx++;
-  }
-  if (updates.length === 0) return;
-  values.push(id);
-  await client.query(`UPDATE pujas SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+async function translateAndUpdatePuja(_client: unknown, id: string, body: Record<string, unknown>) {
+  await writeBothSiblings('pujas', id, body, PUJA_TX_CONFIG);
 }
 
 export const pujasRouter = Router();

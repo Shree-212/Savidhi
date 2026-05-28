@@ -1,9 +1,226 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import type { PoolClient } from 'pg';
 import { pool } from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { cancelToken } from '../lib/razorpayHelpers';
 
 export const pujaBookingsRouter = Router();
+
+/**
+ * Shape of the JSON body the puja booking page sends. Mirrors the `req.body`
+ * fields read in the POST / handler. Exported because the deferred-creation
+ * payment flow (payments.ts /verify) calls createPujaBookingTx() too, passing
+ * the same payload that's been stashed on the payments row.
+ */
+export type PujaBookingPayload = {
+  puja_event_id: string;
+  devotee_count?: number;
+  sankalp?: string | null;
+  prasad_delivery_address?: string | null;
+  devotees?: Array<{ name: string; relation?: string | null; gotra?: string }>;
+  idempotency_key?: string | null;
+  booking_type?: string;
+  subscription_count?: number;
+  ship_to_name?: string;
+  ship_to_phone?: string;
+  ship_to_line1?: string;
+  ship_to_line2?: string;
+  ship_to_city?: string;
+  ship_to_state?: string;
+  ship_to_pincode?: string;
+  ship_to_country?: string;
+};
+
+export class PujaBookingError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * Core puja-booking creation, callable from BOTH the customer POST handler and
+ * the payments.verify materializer. Caller owns the transaction (so verify can
+ * flip payments.status to CAPTURED in the same tx). Throws PujaBookingError on
+ * validation failures — the caller maps it to the right HTTP response.
+ *
+ * Idempotency: if `body.idempotency_key` matches an existing puja_bookings row
+ * for this devotee, returns that row instead of inserting a duplicate. This is
+ * what makes a verify+webhook race produce exactly one booking.
+ */
+export async function createPujaBookingTx(
+  client: PoolClient,
+  body: PujaBookingPayload,
+  userId: string,
+): Promise<any> {
+  const {
+    puja_event_id,
+    devotee_count = 1,
+    sankalp,
+    prasad_delivery_address,
+    devotees,
+    idempotency_key,
+    booking_type: rawBookingType,
+    subscription_count: rawSubscriptionCount,
+    ship_to_name,
+    ship_to_phone,
+    ship_to_line1,
+    ship_to_line2,
+    ship_to_city,
+    ship_to_state,
+    ship_to_pincode,
+    ship_to_country,
+  } = body;
+
+  if (!puja_event_id) throw new PujaBookingError(400, 'puja_event_id is required');
+
+  const bookingType = String(rawBookingType ?? 'ONE_TIME').toUpperCase();
+  if (bookingType !== 'ONE_TIME' && bookingType !== 'SUBSCRIPTION') {
+    throw new PujaBookingError(400, `booking_type must be ONE_TIME or SUBSCRIPTION (got "${rawBookingType}")`);
+  }
+  let subscriptionCount: number | null = null;
+  if (bookingType === 'SUBSCRIPTION') {
+    subscriptionCount = Number(rawSubscriptionCount);
+    if (!Number.isInteger(subscriptionCount) || subscriptionCount < 2 || subscriptionCount > 12) {
+      throw new PujaBookingError(400, 'subscription_count must be an integer between 2 and 12 for SUBSCRIPTION bookings');
+    }
+  }
+
+  if (idempotency_key) {
+    const existing = await client.query(
+      `SELECT * FROM puja_bookings WHERE devotee_id = $1 AND idempotency_key = $2`,
+      [userId, idempotency_key],
+    );
+    if (existing.rows.length > 0) {
+      const booking = existing.rows[0];
+      const devRows = await client.query(
+        `SELECT id, name, relation, gotra FROM puja_booking_devotees WHERE puja_booking_id = $1`,
+        [booking.id],
+      );
+      booking.devotees = devRows.rows;
+      (booking as any).idempotent_replay = true;
+      return booking;
+    }
+  }
+
+  const eventResult = await client.query(
+    `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee, p.booking_mode, p.send_hamper
+     FROM puja_events pe
+     JOIN pujas p ON p.id = pe.puja_id
+     WHERE pe.id = $1`,
+    [puja_event_id],
+  );
+  if (eventResult.rows.length === 0) throw new PujaBookingError(404, 'Puja event not found');
+
+  const event = eventResult.rows[0];
+
+  const pujaMode = String(event.booking_mode ?? 'ONE_TIME').toUpperCase();
+  if (pujaMode === 'ONE_TIME' && bookingType === 'SUBSCRIPTION') {
+    throw new PujaBookingError(400, 'This puja does not support subscription bookings');
+  }
+  if (pujaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
+    throw new PujaBookingError(400, 'This puja is subscription-only; one-time bookings are not allowed');
+  }
+
+  const sendsHamper = !!event.send_hamper;
+  if (sendsHamper) {
+    const pin = String(ship_to_pincode ?? '').replace(/\D/g, '');
+    const phoneDigits = String(ship_to_phone ?? '').replace(/\D/g, '').slice(-10);
+    const required = { ship_to_name, ship_to_line1, ship_to_city, ship_to_state };
+    const missing = Object.entries(required).filter(([, v]) => !String(v ?? '').trim()).map(([k]) => k);
+    if (missing.length || pin.length !== 6 || phoneDigits.length !== 10) {
+      console.warn('[puja-bookings.create] incomplete structured ship_to_*', {
+        missing, pin_len: pin.length, phone_len: phoneDigits.length,
+      });
+    }
+  }
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS cnt FROM puja_bookings WHERE puja_event_id = $1 AND status != 'CANCELLED'`,
+    [puja_event_id],
+  );
+  if (countResult.rows[0].cnt >= event.max_bookings) {
+    throw new PujaBookingError(400, 'Event is fully booked');
+  }
+
+  let cost: number;
+  const dc = Number(devotee_count);
+  if (dc <= 1) cost = Number(event.price_for_1);
+  else if (dc <= 2) cost = Number(event.price_for_2);
+  else if (dc <= 4) cost = Number(event.price_for_4);
+  else cost = Number(event.price_for_6);
+
+  if (!Number.isFinite(cost) || cost <= 0) {
+    throw new PujaBookingError(400, 'This puja has no price configured for the selected number of devotees. Please contact support.');
+  }
+
+  const subscriptionRemaining = bookingType === 'SUBSCRIPTION' && subscriptionCount
+    ? subscriptionCount - 1
+    : null;
+  const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
+
+  const builtLegacyAddress = (() => {
+    if (prasad_delivery_address) return prasad_delivery_address;
+    if (!sendsHamper) return null;
+    const parts = [ship_to_name, ship_to_line1, ship_to_line2, ship_to_city, ship_to_state, ship_to_pincode]
+      .map((p) => String(p ?? '').trim()).filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : null;
+  })();
+
+  const bookingResult = await client.query(
+    `INSERT INTO puja_bookings (
+       puja_event_id, devotee_id, devotee_count, cost,
+       sankalp, prasad_delivery_address, idempotency_key,
+       booking_type, subscription_count, subscription_remaining, next_charge_at,
+       ship_to_name, ship_to_phone, ship_to_line1, ship_to_line2,
+       ship_to_city, ship_to_state, ship_to_pincode, ship_to_country
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+             $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
+    [
+      puja_event_id, userId, dc, cost,
+      sankalp ?? null, builtLegacyAddress, idempotency_key ?? null,
+      bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
+      ship_to_name ?? null,
+      ship_to_phone ? String(ship_to_phone).replace(/\D/g, '').slice(-10) : null,
+      ship_to_line1 ?? null,
+      ship_to_line2 ?? null,
+      ship_to_city ?? null,
+      ship_to_state ?? null,
+      ship_to_pincode ? String(ship_to_pincode).replace(/\D/g, '') : null,
+      ship_to_country ?? 'India',
+    ],
+  );
+  const booking = bookingResult.rows[0];
+
+  if (Array.isArray(devotees)) {
+    for (const dev of devotees) {
+      await client.query(
+        `INSERT INTO puja_booking_devotees (puja_booking_id, name, relation, gotra)
+         VALUES ($1, $2, $3, $4)`,
+        [booking.id, dev.name, dev.relation ?? null, dev.gotra ?? null],
+      );
+    }
+  }
+
+  const devRowsTx = await client.query(
+    `SELECT id, name, relation, gotra FROM puja_booking_devotees WHERE puja_booking_id = $1`,
+    [booking.id],
+  );
+  booking.devotees = devRowsTx.rows;
+
+  console.log('[puja-bookings.create]', {
+    id: booking.id,
+    devotee_id: userId,
+    devotee_count: dc,
+    cost,
+    booking_type: bookingType,
+    subscription_count: subscriptionCount,
+  });
+
+  return booking;
+}
 
 /** GET / – list puja bookings. Admin sees all (with filters); Devotee sees own. */
 pujaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
@@ -19,10 +236,14 @@ pujaBookingsRouter.get('/', requireAuth, async (req: Request, res: Response, nex
     const params: unknown[] = [];
     let idx = 1;
 
-    // Devotees can only see their own bookings
+    // Devotees can only see their own bookings AND only PAID ones — the
+    // deferred-booking flow (May 2026) means newly created rows are always
+    // PAID, but pre-fix ghost rows with PENDING payment_status still exist
+    // and must not be shown to customers.
     if (role === 'DEVOTEE') {
       conditions.push(`pb.devotee_id = $${idx++}`);
       params.push(userId);
+      conditions.push(`pb.payment_status = 'PAID'`);
     }
 
     if (status) { conditions.push(`pb.status = $${idx++}`); params.push(status); }
@@ -131,220 +352,16 @@ pujaBookingsRouter.post('/', requireAuth, async (req: Request, res: Response, ne
   const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const {
-      puja_event_id,
-      devotee_count = 1,
-      sankalp,
-      prasad_delivery_address,
-      devotees,
-      idempotency_key,
-      booking_type: rawBookingType,
-      subscription_count: rawSubscriptionCount,
-      // Structured shipping address — required when the parent puja.send_hamper
-      // is true (validated below). Legacy callers that still send only the TEXT
-      // prasad_delivery_address keep working — we just won't have an AWB-able
-      // address until the admin fills these in from the Ship modal.
-      ship_to_name,
-      ship_to_phone,
-      ship_to_line1,
-      ship_to_line2,
-      ship_to_city,
-      ship_to_state,
-      ship_to_pincode,
-      ship_to_country,
-    } = req.body;
-
-    if (!puja_event_id) {
-      return res.status(400).json({ success: false, message: 'puja_event_id is required' });
-    }
-
-    // ── Subscription params validation ─────────────────────────────────────
-    const bookingType = String(rawBookingType ?? 'ONE_TIME').toUpperCase();
-    if (bookingType !== 'ONE_TIME' && bookingType !== 'SUBSCRIPTION') {
-      return res.status(400).json({ success: false, message: `booking_type must be ONE_TIME or SUBSCRIPTION (got "${rawBookingType}")` });
-    }
-    let subscriptionCount: number | null = null;
-    if (bookingType === 'SUBSCRIPTION') {
-      subscriptionCount = Number(rawSubscriptionCount);
-      // Range guard: 2 (otherwise it's a one-time booking) — 12 (anti-abuse;
-      // tune later if devotees actually want longer commitments).
-      if (!Number.isInteger(subscriptionCount) || subscriptionCount < 2 || subscriptionCount > 12) {
-        return res.status(400).json({ success: false, message: 'subscription_count must be an integer between 2 and 12 for SUBSCRIPTION bookings' });
-      }
-    }
-
-    // Idempotency: replay-safe inserts. See chadhavaBookings.ts for rationale.
-    if (idempotency_key) {
-      const existing = await pool.query(
-        `SELECT * FROM puja_bookings WHERE devotee_id = $1 AND idempotency_key = $2`,
-        [userId, idempotency_key],
-      );
-      if (existing.rows.length > 0) {
-        const booking = existing.rows[0];
-        const devRows = await pool.query(
-          `SELECT id, name, relation, gotra FROM puja_booking_devotees WHERE puja_booking_id = $1`,
-          [booking.id],
-        );
-        booking.devotees = devRows.rows;
-        return res.status(200).json({ success: true, data: booking, idempotent_replay: true });
-      }
-    }
-
     await client.query('BEGIN');
-
-    // Fetch event + puja to calculate cost and validate booking_mode
-    const eventResult = await client.query(
-      `SELECT pe.*, p.price_for_1, p.price_for_2, p.price_for_4, p.price_for_6, p.max_devotee, p.booking_mode, p.send_hamper
-       FROM puja_events pe
-       JOIN pujas p ON p.id = pe.puja_id
-       WHERE pe.id = $1`,
-      [puja_event_id],
-    );
-    if (eventResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, message: 'Puja event not found' });
-    }
-
-    const event = eventResult.rows[0];
-
-    // Validate booking_type against the parent puja's booking_mode.
-    //   ONE_TIME mode      → reject SUBSCRIPTION requests
-    //   SUBSCRIPTION mode  → reject ONE_TIME requests
-    //   BOTH               → both allowed
-    const pujaMode = String(event.booking_mode ?? 'ONE_TIME').toUpperCase();
-    if (pujaMode === 'ONE_TIME' && bookingType === 'SUBSCRIPTION') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'This puja does not support subscription bookings' });
-    }
-    if (pujaMode === 'SUBSCRIPTION' && bookingType === 'ONE_TIME') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'This puja is subscription-only; one-time bookings are not allowed' });
-    }
-
-    // Structured shipping address validation. When the puja ships a hamper,
-    // we require the new fields so the admin Ship modal has AWB-able data.
-    // The legacy TEXT field stays accepted for backward compat.
-    const sendsHamper = !!event.send_hamper;
-    if (sendsHamper) {
-      const pin = String(ship_to_pincode ?? '').replace(/\D/g, '');
-      const phoneDigits = String(ship_to_phone ?? '').replace(/\D/g, '').slice(-10);
-      const required = { ship_to_name, ship_to_line1, ship_to_city, ship_to_state };
-      const missing = Object.entries(required).filter(([, v]) => !String(v ?? '').trim()).map(([k]) => k);
-      if (missing.length || pin.length !== 6 || phoneDigits.length !== 10) {
-        // Don't hard-fail here yet — legacy clients still POST only the TEXT
-        // blob. Just log so the admin Ship modal can later refuse to ship
-        // until the address is fixed. (Strict validation lives in /:id/ship.)
-        console.warn('[puja-bookings.create] incomplete structured ship_to_*', {
-          missing, pin_len: pin.length, phone_len: phoneDigits.length,
-        });
-      }
-    }
-
-    // Check capacity
-    const countResult = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM puja_bookings WHERE puja_event_id = $1 AND status != 'CANCELLED'`,
-      [puja_event_id],
-    );
-    if (countResult.rows[0].cnt >= event.max_bookings) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Event is fully booked' });
-    }
-
-    // Calculate cost based on devotee_count
-    let cost: number;
-    const dc = Number(devotee_count);
-    if (dc <= 1) cost = Number(event.price_for_1);
-    else if (dc <= 2) cost = Number(event.price_for_2);
-    else if (dc <= 4) cost = Number(event.price_for_4);
-    else cost = Number(event.price_for_6);
-
-    if (!Number.isFinite(cost) || cost <= 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'This puja has no price configured for the selected number of devotees. Please contact support.',
-      });
-    }
-
-    // Subscription bookkeeping (Phase A):
-    //   - subscription_remaining starts at N-1 because the current booking IS
-    //     the first cycle. The worker decrements as it materialises children.
-    //   - next_charge_at hooks the worker to the first event we already booked;
-    //     the verify step (Phase B) will advance this to the NEXT event after
-    //     capturing the Razorpay token.
-    const subscriptionRemaining = bookingType === 'SUBSCRIPTION' && subscriptionCount
-      ? subscriptionCount - 1
-      : null;
-    const nextChargeAt = bookingType === 'SUBSCRIPTION' ? event.start_time : null;
-
-    // If structured fields are present but the legacy TEXT field is not, build
-    // it server-side so any code still reading prasad_delivery_address keeps
-    // working without forcing the client to send both copies.
-    const builtLegacyAddress = (() => {
-      if (prasad_delivery_address) return prasad_delivery_address;
-      if (!sendsHamper) return null;
-      const parts = [ship_to_name, ship_to_line1, ship_to_line2, ship_to_city, ship_to_state, ship_to_pincode]
-        .map((p) => String(p ?? '').trim()).filter(Boolean);
-      return parts.length > 0 ? parts.join(', ') : null;
-    })();
-
-    const bookingResult = await client.query(
-      `INSERT INTO puja_bookings (
-         puja_event_id, devotee_id, devotee_count, cost,
-         sankalp, prasad_delivery_address, idempotency_key,
-         booking_type, subscription_count, subscription_remaining, next_charge_at,
-         ship_to_name, ship_to_phone, ship_to_line1, ship_to_line2,
-         ship_to_city, ship_to_state, ship_to_pincode, ship_to_country
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-               $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
-      [
-        puja_event_id, userId, dc, cost,
-        sankalp ?? null, builtLegacyAddress, idempotency_key ?? null,
-        bookingType, subscriptionCount, subscriptionRemaining, nextChargeAt,
-        ship_to_name ?? null,
-        ship_to_phone ? String(ship_to_phone).replace(/\D/g, '').slice(-10) : null,
-        ship_to_line1 ?? null,
-        ship_to_line2 ?? null,
-        ship_to_city ?? null,
-        ship_to_state ?? null,
-        ship_to_pincode ? String(ship_to_pincode).replace(/\D/g, '') : null,
-        ship_to_country ?? 'India',
-      ],
-    );
-    const booking = bookingResult.rows[0];
-
-    // Insert booking devotees
-    if (Array.isArray(devotees)) {
-      for (const dev of devotees) {
-        await client.query(
-          `INSERT INTO puja_booking_devotees (puja_booking_id, name, relation, gotra)
-           VALUES ($1, $2, $3, $4)`,
-          [booking.id, dev.name, dev.relation ?? null, dev.gotra],
-        );
-      }
-    }
-
+    const booking = await createPujaBookingTx(client, req.body, userId);
     await client.query('COMMIT');
-
-    // Fetch inserted devotees
-    const devRows = await pool.query(
-      `SELECT id, name, relation, gotra FROM puja_booking_devotees WHERE puja_booking_id = $1`,
-      [booking.id],
-    );
-    booking.devotees = devRows.rows;
-
-    console.log('[puja-bookings.create]', {
-      id: booking.id,
-      devotee_id: userId,
-      devotee_count: dc,
-      cost,
-      booking_type: bookingType,
-      subscription_count: subscriptionCount,
-    });
-    res.status(201).json({ success: true, data: booking });
+    const status = (booking as any).idempotent_replay ? 200 : 201;
+    res.status(status).json({ success: true, data: booking, ...(booking as any).idempotent_replay ? { idempotent_replay: true } : {} });
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err instanceof PujaBookingError) {
+      return res.status(err.status).json({ success: false, message: err.message });
+    }
     console.error('[puja-bookings.create] error', err);
     next(err);
   } finally {

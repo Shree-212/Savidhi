@@ -1,8 +1,19 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+import { scheduleBackfill, writeBothSiblings } from '../lib/lazyTranslate';
 
 export const pujarisRouter = Router();
+
+const PUJARI_TX_SCALARS = ['name', 'designation'] as const;
+const PUJARI_TX_ARRAYS = [] as const;
+const PUJARI_LOCALE_FIELDS = [...PUJARI_TX_SCALARS];
+const PUJARI_TX_CONFIG = { scalars: PUJARI_TX_SCALARS, arrays: PUJARI_TX_ARRAYS };
+
+async function translateAndUpdatePujari(_client: unknown, id: string, body: Record<string, unknown>) {
+  await writeBothSiblings('pujaris', id, body, PUJARI_TX_CONFIG);
+}
 
 pujarisRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -39,7 +50,14 @@ pujarisRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows, total, page, limit, message: 'Pujaris fetched' });
+    const locale = parseLocale(req.query.locale);
+    scheduleBackfill('pujaris', result.rows, { scalars: PUJARI_TX_SCALARS, arrays: PUJARI_TX_ARRAYS });
+    res.json({
+      success: true,
+      data: applyLocaleArray(result.rows, locale, [...PUJARI_LOCALE_FIELDS, 'temple_name']),
+      total, page, limit,
+      message: 'Pujaris fetched',
+    });
   } catch (err) { next(err); }
 });
 
@@ -52,7 +70,13 @@ pujarisRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
       [req.params.id]
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Pujari not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Pujari details' });
+    const locale = parseLocale(req.query.locale);
+    scheduleBackfill('pujaris', result.rows, { scalars: PUJARI_TX_SCALARS, arrays: PUJARI_TX_ARRAYS });
+    res.json({
+      success: true,
+      data: applyLocale(result.rows[0], locale, [...PUJARI_LOCALE_FIELDS, 'temple_name']),
+      message: 'Pujari details',
+    });
   } catch (err) { next(err); }
 });
 
@@ -74,7 +98,10 @@ pujarisRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), a
         bank_name || null, ifsc || null, account_number || null,
         rating != null ? Number(rating) : 0],
     );
-    res.status(201).json({ success: true, data: result.rows[0], message: 'Pujari created' });
+    // Best-effort Hindi sibling write — see translateAndUpdatePujari for rationale.
+    try { await translateAndUpdatePujari(pool, result.rows[0].id, req.body); } catch (e) { console.warn('[pujaris.post] translate failed', (e as Error).message); }
+    const fresh = await pool.query(`SELECT * FROM pujaris WHERE id = $1`, [result.rows[0].id]);
+    res.status(201).json({ success: true, data: fresh.rows[0], message: 'Pujari created' });
   } catch (err) { next(err); }
 });
 
@@ -110,7 +137,9 @@ pujarisRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Pujari not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Pujari updated' });
+    try { await translateAndUpdatePujari(pool, id, req.body); } catch (e) { console.warn('[pujaris.patch] translate failed', (e as Error).message); }
+    const fresh = await pool.query(`SELECT * FROM pujaris WHERE id = $1`, [id]);
+    res.json({ success: true, data: fresh.rows[0], message: 'Pujari updated' });
   } catch (err) { next(err); }
 });
 

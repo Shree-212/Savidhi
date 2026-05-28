@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Calendar, Loader2, User, Check } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { pujaService, pujaEventService, pujaBookingService, paymentService } from '@/lib/services';
+import { pujaService, pujaEventService, paymentService } from '@/lib/services';
 import { mapPuja } from '@/lib/mappers';
 import { getAccessToken } from '@/lib/auth';
 import { loadRazorpay, openCheckout } from '@/lib/razorpay';
@@ -170,11 +170,14 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
     try {
       setSubmitting(true);
       setError('');
-      const payload = {
+      // Deferred-booking flow (May 2026): we send the full booking payload to
+      // /payments/create-order — the server validates, computes the amount,
+      // creates a Razorpay order, and stashes the payload. The booking row is
+      // only inserted on successful /verify, so a cancelled/failed payment
+      // never leaves a ghost row in `puja_bookings`.
+      const bookingPayload = {
         puja_event_id: selectedEventId,
         devotee_count: devoteeCount,
-        // Structured shipping fields when this puja ships a hamper; backend
-        // builds the legacy prasad_delivery_address from these on insert.
         ...(sendHamper ? {
           ship_to_name: shipToName.trim(),
           ship_to_phone: shipToPhone.replace(/\D/g, '').slice(-10),
@@ -191,32 +194,28 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
           relation: d.relation.trim() || undefined,
         })),
         booking_type: bookingType,
-        // Only send subscription_count when type is SUBSCRIPTION; the backend
-        // ignores it for ONE_TIME but rejects out-of-range values.
         ...(bookingType === 'SUBSCRIPTION' ? { subscription_count: subscriptionCount } : {}),
-        idempotency_key: idempotencyKey,
       };
-      const bookingRes = await pujaBookingService.create(payload);
-      const booking = bookingRes.data?.data;
-      if (!booking?.id) throw new Error('Booking creation failed');
-      const bookingAmount = Number(booking.cost);
 
       const orderRes = await paymentService.createOrder({
         booking_type: 'PUJA',
-        booking_id: booking.id,
-        amount: bookingAmount,
+        booking_payload: bookingPayload,
+        booking_idempotency_key: idempotencyKey,
       });
       const pay = orderRes.data?.data;
       if (!pay?.gateway_order_id) throw new Error('Could not start payment');
+      const bookingAmount = Number(pay.amount);
 
       if (pay.stub) {
-        await paymentService.verify({
+        const verifyRes = await paymentService.verify({
           payment_id: pay.id,
           gateway_order_id: pay.gateway_order_id,
           gateway_payment_id: `pay_stub_${Date.now()}`,
           gateway_signature: 'stub',
         });
-        setConfirmedId(booking.id);
+        const verifiedBooking = verifyRes.data?.data?.booking;
+        if (!verifiedBooking?.id) throw new Error('Booking materialization failed');
+        setConfirmedId(verifiedBooking.id);
         advance();
         return;
       }
@@ -227,27 +226,27 @@ export default function PujaBookingPage({ params }: { params: Promise<{ id: stri
         order: { id: pay.gateway_order_id, amount: Math.round(bookingAmount * 100) },
         name: 'Savidhi',
         description: `${puja.mapped.name} × ${devoteeCount} devotee${devoteeCount > 1 ? 's' : ''}`,
-        notes: { booking_id: booking.id, puja_event_id: selectedEventId },
-        // Phase B — restricts Razorpay checkout to e-mandate-capable methods
-        // when the backend flagged this order as recurring.
+        notes: { puja_event_id: selectedEventId },
         recurring: !!pay.recurring,
         customer_id: pay.razorpay_customer_id ?? null,
         onSuccess: async (resp) => {
           try {
-            await paymentService.verify({
+            const verifyRes = await paymentService.verify({
               payment_id: pay.id,
               gateway_order_id: resp.razorpay_order_id,
               gateway_payment_id: resp.razorpay_payment_id,
               gateway_signature: resp.razorpay_signature,
             });
-            setConfirmedId(booking.id);
+            const verifiedBooking = verifyRes.data?.data?.booking;
+            if (!verifiedBooking?.id) throw new Error('Booking confirmation failed');
+            setConfirmedId(verifiedBooking.id);
             advance();
           } catch (verifyErr: any) {
             setError(verifyErr.response?.data?.message || 'Payment verification failed');
           }
         },
-        onFailure: (failure) => { setError(failure.description || 'Payment failed'); },
-        onDismiss: () => { setError('Payment cancelled. Your booking is reserved until payment is completed.'); },
+        onFailure: (failure) => { setError(failure.description || 'Payment failed. No booking was created — please try again.'); },
+        onDismiss: () => { setError('Payment cancelled. No booking was created — please try again.'); },
       });
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Booking failed');

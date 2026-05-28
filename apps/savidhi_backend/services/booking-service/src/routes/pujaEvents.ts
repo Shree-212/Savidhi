@@ -26,7 +26,7 @@ const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; 
 };
 
 /** GET / – list puja events. Admins see all; devotees see future non-cancelled events. */
-pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+pujaEventsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { status, puja_id, pujari_id, from_date, to_date, upcoming, search, page = '1', limit = '20' } = req.query;
     const role = req.headers['x-user-role'] as string;
@@ -108,7 +108,7 @@ pujaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next:
 });
 
 /** GET /:id – event detail with nested bookings (admin) / public event info (devotee) */
-pujaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+pujaEventsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const role = req.headers['x-user-role'] as string;

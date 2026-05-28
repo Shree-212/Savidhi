@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Calendar, Loader2, Minus, Plus, Check } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { chadhavaService, chadhavaEventService, chadhavaBookingService, paymentService } from '@/lib/services';
+import { chadhavaService, chadhavaEventService, paymentService } from '@/lib/services';
 import { mapChadhava } from '@/lib/mappers';
 import { getAccessToken } from '@/lib/auth';
 import { loadRazorpay, openCheckout } from '@/lib/razorpay';
@@ -183,7 +183,8 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
     try {
       setSubmitting(true);
       setError('');
-      const payload = {
+      // Deferred-booking flow — see puja book page for full doc.
+      const bookingPayload = {
         chadhava_event_id: selectedEventId,
         prasad_delivery_address: sendHamper ? `${address}${pincode ? `, PIN: ${pincode}` : ''}` : undefined,
         devotees: devotees.map((d) => ({ name: d.name.trim(), gotra: d.gotra.trim() })),
@@ -193,29 +194,27 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
         })),
         booking_type: bookingType,
         ...(bookingType === 'SUBSCRIPTION' ? { subscription_count: subscriptionCount } : {}),
-        idempotency_key: idempotencyKey,
       };
-      const bookingRes = await chadhavaBookingService.create(payload);
-      const booking = bookingRes.data?.data;
-      if (!booking?.id) throw new Error('Booking creation failed');
-      const bookingAmount = Number(booking.cost);
 
       const orderRes = await paymentService.createOrder({
         booking_type: 'CHADHAVA',
-        booking_id: booking.id,
-        amount: bookingAmount,
+        booking_payload: bookingPayload,
+        booking_idempotency_key: idempotencyKey,
       });
       const pay = orderRes.data?.data;
       if (!pay?.gateway_order_id) throw new Error('Could not start payment');
+      const bookingAmount = Number(pay.amount);
 
       if (pay.stub) {
-        await paymentService.verify({
+        const verifyRes = await paymentService.verify({
           payment_id: pay.id,
           gateway_order_id: pay.gateway_order_id,
           gateway_payment_id: `pay_stub_${Date.now()}`,
           gateway_signature: 'stub',
         });
-        setConfirmedId(booking.id);
+        const verifiedBooking = verifyRes.data?.data?.booking;
+        if (!verifiedBooking?.id) throw new Error('Booking materialization failed');
+        setConfirmedId(verifiedBooking.id);
         advance();
         return;
       }
@@ -226,25 +225,27 @@ export default function ChadhavaBookingPage({ params }: { params: Promise<{ id: 
         order: { id: pay.gateway_order_id, amount: Math.round(bookingAmount * 100) },
         name: 'Savidhi',
         description: `${chadhava.mapped.name} — ${selectedOfferings.length} offering${selectedOfferings.length > 1 ? 's' : ''}`,
-        notes: { booking_id: booking.id, chadhava_event_id: selectedEventId },
+        notes: { chadhava_event_id: selectedEventId },
         recurring: !!pay.recurring,
         customer_id: pay.razorpay_customer_id ?? null,
         onSuccess: async (resp) => {
           try {
-            await paymentService.verify({
+            const verifyRes = await paymentService.verify({
               payment_id: pay.id,
               gateway_order_id: resp.razorpay_order_id,
               gateway_payment_id: resp.razorpay_payment_id,
               gateway_signature: resp.razorpay_signature,
             });
-            setConfirmedId(booking.id);
+            const verifiedBooking = verifyRes.data?.data?.booking;
+            if (!verifiedBooking?.id) throw new Error('Booking confirmation failed');
+            setConfirmedId(verifiedBooking.id);
             advance();
           } catch (verifyErr: any) {
             setError(verifyErr.response?.data?.message || 'Payment verification failed');
           }
         },
-        onFailure: (failure) => setError(failure.description || 'Payment failed'),
-        onDismiss: () => setError('Payment cancelled. Your booking is reserved.'),
+        onFailure: (failure) => setError(failure.description || 'Payment failed. No booking was created — please try again.'),
+        onDismiss: () => setError('Payment cancelled. No booking was created — please try again.'),
       });
     } catch (err: any) {
       setError(err.response?.data?.message || 'Booking failed');

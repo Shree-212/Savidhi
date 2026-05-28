@@ -14,6 +14,7 @@ import { dashboardRouter } from './routes/dashboard';
 import { reportsRouter } from './routes/reports';
 import { shiprocketWebhookRouter } from './routes/shiprocketWebhook';
 import { startAppointmentAutoCompleteWorker } from './workers/appointmentAutoComplete';
+import { startExpirePendingPaymentsWorker } from './workers/expirePendingPayments';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -72,6 +73,9 @@ app.listen(PORT, () => {
   // in-process so dev tests of the appointment state machine work.
   if (process.env.RUN_AUTOCOMPLETE_WORKER !== 'false') {
     startAppointmentAutoCompleteWorker();
+  }
+  if (process.env.RUN_EXPIRE_PAYMENTS_WORKER !== 'false') {
+    startExpirePendingPaymentsWorker();
   }
 });
 

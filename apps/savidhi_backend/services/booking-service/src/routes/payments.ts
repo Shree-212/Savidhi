@@ -7,6 +7,12 @@ import {
   createOrFetchCustomer,
   fetchPaymentToken,
 } from '../lib/razorpayHelpers';
+import {
+  materializeBookingFromPayment,
+  tableForBookingType,
+  bookingErrorStatus,
+  previewBookingAmount,
+} from '../lib/materializeBooking';
 
 export const paymentsRouter = Router();
 
@@ -22,53 +28,87 @@ function razorpayConfigured(): boolean {
   return !!razorpayClient;
 }
 
-/**
- * Soft-launch escape hatch. When `PAYMENTS_FORCE_STUB=true` is set on the
- * booking-service deployment, every booking goes through the stub path —
- * Razorpay is never called, the order id is `order_stub_…`, and the verify
- * step accepts the stub signature so the booking is auto-confirmed. Useful
- * when we want users to complete the full booking flow before live payments
- * are switched on. Flip the env back to unset (or "false") to resume normal
- * Razorpay processing.
- */
 function paymentsForceStub(): boolean {
   return String(process.env.PAYMENTS_FORCE_STUB ?? '').toLowerCase() === 'true';
 }
 
-function tableForBookingType(bookingType: string): string {
-  if (bookingType === 'PUJA') return 'puja_bookings';
-  if (bookingType === 'CHADHAVA') return 'chadhava_bookings';
-  return 'appointments';
-}
+const VALID_BOOKING_TYPES = ['PUJA', 'CHADHAVA', 'APPOINTMENT'] as const;
+type BookingType = typeof VALID_BOOKING_TYPES[number];
 
 /**
  * POST /create-order
- * Creates a Razorpay order AND a local `payments` row (status=CREATED).
- * Idempotent: if a payment with the same `idempotency_key` already exists, the
- * existing row is returned instead of creating a duplicate. A stable key is
- * derived from booking_type+booking_id so double-clicks never create two orders.
+ *
+ * Deferred-booking flow:
+ *  - The client sends the FULL booking payload here, NOT a pre-created
+ *    booking_id. The server validates the payload, computes the authoritative
+ *    amount, creates a Razorpay order, and stashes the payload + idempotency
+ *    key on the payments row. The booking row itself is NOT inserted yet —
+ *    that happens in /verify (or the webhook) after payment succeeds.
+ *
+ *  - Idempotency: keyed on `<booking_type>:<booking_idempotency_key>` from the
+ *    client. A retry within the same browser session returns the existing
+ *    CREATED payment so the Razorpay modal can be reopened against the same
+ *    order_id.
  */
 paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const { booking_type, booking_id, amount } = req.body;
+    const {
+      booking_type,
+      booking_payload,
+      booking_idempotency_key,
+      // Legacy shape — used by the mobile app (which still creates the booking
+      // row before calling create-order). Once mobile is migrated to the
+      // deferred flow these can be removed.
+      booking_id: legacyBookingId,
+      amount: legacyAmount,
+    } = req.body as {
+      booking_type?: string;
+      booking_payload?: Record<string, unknown>;
+      booking_idempotency_key?: string;
+      booking_id?: string;
+      amount?: number;
+    };
 
-    if (!booking_type || !booking_id || amount == null) {
-      return res.status(400).json({ success: false, message: 'booking_type, booking_id, and amount are required' });
+    if (!booking_type) {
+      return res.status(400).json({ success: false, message: 'booking_type is required' });
+    }
+    if (!VALID_BOOKING_TYPES.includes(booking_type as BookingType)) {
+      return res.status(400).json({ success: false, message: `booking_type must be one of: ${VALID_BOOKING_TYPES.join(', ')}` });
     }
 
-    const idempotencyKey = `${booking_type}:${booking_id}`;
-    // If there's an existing CREATED payment for this booking, return it instead of duplicating.
+    // Pick a flow based on shape. Web sends {booking_payload, booking_idempotency_key};
+    // mobile sends {booking_id, amount}. Mobile keeps the pre-create-booking
+    // behavior until it's migrated.
+    const isDeferredFlow = !!booking_payload && typeof booking_payload === 'object';
+    const isLegacyFlow = !isDeferredFlow && !!legacyBookingId && legacyAmount != null;
+
+    if (!isDeferredFlow && !isLegacyFlow) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either booking_payload+booking_idempotency_key (deferred flow) or booking_id+amount (legacy) is required',
+      });
+    }
+
+    if (isDeferredFlow && (!booking_idempotency_key || typeof booking_idempotency_key !== 'string')) {
+      return res.status(400).json({ success: false, message: 'booking_idempotency_key is required (client-generated UUID)' });
+    }
+
+    const idempotencyKey = isDeferredFlow
+      ? `${booking_type}:${booking_idempotency_key}`
+      : `${booking_type}:${legacyBookingId}`;
+
+    // Replay: re-open the modal against the same order if the user double-tapped
+    // Pay or refreshed during checkout. Only payments still in CREATED are
+    // eligible — anything CAPTURED / FAILED / EXPIRED should force a new try.
     const dup = await pool.query(
-      `SELECT * FROM payments WHERE idempotency_key = $1 AND status = 'CREATED' AND devotee_id = $2
-       ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM payments
+        WHERE idempotency_key = $1 AND status = 'CREATED' AND devotee_id = $2
+        ORDER BY created_at DESC LIMIT 1`,
       [idempotencyKey, userId],
     );
     if (dup.rows.length > 0) {
-      // Treat the existing order as a stub if force-stub is on, OR if the
-      // stored gateway_order_id starts with `order_stub_`, OR if Razorpay
-      // isn't configured. The frontend uses this flag to skip the checkout
-      // modal and verify directly.
       const existing = dup.rows[0];
       const existingIsStub = paymentsForceStub()
         || String(existing.gateway_order_id ?? '').startsWith('order_stub_')
@@ -84,58 +124,65 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       });
     }
 
-    const validTypes = ['PUJA', 'CHADHAVA', 'APPOINTMENT'];
-    if (!validTypes.includes(booking_type)) {
-      return res.status(400).json({ success: false, message: `booking_type must be one of: ${validTypes.join(', ')}` });
+    // Validate payload + compute amount server-side. Anti-tamper: the client
+    // never sets the amount — we derive it from the puja/chadhava/astrologer
+    // pricing tables. Legacy flow looks the amount up off the existing booking
+    // row for the same anti-tamper guarantee.
+    let amount: number;
+    if (isDeferredFlow) {
+      try {
+        const preview = await previewBookingAmount(client, booking_type as BookingType, booking_payload!);
+        amount = preview.amount;
+      } catch (err: any) {
+        const status = bookingErrorStatus(err) ?? 400;
+        return res.status(status).json({ success: false, message: err.message ?? 'Invalid booking payload' });
+      }
+    } else {
+      const table = tableForBookingType(booking_type);
+      const bookingCheck = await pool.query(
+        `SELECT id, devotee_id, cost FROM ${table} WHERE id = $1`,
+        [legacyBookingId],
+      );
+      if (bookingCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Booking not found' });
+      }
+      if (bookingCheck.rows[0].devotee_id !== userId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+      const storedCostPaise = Math.round(Number(bookingCheck.rows[0].cost) * 100);
+      const requestedPaise = Math.round(Number(legacyAmount) * 100);
+      if (storedCostPaise !== requestedPaise) {
+        return res.status(400).json({
+          success: false,
+          message: `Amount mismatch: booking cost is ₹${bookingCheck.rows[0].cost}`,
+        });
+      }
+      amount = Number(legacyAmount);
     }
 
-    const amountPaise = Math.round(Number(amount) * 100);
+    const amountPaise = Math.round(amount * 100);
     if (amountPaise < 100) {
       return res.status(400).json({ success: false, message: 'Amount must be at least ₹1 (100 paise)' });
     }
 
-    // Ensure the booking belongs to this devotee.
-    // Phase B: also pull booking_type / razorpay_customer_id so SUBSCRIPTION
-    // first payments can open Razorpay in recurring (Auth Transaction) mode.
-    // booking_type column doesn't exist on the appointments table, so guard
-    // its inclusion in the SELECT list.
-    const table = tableForBookingType(booking_type);
-    const hasSubscriptionCols = booking_type === 'PUJA' || booking_type === 'CHADHAVA';
-    const bookingCheck = await pool.query(
-      hasSubscriptionCols
-        ? `SELECT id, devotee_id, cost, booking_type, razorpay_customer_id FROM ${table} WHERE id = $1`
-        : `SELECT id, devotee_id, cost FROM ${table} WHERE id = $1`,
-      [booking_id],
-    );
-    if (bookingCheck.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Booking not found' });
-    }
-    if (bookingCheck.rows[0].devotee_id !== userId) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    // Phase B subscription handling — for SUBSCRIPTION puja/chadhava bookings,
+    // the FIRST payment needs a Razorpay customer_id so the order can authorise
+    // an e-mandate token. Since the booking row doesn't exist yet, we attach
+    // (or create) the customer on the DEVOTEE for now and the materialize step
+    // will copy it onto the booking row.
+    const isSubscription = (booking_type === 'PUJA' || booking_type === 'CHADHAVA') &&
+      String(booking_payload?.booking_type ?? '').toUpperCase() === 'SUBSCRIPTION';
 
-    // Reject if amount doesn't match the booking's stored cost (anti-tamper)
-    const storedCostPaise = Math.round(Number(bookingCheck.rows[0].cost) * 100);
-    if (storedCostPaise !== amountPaise) {
-      return res.status(400).json({
-        success: false,
-        message: `Amount mismatch: booking cost is ₹${bookingCheck.rows[0].cost}`,
-      });
-    }
-
-    // Phase B — for SUBSCRIPTION puja/chadhava bookings, the FIRST payment is
-    // an "Auth Transaction" that authorises a Razorpay e-mandate token. We
-    // need a Razorpay customer_id for that flow.
-    const isSubscription = hasSubscriptionCols && bookingCheck.rows[0].booking_type === 'SUBSCRIPTION';
-    let recurringCustomerId: string | null = isSubscription
-      ? (bookingCheck.rows[0].razorpay_customer_id ?? null)
-      : null;
-    if (isSubscription && !recurringCustomerId) {
+    let recurringCustomerId: string | null = null;
+    if (isSubscription) {
       try {
         const devoteeRow = (await pool.query(
           `SELECT id, name, phone FROM devotees WHERE id = $1`,
           [userId],
         )).rows[0];
+        // createOrFetchCustomer passes Razorpay's fail_existing=0 so calling it
+        // again for the same devotee returns the existing customer rather than
+        // creating duplicates.
         const cust = await createOrFetchCustomer({
           id: userId,
           name: devoteeRow?.name ?? 'Savidhi Devotee',
@@ -143,26 +190,14 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
           email: null,
         });
         recurringCustomerId = cust.customer_id;
-        // Persist immediately so retry safely reuses the same customer.
-        await pool.query(
-          `UPDATE ${table} SET razorpay_customer_id = $1 WHERE id = $2`,
-          [recurringCustomerId, booking_id],
-        );
       } catch (err: any) {
-        // Razorpay customer creation failure shouldn't break ONE_TIME-style
-        // booking flow — fall back to a non-recurring order. The /verify step
-        // will skip token capture if no customer_id is on the booking.
         console.warn('[payments.create-order] customer create failed; falling back to non-recurring',
           err?.error?.description ?? err?.message);
         recurringCustomerId = null;
       }
     }
 
-    // Create Razorpay order. In dev / non-prod we fall back to stub mode if
-    // either the keys are missing OR the gateway rejects them (e.g. invalid
-    // test keys), so booking flows remain testable end-to-end without a live
-    // Razorpay account. In production a Razorpay failure stays a hard error.
-    // Soft-launch override: PAYMENTS_FORCE_STUB=true forces stub even in prod.
+    // Create Razorpay order (or stub).
     let gatewayOrderId: string;
     let usedStub = false;
 
@@ -171,18 +206,15 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       usedStub = true;
     } else if (razorpayConfigured()) {
       try {
-        // For SUBSCRIPTION first payments include customer_id (and explicit
-        // payment_capture) so Razorpay treats this as an Auth Transaction —
-        // the eligible payment methods will be e-mandate-capable instruments
-        // when the checkout opens with `recurring: 1`.
+        const receiptSeed = (isDeferredFlow ? booking_idempotency_key! : legacyBookingId!).slice(0, 18);
         const orderOptions: any = {
           amount: amountPaise,
           currency: 'INR',
-          receipt: `bkg_${booking_id.slice(0, 18)}`,
+          receipt: `pay_${receiptSeed}`,
           notes: {
             booking_type,
-            booking_id,
             devotee_id: userId,
+            ...(isDeferredFlow ? {} : { booking_id: legacyBookingId }),
             ...(isSubscription ? { subscription: 'true' } : {}),
           },
         };
@@ -198,22 +230,34 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
         if (process.env.NODE_ENV === 'production') {
           return res.status(502).json({ success: false, message: 'Failed to create Razorpay order', detail });
         }
-        // Dev fallback: pretend Razorpay is in stub mode for this order so the
-        // booking flow can still complete (the verify step also accepts stubs).
         console.warn('[razorpay] falling back to stub order — non-prod environment');
         gatewayOrderId = `order_stub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         usedStub = true;
       }
     } else {
-      // Stub mode — keys not configured at all
       gatewayOrderId = `order_stub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       usedStub = true;
     }
 
+    // Insert the pending payment. Deferred flow stashes the booking_payload
+    // and leaves booking_id NULL until /verify materializes the row. Legacy
+    // flow already has a booking row, so link directly.
     const { rows } = await pool.query(
-      `INSERT INTO payments (booking_type, booking_id, devotee_id, amount, gateway_order_id, gateway, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, 'RAZORPAY', $6) RETURNING *`,
-      [booking_type, booking_id, userId, amount, gatewayOrderId, idempotencyKey],
+      `INSERT INTO payments (
+         booking_type, booking_id, devotee_id, amount, gateway_order_id, gateway,
+         idempotency_key, booking_payload, booking_idempotency_key
+       )
+       VALUES ($1, $2, $3, $4, $5, 'RAZORPAY', $6, $7, $8) RETURNING *`,
+      [
+        booking_type,
+        isDeferredFlow ? null : legacyBookingId,
+        userId,
+        amount,
+        gatewayOrderId,
+        idempotencyKey,
+        isDeferredFlow ? JSON.stringify(booking_payload) : null,
+        isDeferredFlow ? booking_idempotency_key : null,
+      ],
     );
 
     res.status(201).json({
@@ -222,23 +266,28 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
         ...rows[0],
         razorpay_key_id: usedStub ? null : RAZORPAY_KEY_ID || null,
         stub: usedStub,
-        // Phase B: tells the frontend to open Razorpay Checkout with
-        // `recurring: 1` so the user is offered e-mandate-capable methods.
         recurring: isSubscription && !!recurringCustomerId,
         razorpay_customer_id: isSubscription ? recurringCustomerId : null,
       },
     });
   } catch (err) {
     next(err);
+  } finally {
+    client.release();
   }
 });
 
 /**
  * POST /verify
- * Verifies Razorpay signature: HMAC_SHA256(order_id + "|" + payment_id, key_secret)
- * On success:
- *   - payments.status → CAPTURED
- *   - booking.payment_status → PAID, booking.payment_id → payments.id
+ *
+ * Deferred-booking flow: validates the Razorpay signature, then in ONE
+ * transaction:
+ *   1. Materializes the booking row from `payments.booking_payload`.
+ *   2. Updates `payments.status = 'CAPTURED'` and links `payments.booking_id`.
+ *   3. Sets booking.payment_status = 'PAID' and booking.payment_id.
+ *
+ * Idempotent: if the webhook already captured this payment (a race), we just
+ * return the existing booking row.
  */
 paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   const client = await pool.connect();
@@ -254,7 +303,11 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
 
     await client.query('BEGIN');
 
-    const paymentResult = await client.query(`SELECT * FROM payments WHERE id = $1`, [payment_id]);
+    // Lock the payment row so verify and webhook can't materialize twice.
+    const paymentResult = await client.query(
+      `SELECT * FROM payments WHERE id = $1 FOR UPDATE`,
+      [payment_id],
+    );
     if (paymentResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Payment not found' });
@@ -262,13 +315,18 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
 
     const payment = paymentResult.rows[0];
 
-    // Idempotent: if the webhook already captured this payment, return success
-    // so the client navigates to the confirmation screen instead of showing a
-    // bogus "Payment verification failed" toast.
     if (payment.status === 'CAPTURED') {
+      // Already done by /verify or the webhook on a prior call. Return the
+      // booking that was materialized so the client navigates to confirmation.
+      let booking: any = null;
+      if (payment.booking_id) {
+        const table = tableForBookingType(payment.booking_type);
+        const br = await client.query(`SELECT * FROM ${table} WHERE id = $1`, [payment.booking_id]);
+        booking = br.rows[0] ?? null;
+      }
       await client.query('ROLLBACK');
       console.log('[payments.verify] already CAPTURED, returning success', { payment_id });
-      return res.json({ success: true, data: payment, alreadyCaptured: true });
+      return res.json({ success: true, data: { payment, booking }, alreadyCaptured: true });
     }
 
     if (payment.status !== 'CREATED') {
@@ -277,9 +335,6 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
       return res.status(400).json({ success: false, message: `Payment is in "${payment.status}" state — cannot verify` });
     }
 
-    // Stub orders (`order_stub_…`) bypass signature validation. They occur when
-    // Razorpay is unconfigured OR when create-order fell back to stub mode in
-    // dev. In production with valid keys, every order is signed-validated.
     const isStubOrder = String(payment.gateway_order_id ?? '').startsWith('order_stub_');
 
     if (razorpayConfigured() && !isStubOrder) {
@@ -303,32 +358,38 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
       }
     }
 
-    // Persist payment + update booking
-    const { rows } = await client.query(
+    // Materialize the booking row using the stashed payload.
+    let booking: any;
+    try {
+      booking = await materializeBookingFromPayment(client, payment);
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      const status = bookingErrorStatus(err) ?? 500;
+      console.error('[payments.verify] materialize failed', { payment_id, status, message: err?.message });
+      return res.status(status).json({ success: false, message: err?.message ?? 'Failed to create booking after payment' });
+    }
+
+    // Flip the payment row to CAPTURED and link the new booking.
+    const { rows: paymentRows } = await client.query(
       `UPDATE payments
        SET status = 'CAPTURED',
-           gateway_payment_id = $1,
-           gateway_signature = $2,
+           booking_id = $1,
+           gateway_payment_id = $2,
+           gateway_signature = $3,
            updated_at = NOW()
-       WHERE id = $3 RETURNING *`,
-      [gateway_payment_id, gateway_signature ?? null, payment_id],
+       WHERE id = $4 RETURNING *`,
+      [booking.id, gateway_payment_id, gateway_signature ?? null, payment_id],
     );
 
+    // Mark the booking as PAID.
     const table = tableForBookingType(payment.booking_type);
     await client.query(
       `UPDATE ${table} SET payment_status = 'PAID', payment_id = $1, updated_at = NOW() WHERE id = $2`,
-      [payment_id, payment.booking_id],
+      [payment_id, booking.id],
     );
 
-    // Phase B — for SUBSCRIPTION puja/chadhava bookings, capture the Razorpay
-    // token (e-mandate). With the token saved, the weekly rollover worker can
-    // create + charge child bookings without re-prompting the devotee.
-    //
-    // Also advance `next_charge_at` to the START_TIME of the NEXT puja/chadhava
-    // event after the one we just paid for (the current event_id on the parent
-    // booking) so the worker has a hook for the second cycle. If there's no
-    // next event yet, we leave next_charge_at as-is — admin must schedule more
-    // events for the rollover to continue.
+    // Phase B subscription token capture (puja/chadhava SUBSCRIPTION first
+    // payments only). See earlier inline doc for rationale.
     if (
       (payment.booking_type === 'PUJA' || payment.booking_type === 'CHADHAVA') &&
       !isStubOrder
@@ -338,7 +399,7 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
           `SELECT booking_type, razorpay_token_id,
                   ${payment.booking_type === 'PUJA' ? 'puja_event_id' : 'chadhava_event_id'} AS event_id
              FROM ${table} WHERE id = $1`,
-          [payment.booking_id],
+          [booking.id],
         )).rows[0];
 
         if (
@@ -347,7 +408,6 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
           gateway_payment_id
         ) {
           const tokenRes = await fetchPaymentToken(gateway_payment_id);
-          // Find the next event after the current one for this puja/chadhava.
           const eventsTable = payment.booking_type === 'PUJA' ? 'puja_events' : 'chadhava_events';
           const parentFkCol = payment.booking_type === 'PUJA' ? 'puja_id' : 'chadhava_id';
           const nextEv = (await client.query(
@@ -366,19 +426,16 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
                     next_charge_at = COALESCE($3, next_charge_at),
                     updated_at = NOW()
               WHERE id = $4`,
-            [tokenRes.token_id, tokenRes.customer_id, nextEv?.start_time ?? null, payment.booking_id],
+            [tokenRes.token_id, tokenRes.customer_id, nextEv?.start_time ?? null, booking.id],
           );
           console.log('[payments.verify] subscription token captured', {
-            booking_id: payment.booking_id,
+            booking_id: booking.id,
             token_id: tokenRes.token_id,
             stub: tokenRes.stub,
             next_charge_at: nextEv?.start_time ?? null,
           });
         }
       } catch (err: any) {
-        // Failing to capture the token shouldn't fail the verify — the parent
-        // payment already succeeded. Log so the daily monitor catches it and
-        // an admin can re-trigger or manually fill the field.
         console.warn('[payments.verify] subscription token capture failed',
           err?.error?.description ?? err?.message);
       }
@@ -386,8 +443,8 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
 
     await client.query('COMMIT');
 
-    console.log('[payments.verify] CAPTURED', { payment_id, booking_type: payment.booking_type, booking_id: payment.booking_id });
-    res.json({ success: true, data: rows[0] });
+    console.log('[payments.verify] CAPTURED', { payment_id, booking_type: payment.booking_type, booking_id: booking.id });
+    res.json({ success: true, data: { payment: paymentRows[0], booking } });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[payments.verify] error', err);
@@ -404,17 +461,11 @@ paymentsRouter.get('/razorpay/key', (_req: Request, res: Response) => {
 
 /**
  * POST /razorpay/webhook
- * Razorpay server-to-server webhook. Validates the X-Razorpay-Signature header
- * against RAZORPAY_WEBHOOK_SECRET, then processes supported events.
  *
- * NOTE: Because this endpoint needs the raw request body for signature
- * validation, the route is mounted with its own raw-parser at the top of this
- * file (below).
- *
- * Events handled:
- *   - payment.captured   → mark our payment CAPTURED + booking PAID (if not already)
- *   - payment.failed     → mark our payment FAILED
- *   - order.paid         → convenience alias for payment.captured
+ * Server-to-server webhook from Razorpay. Same deferred-booking model as
+ * /verify: on payment.captured we materialize the booking row inside the same
+ * transaction that flips the payment to CAPTURED. On payment.failed we mark
+ * the payment FAILED — no booking is created (so nothing to clean up).
  */
 paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => {
   try {
@@ -423,9 +474,6 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     const raw = (req as any).rawBody as Buffer | undefined;
 
     if (secret) {
-      // Once the secret is configured, treat signature verification as mandatory.
-      // Razorpay always sends `x-razorpay-signature` on every webhook, so any
-      // request missing it is either misrouted or forged.
       if (!signature || !raw) {
         console.warn('[razorpay webhook] missing signature or raw body', { hasSignature: !!signature, hasRaw: !!raw });
         return res.status(400).json({ success: false, message: 'Missing webhook signature' });
@@ -442,8 +490,6 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     const paymentEntity = body?.payload?.payment?.entity;
     const orderId = paymentEntity?.order_id as string | undefined;
     const rzpPaymentId = paymentEntity?.id as string | undefined;
-    // Token-level events (e-mandate lifecycle, Phase B) carry a different
-    // payload shape — the token entity rather than the payment entity.
     const tokenEntity = body?.payload?.token?.entity;
     const tokenId = tokenEntity?.id as string | undefined;
     const tokenCustomerId = tokenEntity?.customer_id as string | undefined;
@@ -455,9 +501,6 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     }
 
     // ─── Token lifecycle (e-mandate cancellation / expiry) ────────────────
-    // When Razorpay tells us a token is no longer chargeable we flip the
-    // affected SUBSCRIPTION parent bookings back to ONE_TIME so the weekly
-    // rollover worker skips them. Past bookings remain untouched.
     if (event === 'token.cancelled' || event === 'token.expired') {
       if (!tokenId) {
         console.warn('[razorpay webhook] token event with no token_id', { event });
@@ -498,29 +541,60 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
     }
 
     if (event === 'payment.captured' || event === 'order.paid') {
-      if (pay.status !== 'CAPTURED') {
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          await client.query(
-            `UPDATE payments SET status='CAPTURED', gateway_payment_id = COALESCE($1, gateway_payment_id), updated_at = NOW() WHERE id = $2`,
-            [rzpPaymentId ?? null, pay.id],
-          );
-          const table = tableForBookingType(pay.booking_type);
-          await client.query(
-            `UPDATE ${table} SET payment_status = 'PAID', payment_id = $1, updated_at = NOW() WHERE id = $2 AND payment_status != 'PAID'`,
-            [pay.id, pay.booking_id],
-          );
-          await client.query('COMMIT');
-          console.log('[razorpay webhook] CAPTURED via webhook', { payment_id: pay.id, booking_type: pay.booking_type, booking_id: pay.booking_id });
-        } catch (e) {
-          await client.query('ROLLBACK');
-          throw e;
-        } finally {
-          client.release();
-        }
-      } else {
+      if (pay.status === 'CAPTURED') {
         console.log('[razorpay webhook] already CAPTURED, no-op', { payment_id: pay.id });
+        return res.json({ success: true, processed: event });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Re-fetch with FOR UPDATE so a concurrent /verify doesn't double-materialize.
+        const lockedRes = await client.query(
+          `SELECT * FROM payments WHERE id = $1 FOR UPDATE`,
+          [pay.id],
+        );
+        const locked = lockedRes.rows[0];
+        if (locked.status === 'CAPTURED') {
+          await client.query('ROLLBACK');
+          console.log('[razorpay webhook] race: already CAPTURED inside tx, no-op', { payment_id: pay.id });
+          return res.json({ success: true, processed: event });
+        }
+
+        let booking: any;
+        try {
+          booking = await materializeBookingFromPayment(client, locked);
+        } catch (err: any) {
+          await client.query('ROLLBACK');
+          console.error('[razorpay webhook] materialize failed', { payment_id: pay.id, message: err?.message });
+          // 200 so Razorpay doesn't retry forever; we'll see the failure in logs.
+          return res.json({ success: false, processed: event, materialize_error: err?.message });
+        }
+
+        await client.query(
+          `UPDATE payments
+             SET status = 'CAPTURED',
+                 booking_id = $1,
+                 gateway_payment_id = COALESCE($2, gateway_payment_id),
+                 updated_at = NOW()
+           WHERE id = $3`,
+          [booking.id, rzpPaymentId ?? null, pay.id],
+        );
+
+        const table = tableForBookingType(pay.booking_type);
+        await client.query(
+          `UPDATE ${table} SET payment_status = 'PAID', payment_id = $1, updated_at = NOW() WHERE id = $2 AND payment_status != 'PAID'`,
+          [pay.id, booking.id],
+        );
+
+        await client.query('COMMIT');
+        console.log('[razorpay webhook] CAPTURED via webhook', { payment_id: pay.id, booking_type: pay.booking_type, booking_id: booking.id });
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
       }
     } else if (event === 'payment.failed') {
       await pool.query(`UPDATE payments SET status='FAILED', updated_at = NOW() WHERE id = $1`, [pay.id]);

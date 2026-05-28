@@ -18,7 +18,7 @@ const STAGE_TRANSITIONS: Record<string, { next: string; requiredField?: string; 
 };
 
 /** GET / – list chadhava events. Admins see all; devotees see upcoming non-cancelled. */
-chadhavaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+chadhavaEventsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { status, chadhava_id, pujari_id, from_date, to_date, upcoming, search, page = '1', limit = '20' } = req.query;
     const role = req.headers['x-user-role'] as string;
@@ -96,7 +96,7 @@ chadhavaEventsRouter.get('/', requireAuth, async (req: Request, res: Response, n
 });
 
 /** GET /:id – event detail with bookings (admin) / public (devotee) */
-chadhavaEventsRouter.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+chadhavaEventsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const role = req.headers['x-user-role'] as string;

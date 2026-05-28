@@ -7,12 +7,14 @@ import { TempleCard } from '@/components/shared/TempleCard';
 import { templeService } from '@/lib/services';
 import { mapTemple } from '@/lib/mappers';
 import type { Temple } from '@/data/models';
+import { useLocale } from '@/lib/i18n';
 
 export default function TempleListPage() {
   const [search, setSearch] = useState('');
   const [temples, setTemples] = useState<Temple[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { locale } = useLocale();
 
   useEffect(() => {
     async function load() {
@@ -28,7 +30,7 @@ export default function TempleListPage() {
       }
     }
     load();
-  }, []);
+  }, [locale]);
 
   const filtered = temples.filter((t: any) =>
     t.name.toLowerCase().includes(search.toLowerCase()) ||

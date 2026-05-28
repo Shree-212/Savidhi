@@ -25,8 +25,15 @@ api.interceptors.request.use((config) => {
     const locale = m?.[1] ?? 'en';
     if (locale !== 'en') {
       const url = config.url ?? '';
-      // Only annotate read paths under /catalog where the backend honours it.
-      if (url.startsWith('/catalog/')) {
+      const method = (config.method ?? 'get').toLowerCase();
+      // Attach ?locale to every GET except auth and payment endpoints —
+      // backend services that don't recognise the param just ignore it, and
+      // services that do (catalog-service today, booking-service tomorrow)
+      // swap their text columns automatically.
+      const skip = url.startsWith('/auth/')
+        || url.startsWith('/bookings/payments/')
+        || url.includes('/razorpay/');
+      if (method === 'get' && !skip) {
         config.params = { ...(config.params ?? {}), locale };
       }
     }

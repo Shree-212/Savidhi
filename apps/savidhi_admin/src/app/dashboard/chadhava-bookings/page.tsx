@@ -363,12 +363,18 @@ function ChadhavaBookingsPageInner() {
     }
   };
 
+  // Bookings eligible for the sankalp video timestamp UI: not cancelled AND
+  // actually paid for. Same filter as the puja side; keeps the modal aligned
+  // with the chadhava-sankalp report.
+  const sankalpEligibleBookings = (((selectedEvent as any)?.bookingsData ?? []) as any[])
+    .filter((b) => b.status !== 'CANCELLED' && (b.payment_status == null || b.payment_status === 'PAID'));
+
   // PDF item 5b — prefill per-booking sankalp timestamps when the modal opens
   // to replace an existing video.
   useEffect(() => {
     if (!showSankalpModal || !selectedEvent?.bookingsData) return;
     const next: Record<string, { minute: string; second: string }> = {};
-    for (const b of selectedEvent.bookingsData as any[]) {
+    for (const b of sankalpEligibleBookings) {
       const ts = b.sankalp_video_timestamp;
       if (!ts) continue;
       const [m, s] = String(ts).split(':');
@@ -378,6 +384,7 @@ function ChadhavaBookingsPageInner() {
     if ((selectedEvent as any).sankalp_video_url) {
       setSankalpVideoUrl((selectedEvent as any).sankalp_video_url);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSankalpModal, selectedEvent?.id, selectedEvent?.bookingsData]);
 
   useEffect(() => {
@@ -1013,7 +1020,7 @@ function ChadhavaBookingsPageInner() {
           </div>
           <h4 className="text-[10px] font-bold uppercase tracking-wider">Devotee Name Timestamp (per booking)</h4>
           <div className="overflow-y-auto pr-1 space-y-3 max-h-[40vh]">
-          {((selectedEvent as any)?.bookingsData ?? []).map((b: any) => (
+          {sankalpEligibleBookings.map((b: any) => (
             <div key={b.id} className="flex items-center gap-3">
               <div className="min-w-[12rem] flex-1">
                 <p className="text-xs text-foreground leading-tight">

@@ -1,8 +1,21 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+import { scheduleBackfill, writeBothSiblings } from '../lib/lazyTranslate';
 
 export const astrologersRouter = Router();
+
+// `languages` stays untranslated — it's a tag-style facet (e.g. "Hindi",
+// "Tamil") used as a filter on the consult page.
+const ASTROLOGER_TX_SCALARS = ['name', 'designation', 'expertise', 'about'] as const;
+const ASTROLOGER_TX_ARRAYS = [] as const;
+const ASTROLOGER_LOCALE_FIELDS = [...ASTROLOGER_TX_SCALARS];
+const ASTROLOGER_TX_CONFIG = { scalars: ASTROLOGER_TX_SCALARS, arrays: ASTROLOGER_TX_ARRAYS };
+
+async function translateAndUpdateAstrologer(_client: unknown, id: string, body: Record<string, unknown>) {
+  await writeBothSiblings('astrologers', id, body, ASTROLOGER_TX_CONFIG);
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v: string) => UUID_RE.test(v);
@@ -35,7 +48,14 @@ astrologersRouter.get('/', async (req: Request, res: Response, next: NextFunctio
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows, total, page, limit, message: 'Astrologers fetched' });
+    const locale = parseLocale(req.query.locale);
+    scheduleBackfill('astrologers', result.rows, { scalars: ASTROLOGER_TX_SCALARS, arrays: ASTROLOGER_TX_ARRAYS });
+    res.json({
+      success: true,
+      data: applyLocaleArray(result.rows, locale, ASTROLOGER_LOCALE_FIELDS),
+      total, page, limit,
+      message: 'Astrologers fetched',
+    });
   } catch (err) { next(err); }
 });
 
@@ -46,7 +66,13 @@ astrologersRouter.get('/:identifier', async (req: Request, res: Response, next: 
     const activeFilter = req.query.include_inactive === 'true' ? '' : ' AND is_active = true';
     const result = await pool.query(`SELECT * FROM astrologers WHERE ${where}${activeFilter}`, [identifier]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Astrologer details' });
+    const locale = parseLocale(req.query.locale);
+    scheduleBackfill('astrologers', result.rows, { scalars: ASTROLOGER_TX_SCALARS, arrays: ASTROLOGER_TX_ARRAYS });
+    res.json({
+      success: true,
+      data: applyLocale(result.rows[0], locale, ASTROLOGER_LOCALE_FIELDS),
+      message: 'Astrologer details',
+    });
   } catch (err) { next(err); }
 });
 
@@ -74,7 +100,9 @@ astrologersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Requ
         bank_name || null, ifsc || null, account_number || null,
         rating != null ? Number(rating) : 0],
     );
-    res.status(201).json({ success: true, data: result.rows[0], message: 'Astrologer created' });
+    try { await translateAndUpdateAstrologer(pool, result.rows[0].id, req.body); } catch (e) { console.warn('[astrologers.post] translate failed', (e as Error).message); }
+    const fresh = await pool.query(`SELECT * FROM astrologers WHERE id = $1`, [result.rows[0].id]);
+    res.status(201).json({ success: true, data: fresh.rows[0], message: 'Astrologer created' });
   } catch (err) { next(err); }
 });
 
@@ -112,7 +140,9 @@ astrologersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: 
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Astrologer updated' });
+    try { await translateAndUpdateAstrologer(pool, id, req.body); } catch (e) { console.warn('[astrologers.patch] translate failed', (e as Error).message); }
+    const fresh = await pool.query(`SELECT * FROM astrologers WHERE id = $1`, [id]);
+    res.json({ success: true, data: fresh.rows[0], message: 'Astrologer updated' });
   } catch (err) { next(err); }
 });
 

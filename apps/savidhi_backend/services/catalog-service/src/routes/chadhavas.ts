@@ -7,32 +7,18 @@ import {
   combineDateAndISTTime,
   type RepeatDuration,
 } from '../lib/tithiCalendar';
-import { translateToHindi, translateArrayToHindi } from '../lib/translate';
+import { translateScalarBoth } from '../lib/translate';
 import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
-import { scheduleBackfill } from '../lib/lazyTranslate';
+import { scheduleBackfill, writeBothSiblings } from '../lib/lazyTranslate';
 
 const CHADHAVA_TX_SCALARS = ['name', 'description', 'benefits', 'rituals_included', 'shlok'] as const;
 const CHADHAVA_TX_ARRAYS  = ['items_used', 'how_will_it_happen'] as const;
 const CHADHAVA_LOCALE_FIELDS = [...CHADHAVA_TX_SCALARS, ...CHADHAVA_TX_ARRAYS];
 const OFFERING_LOCALE_FIELDS = ['item_name', 'benefit'];
+const CHADHAVA_TX_CONFIG = { scalars: CHADHAVA_TX_SCALARS, arrays: CHADHAVA_TX_ARRAYS };
 
-async function translateAndUpdateChadhava(client: { query: typeof pool.query }, id: string, body: Record<string, unknown>) {
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-  for (const f of CHADHAVA_TX_SCALARS) {
-    if (body[f] === undefined) continue;
-    const hi = await translateToHindi(body[f] as string | null);
-    updates.push(`${f}_hi = $${idx}`); values.push(hi); idx++;
-  }
-  for (const f of CHADHAVA_TX_ARRAYS) {
-    if (body[f] === undefined) continue;
-    const hi = await translateArrayToHindi(body[f] as string[] | null);
-    updates.push(`${f}_hi = $${idx}`); values.push(hi); idx++;
-  }
-  if (updates.length === 0) return;
-  values.push(id);
-  await client.query(`UPDATE chadhavas SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+async function translateAndUpdateChadhava(_client: unknown, id: string, body: Record<string, unknown>) {
+  await writeBothSiblings('chadhavas', id, body, CHADHAVA_TX_CONFIG);
 }
 
 async function translateAllOfferingsForChadhava(client: { query: typeof pool.query }, chadhavaId: string) {
@@ -41,13 +27,15 @@ async function translateAllOfferingsForChadhava(client: { query: typeof pool.que
     [chadhavaId],
   );
   for (const r of rows.rows) {
-    const [nameHi, benefitHi] = await Promise.all([
-      translateToHindi(r.item_name),
-      translateToHindi(r.benefit),
+    const [nameBoth, benefitBoth] = await Promise.all([
+      translateScalarBoth(r.item_name),
+      translateScalarBoth(r.benefit),
     ]);
     await client.query(
-      `UPDATE chadhava_offerings SET item_name_hi = $1, benefit_hi = $2 WHERE id = $3`,
-      [nameHi, benefitHi, r.id],
+      `UPDATE chadhava_offerings
+          SET item_name_en = $1, item_name_hi = $2, benefit_en = $3, benefit_hi = $4
+        WHERE id = $5`,
+      [nameBoth?.en ?? null, nameBoth?.hi ?? null, benefitBoth?.en ?? null, benefitBoth?.hi ?? null, r.id],
     );
   }
 }

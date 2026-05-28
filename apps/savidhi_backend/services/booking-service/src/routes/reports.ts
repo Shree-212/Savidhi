@@ -71,7 +71,7 @@ async function fetchPujaSankalpEvents(query: Record<string, unknown>) {
        LEFT JOIN pujaris pj ON pj.id = pe.pujari_id
        LEFT JOIN puja_bookings pb
               ON pb.puja_event_id = pe.id
-             AND pb.status <> 'CANCELLED'
+             AND pb.status <> 'CANCELLED' AND pb.payment_status = 'PAID'
        ${where}
        GROUP BY pe.id, p.name, t.name, pe.start_time, pe.status, pj.name
        ${havingClause}
@@ -93,7 +93,7 @@ async function fetchPujaEventDevotees(eventId: string): Promise<Array<{ name: st
        SELECT pb.id, pb.created_at, d.name AS account_name, COALESCE(d.gotra, '') AS account_gotra
          FROM puja_bookings pb
          JOIN devotees d ON d.id = pb.devotee_id
-        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED'
+        WHERE pb.puja_event_id = $1 AND pb.status <> 'CANCELLED' AND pb.payment_status = 'PAID'
      ),
      per_booking AS (
        SELECT pbd.puja_booking_id, pbd.name, COALESCE(pbd.gotra, '') AS gotra
@@ -246,7 +246,7 @@ async function fetchChadhavaSankalpEvents(query: Record<string, unknown>) {
        LEFT JOIN pujaris pj ON pj.id = ce.pujari_id
        LEFT JOIN chadhava_bookings cb
               ON cb.chadhava_event_id = ce.id
-             AND cb.status <> 'CANCELLED'
+             AND cb.status <> 'CANCELLED' AND cb.payment_status = 'PAID'
        ${where}
        GROUP BY ce.id, c.name, t.name, ce.start_time, ce.status, pj.name
        ${havingClause}
@@ -266,7 +266,7 @@ async function fetchChadhavaEventDevotees(eventId: string): Promise<Array<{ name
        SELECT cb.id, cb.created_at, d.name AS account_name, COALESCE(d.gotra, '') AS account_gotra
          FROM chadhava_bookings cb
          JOIN devotees d ON d.id = cb.devotee_id
-        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED'
+        WHERE cb.chadhava_event_id = $1 AND cb.status <> 'CANCELLED' AND cb.payment_status = 'PAID'
      ),
      per_booking AS (
        SELECT cbd.chadhava_booking_id, cbd.name, COALESCE(cbd.gotra, '') AS gotra
@@ -445,7 +445,7 @@ reportsRouter.get('/chadhava-offerings', requireAdmin, async (req: Request, res:
            SELECT cbo.offering_id, SUM(cbo.quantity)::int AS total_qty
              FROM chadhava_booking_offerings cbo
              JOIN chadhava_bookings cb ON cb.id = cbo.chadhava_booking_id
-            WHERE cb.chadhava_event_id = ce.id AND cb.status <> 'CANCELLED'
+            WHERE cb.chadhava_event_id = ce.id AND cb.status <> 'CANCELLED' AND cb.payment_status = 'PAID'
             GROUP BY cbo.offering_id
          ) cbo_q ON true
          LEFT JOIN chadhava_offerings co ON co.id = cbo_q.offering_id
@@ -504,7 +504,7 @@ async function fetchAppointmentsByAstrologer(query: Record<string, unknown>) {
        FROM astrologers ast
        LEFT JOIN appointments a
               ON a.astrologer_id = ast.id
-             AND a.status <> 'CANCELLED'
+             AND a.status <> 'CANCELLED' AND a.payment_status = 'PAID'
              ${conditions.length ? 'AND ' + conditions.join(' AND ') : ''}
        GROUP BY ast.id, ast.name
        HAVING COUNT(a.id) > 0
@@ -825,14 +825,15 @@ reportsRouter.get('/summary', requireAdmin, async (req: Request, res: Response, 
     const dateWhere = fromTo.conditions.length ? `WHERE ${fromTo.conditions.join(' AND ')}` : '';
     const dateParams = fromTo.params;
 
-    // Status breakdown counted, but totalCost excludes CANCELLED (real revenue).
+    // Status breakdown counted, but totalCost excludes CANCELLED + unpaid
+    // (real revenue = PAID and not CANCELLED).
     const statusQuery = (table: string) => `
       SELECT
         COUNT(*)::int                                                                    AS cnt,
         COUNT(*) FILTER (WHERE status <> 'CANCELLED')::int                               AS active_cnt,
         COUNT(*) FILTER (WHERE status = 'CANCELLED')::int                                AS cancelled_cnt,
         COUNT(*) FILTER (WHERE status = 'COMPLETED')::int                                AS completed_cnt,
-        COALESCE(SUM(cost) FILTER (WHERE status <> 'CANCELLED'), 0)::numeric             AS revenue
+        COALESCE(SUM(cost) FILTER (WHERE status <> 'CANCELLED' AND payment_status = 'PAID'), 0)::numeric AS revenue
       FROM ${table} ${dateWhere}`;
 
     const [pujas, chadhavas, appts] = await Promise.all([
@@ -898,14 +899,14 @@ reportsRouter.get('/temple-wise', requireAdmin, async (req: Request, res: Respon
              FROM puja_bookings pb
              JOIN puja_events pe ON pe.id = pb.puja_event_id
              JOIN pujas       p  ON p.id  = pe.puja_id
-            WHERE p.temple_id = t.id AND pb.status <> 'CANCELLED'
+            WHERE p.temple_id = t.id AND pb.status <> 'CANCELLED' AND pb.payment_status = 'PAID'
          ) pb_stats ON true
          LEFT JOIN LATERAL (
            SELECT COUNT(*) AS chadhava_bookings, COALESCE(SUM(cb.cost), 0) AS chadhava_revenue
              FROM chadhava_bookings cb
              JOIN chadhava_events ce ON ce.id = cb.chadhava_event_id
              JOIN chadhavas       c  ON c.id  = ce.chadhava_id
-            WHERE c.temple_id = t.id AND cb.status <> 'CANCELLED'
+            WHERE c.temple_id = t.id AND cb.status <> 'CANCELLED' AND cb.payment_status = 'PAID'
          ) cb_stats ON true
         WHERE t.is_active = true
         ORDER BY t.name`,
@@ -948,14 +949,14 @@ reportsRouter.get('/deity-wise', requireAdmin, async (req: Request, res: Respons
            SELECT COUNT(pb.id) AS puja_bookings, COALESCE(SUM(pb.cost), 0) AS puja_revenue
              FROM pujas p
              JOIN puja_events  pe ON pe.puja_id = p.id
-             JOIN puja_bookings pb ON pb.puja_event_id = pe.id AND pb.status <> 'CANCELLED'
+             JOIN puja_bookings pb ON pb.puja_event_id = pe.id AND pb.status <> 'CANCELLED' AND pb.payment_status = 'PAID'
             WHERE p.deity_id = de.id
          ) p_stats ON true
          LEFT JOIN LATERAL (
            SELECT COUNT(cb.id) AS chadhava_bookings, COALESCE(SUM(cb.cost), 0) AS chadhava_revenue
              FROM chadhavas c
              JOIN chadhava_events  ce ON ce.chadhava_id = c.id
-             JOIN chadhava_bookings cb ON cb.chadhava_event_id = ce.id AND cb.status <> 'CANCELLED'
+             JOIN chadhava_bookings cb ON cb.chadhava_event_id = ce.id AND cb.status <> 'CANCELLED' AND cb.payment_status = 'PAID'
             WHERE c.deity_id = de.id
          ) c_stats ON true
         ORDER BY de.name`,
@@ -1001,15 +1002,15 @@ reportsRouter.get('/devotee-wise', requireAdmin, async (req: Request, res: Respo
          FROM devotees d
          LEFT JOIN LATERAL (
            SELECT COUNT(*) AS puja_count, COALESCE(SUM(cost), 0) AS puja_spent
-             FROM puja_bookings WHERE devotee_id = d.id AND status <> 'CANCELLED'
+             FROM puja_bookings WHERE devotee_id = d.id AND status <> 'CANCELLED' AND payment_status = 'PAID'
          ) pb_stats ON true
          LEFT JOIN LATERAL (
            SELECT COUNT(*) AS chadhava_count, COALESCE(SUM(cost), 0) AS chadhava_spent
-             FROM chadhava_bookings WHERE devotee_id = d.id AND status <> 'CANCELLED'
+             FROM chadhava_bookings WHERE devotee_id = d.id AND status <> 'CANCELLED' AND payment_status = 'PAID'
          ) cb_stats ON true
          LEFT JOIN LATERAL (
            SELECT COUNT(*) AS appt_count, COALESCE(SUM(cost), 0) AS appt_spent
-             FROM appointments WHERE devotee_id = d.id AND status <> 'CANCELLED'
+             FROM appointments WHERE devotee_id = d.id AND status <> 'CANCELLED' AND payment_status = 'PAID'
          ) ap_stats ON true
         WHERE d.is_active = true
         ORDER BY total_cost DESC
@@ -1176,7 +1177,7 @@ reportsRouter.get('/chadhava-offerings-detail', requireAdmin, async (req: Reques
               (SELECT string_agg(cbd.name || COALESCE(' (' || NULLIF(cbd.gotra,'') || ')', ''), '; ' ORDER BY cbd.name)
                  FROM chadhava_booking_devotees cbd WHERE cbd.chadhava_booking_id = cb.id) AS sankalp_devotees
          FROM chadhava_booking_offerings cbo
-         JOIN chadhava_bookings   cb ON cb.id = cbo.chadhava_booking_id AND cb.status <> 'CANCELLED'
+         JOIN chadhava_bookings   cb ON cb.id = cbo.chadhava_booking_id AND cb.status <> 'CANCELLED' AND cb.payment_status = 'PAID'
          JOIN chadhava_events     ce ON ce.id = cb.chadhava_event_id
          JOIN chadhavas           c  ON c.id  = ce.chadhava_id
          JOIN temples             t  ON t.id  = c.temple_id
@@ -1237,13 +1238,13 @@ reportsRouter.get('/daily-revenue', requireAdmin, async (req: Request, res: Resp
 
     const { rows } = await pool.query(
       `WITH unified AS (
-         SELECT 'PUJA' AS type, pb.id, pb.cost::numeric AS cost, pb.status::text, pb.created_at
+         SELECT 'PUJA' AS type, pb.id, pb.cost::numeric AS cost, pb.status::text, pb.payment_status::text AS payment_status, pb.created_at
            FROM puja_bookings pb ${where}
          UNION ALL
-         SELECT 'CHADHAVA' AS type, cb.id, cb.cost::numeric AS cost, cb.status::text, cb.created_at
+         SELECT 'CHADHAVA' AS type, cb.id, cb.cost::numeric AS cost, cb.status::text, cb.payment_status::text AS payment_status, cb.created_at
            FROM chadhava_bookings cb ${where}
          UNION ALL
-         SELECT 'APPOINTMENT' AS type, a.id, a.cost::numeric AS cost, a.status::text, a.created_at
+         SELECT 'APPOINTMENT' AS type, a.id, a.cost::numeric AS cost, a.status::text, a.payment_status::text AS payment_status, a.created_at
            FROM appointments a ${where}
        ),
        latest_pay AS (
@@ -1253,10 +1254,10 @@ reportsRouter.get('/daily-revenue', requireAdmin, async (req: Request, res: Resp
        )
        SELECT
          to_char(u.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS date,
-         COALESCE(SUM(u.cost) FILTER (WHERE u.type='PUJA'        AND u.status <> 'CANCELLED'), 0)::numeric AS puja_revenue,
-         COALESCE(SUM(u.cost) FILTER (WHERE u.type='CHADHAVA'    AND u.status <> 'CANCELLED'), 0)::numeric AS chadhava_revenue,
-         COALESCE(SUM(u.cost) FILTER (WHERE u.type='APPOINTMENT' AND u.status <> 'CANCELLED'), 0)::numeric AS appt_revenue,
-         COALESCE(SUM(u.cost) FILTER (WHERE u.status <> 'CANCELLED'), 0)::numeric AS total_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.type='PUJA'        AND u.status <> 'CANCELLED' AND u.payment_status = 'PAID'), 0)::numeric AS puja_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.type='CHADHAVA'    AND u.status <> 'CANCELLED' AND u.payment_status = 'PAID'), 0)::numeric AS chadhava_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.type='APPOINTMENT' AND u.status <> 'CANCELLED' AND u.payment_status = 'PAID'), 0)::numeric AS appt_revenue,
+         COALESCE(SUM(u.cost) FILTER (WHERE u.status <> 'CANCELLED' AND u.payment_status = 'PAID'), 0)::numeric AS total_revenue,
          COUNT(*)::int AS bookings,
          COUNT(*) FILTER (WHERE u.status = 'CANCELLED')::int AS cancelled,
          COUNT(*) FILTER (WHERE lp.pay_status = 'REFUNDED')::int AS refunded
@@ -1428,7 +1429,7 @@ reportsRouter.get('/workload', requireAdmin, async (req: Request, res: Response,
          FROM astrologers ast
          LEFT JOIN LATERAL (
            SELECT
-             COUNT(*) FILTER (WHERE a.scheduled_at >= NOW() AND a.status <> 'COMPLETED' AND a.status <> 'CANCELLED') AS upcoming,
+             COUNT(*) FILTER (WHERE a.scheduled_at >= NOW() AND a.status <> 'COMPLETED' AND a.status <> 'CANCELLED' AND a.payment_status = 'PAID') AS upcoming,
              COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS completed
            FROM appointments a WHERE a.astrologer_id = ast.id
          ) ap_count ON true

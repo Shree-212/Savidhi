@@ -1,8 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
-import { translateToHindi } from '../lib/translate';
 import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+import { scheduleBackfill, writeBothSiblings } from '../lib/lazyTranslate';
 
 export const templesRouter = Router();
 
@@ -10,19 +10,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const isUuid = (v: string) => UUID_RE.test(v);
 
 const TEMPLE_TX = ['name', 'address', 'about', 'history_and_significance'] as const;
+const TEMPLE_TX_CONFIG = { scalars: TEMPLE_TX, arrays: [] as const };
 
-async function translateAndUpdateTemple(client: { query: typeof pool.query }, id: string, body: Record<string, unknown>) {
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-  for (const f of TEMPLE_TX) {
-    if (body[f] === undefined) continue;
-    const hi = await translateToHindi(body[f] as string | null);
-    updates.push(`${f}_hi = $${idx}`); values.push(hi); idx++;
-  }
-  if (updates.length === 0) return;
-  values.push(id);
-  await client.query(`UPDATE temples SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+async function translateAndUpdateTemple(_client: unknown, id: string, body: Record<string, unknown>) {
+  await writeBothSiblings('temples', id, body, TEMPLE_TX_CONFIG);
 }
 
 templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -63,6 +54,7 @@ templesRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     }
 
     const locale = parseLocale(req.query.locale);
+    scheduleBackfill('temples', result.rows, TEMPLE_TX_CONFIG);
     res.json({
       success: true,
       data: applyLocaleArray(result.rows, locale, [...TEMPLE_TX]),
@@ -81,17 +73,18 @@ templesRouter.get('/:identifier', async (req: Request, res: Response, next: Next
     if (temple.rows.length === 0) { res.status(404).json({ success: false, message: 'Temple not found' }); return; }
     const id = temple.rows[0].id;
 
-    const pujaris = await pool.query('SELECT id, name, designation, profile_pic, rating FROM pujaris WHERE temple_id = $1 AND is_active = true', [id]);
-    const pujas = await pool.query('SELECT id, name, name_hi, price_for_1, schedule_day, schedule_time, slider_images FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
-    const chadhavas = await pool.query('SELECT id, name, name_hi, schedule_day, schedule_time, slider_images FROM chadhavas WHERE temple_id = $1 AND is_active = true', [id]);
-    const deities = await pool.query('SELECT d.id, d.name, d.name_hi, d.image_url FROM deities d JOIN temple_deities td ON d.id = td.deity_id WHERE td.temple_id = $1', [id]);
+    const pujaris = await pool.query('SELECT id, name, name_en, name_hi, designation, designation_en, designation_hi, profile_pic, rating FROM pujaris WHERE temple_id = $1 AND is_active = true', [id]);
+    const pujas = await pool.query('SELECT id, name, name_en, name_hi, price_for_1, schedule_day, schedule_time, slider_images FROM pujas WHERE temple_id = $1 AND is_active = true', [id]);
+    const chadhavas = await pool.query('SELECT id, name, name_en, name_hi, schedule_day, schedule_time, slider_images FROM chadhavas WHERE temple_id = $1 AND is_active = true', [id]);
+    const deities = await pool.query('SELECT d.id, d.name, d.name_en, d.name_hi, d.image_url FROM deities d JOIN temple_deities td ON d.id = td.deity_id WHERE td.temple_id = $1', [id]);
 
     const locale = parseLocale(req.query.locale);
+    scheduleBackfill('temples', temple.rows, TEMPLE_TX_CONFIG);
     res.json({
       success: true,
       data: {
         ...applyLocale(temple.rows[0], locale, [...TEMPLE_TX]),
-        pujaris: pujaris.rows,
+        pujaris: applyLocaleArray(pujaris.rows, locale, ['name', 'designation']),
         pujas_offered: applyLocaleArray(pujas.rows, locale, ['name']),
         chadhavas_offered: applyLocaleArray(chadhavas.rows, locale, ['name']),
         deities: applyLocaleArray(deities.rows, locale, ['name']),

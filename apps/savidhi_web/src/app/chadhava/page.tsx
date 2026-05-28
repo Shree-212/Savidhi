@@ -6,12 +6,14 @@ import { SearchBar } from '@/components/shared/SearchBar';
 import { ChadhavaCard } from '@/components/shared/ChadhavaCard';
 import { chadhavaService } from '@/lib/services';
 import { mapChadhava } from '@/lib/mappers';
+import { useLocale } from '@/lib/i18n';
 
 export default function ChadhavaListPage() {
   const [search, setSearch] = useState('');
   const [chadhavas, setChadhavas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { locale } = useLocale();
 
   useEffect(() => {
     async function load() {
@@ -27,7 +29,7 @@ export default function ChadhavaListPage() {
       }
     }
     load();
-  }, []);
+  }, [locale]);
 
   const filtered = chadhavas.filter((c: any) =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||

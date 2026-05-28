@@ -7,7 +7,6 @@ import { ArrowLeft, Calendar, Check, Clock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import {
   astrologerService,
-  appointmentService,
   paymentService,
 } from '@/lib/services';
 import { getAccessToken } from '@/lib/auth';
@@ -112,36 +111,43 @@ export default function BookAppointmentPage({ params }: { params: Promise<{ id: 
       setError('');
 
       const scheduledAt = new Date(`${date}T${time}:00`).toISOString();
+      // Stable per-form-mount idempotency key so verify+webhook race produces
+      // exactly one booking row.
+      const bookingIdempotencyKey =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-      // 1. Create appointment
-      const apptRes = await appointmentService.create({
-        astrologer_id: astro.id, // use UUID, BE expects it
+      // Deferred-booking flow — appointment row materialized server-side on /verify.
+      // TODO: add a short-lived slot hold so two devotees can't both pay for the
+      // same astrologer slot during their respective payment windows.
+      const bookingPayload = {
+        astrologer_id: astro.id,
         duration: selected,
         scheduled_at: scheduledAt,
         devotee_name: devoteeName.trim(),
         devotee_gotra: devoteeGotra.trim() || undefined,
-      });
-      const appt = apptRes.data?.data;
-      if (!appt?.id) throw new Error('Appointment creation failed');
-      const apptAmount = Number(appt.cost ?? price);
+      };
 
-      // 2. Create Razorpay order (or stub fallback)
       const orderRes = await paymentService.createOrder({
         booking_type: 'APPOINTMENT',
-        booking_id: appt.id,
-        amount: apptAmount,
+        booking_payload: bookingPayload,
+        booking_idempotency_key: bookingIdempotencyKey,
       });
       const pay = orderRes.data?.data;
       if (!pay?.gateway_order_id) throw new Error('Could not start payment');
+      const apptAmount = Number(pay.amount ?? price);
 
       if (pay.stub) {
-        await paymentService.verify({
+        const verifyRes = await paymentService.verify({
           payment_id: pay.id,
           gateway_order_id: pay.gateway_order_id,
           gateway_payment_id: `pay_stub_${Date.now()}`,
           gateway_signature: 'stub',
         });
-        setConfirmedId(appt.id);
+        const verifiedAppt = verifyRes.data?.data?.booking;
+        if (!verifiedAppt?.id) throw new Error('Appointment materialization failed');
+        setConfirmedId(verifiedAppt.id);
         advance();
         return;
       }
@@ -152,23 +158,25 @@ export default function BookAppointmentPage({ params }: { params: Promise<{ id: 
         order: { id: pay.gateway_order_id, amount: Math.round(apptAmount * 100) },
         name: 'Savidhi',
         description: `${astro.name} — ${selectedLabel} consultation`,
-        notes: { appointment_id: appt.id, astrologer_id: astro.id },
+        notes: { astrologer_id: astro.id },
         onSuccess: async (resp) => {
           try {
-            await paymentService.verify({
+            const verifyRes = await paymentService.verify({
               payment_id: pay.id,
               gateway_order_id: resp.razorpay_order_id,
               gateway_payment_id: resp.razorpay_payment_id,
               gateway_signature: resp.razorpay_signature,
             });
-            setConfirmedId(appt.id);
+            const verifiedAppt = verifyRes.data?.data?.booking;
+            if (!verifiedAppt?.id) throw new Error('Appointment confirmation failed');
+            setConfirmedId(verifiedAppt.id);
             advance();
           } catch (verifyErr: any) {
             setError(verifyErr?.response?.data?.message ?? 'Payment verification failed');
           }
         },
-        onFailure: (failure) => setError(failure.description ?? 'Payment failed'),
-        onDismiss: () => setError('Payment cancelled. You can try again from your bookings.'),
+        onFailure: (failure) => setError(failure.description ?? 'Payment failed. No appointment was created — please try again.'),
+        onDismiss: () => setError('Payment cancelled. No appointment was created — please try again.'),
       });
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err?.message ?? 'Booking failed');

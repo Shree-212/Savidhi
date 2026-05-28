@@ -1,8 +1,19 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { applyLocale, applyLocaleArray, parseLocale } from '../lib/locale';
+import { scheduleBackfill, writeBothSiblings } from '../lib/lazyTranslate';
 
 export const hampersRouter = Router();
+
+const HAMPER_TX_SCALARS = ['name', 'content_description'] as const;
+const HAMPER_TX_ARRAYS = [] as const;
+const HAMPER_LOCALE_FIELDS = [...HAMPER_TX_SCALARS];
+const HAMPER_TX_CONFIG = { scalars: HAMPER_TX_SCALARS, arrays: HAMPER_TX_ARRAYS };
+
+async function translateAndUpdateHamper(_client: unknown, id: string, body: Record<string, unknown>) {
+  await writeBothSiblings('hampers', id, body, HAMPER_TX_CONFIG);
+}
 
 hampersRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -28,7 +39,14 @@ hampersRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows, total, page, limit, message: 'Hampers fetched' });
+    const locale = parseLocale(req.query.locale);
+    scheduleBackfill('hampers', result.rows, { scalars: HAMPER_TX_SCALARS, arrays: HAMPER_TX_ARRAYS });
+    res.json({
+      success: true,
+      data: applyLocaleArray(result.rows, locale, HAMPER_LOCALE_FIELDS),
+      total, page, limit,
+      message: 'Hampers fetched',
+    });
   } catch (err) { next(err); }
 });
 
@@ -36,7 +54,13 @@ hampersRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
   try {
     const result = await pool.query('SELECT * FROM hampers WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Hamper not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Hamper details' });
+    const locale = parseLocale(req.query.locale);
+    scheduleBackfill('hampers', result.rows, { scalars: HAMPER_TX_SCALARS, arrays: HAMPER_TX_ARRAYS });
+    res.json({
+      success: true,
+      data: applyLocale(result.rows[0], locale, HAMPER_LOCALE_FIELDS),
+      message: 'Hamper details',
+    });
   } catch (err) { next(err); }
 });
 
@@ -54,7 +78,9 @@ hampersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Request,
         weight_kg ?? null, declared_value ?? null,
       ],
     );
-    res.status(201).json({ success: true, data: result.rows[0], message: 'Hamper created' });
+    try { await translateAndUpdateHamper(pool, result.rows[0].id, req.body); } catch (e) { console.warn('[hampers.post] translate failed', (e as Error).message); }
+    const fresh = await pool.query(`SELECT * FROM hampers WHERE id = $1`, [result.rows[0].id]);
+    res.status(201).json({ success: true, data: fresh.rows[0], message: 'Hamper created' });
   } catch (err) { next(err); }
 });
 
@@ -85,7 +111,9 @@ hampersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: Requ
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Hamper not found' }); return; }
-    res.json({ success: true, data: result.rows[0], message: 'Hamper updated' });
+    try { await translateAndUpdateHamper(pool, id, req.body); } catch (e) { console.warn('[hampers.patch] translate failed', (e as Error).message); }
+    const fresh = await pool.query(`SELECT * FROM hampers WHERE id = $1`, [id]);
+    res.json({ success: true, data: fresh.rows[0], message: 'Hamper updated' });
   } catch (err) { next(err); }
 });
 

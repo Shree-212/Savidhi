@@ -1,8 +1,91 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import type { PoolClient } from 'pg';
 import { pool } from '../lib/db';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 
 export const appointmentsRouter = Router();
+
+export type AppointmentBookingPayload = {
+  astrologer_id: string;
+  duration: string;
+  scheduled_at: string;
+  devotee_name?: string | null;
+  devotee_gotra?: string | null;
+  idempotency_key?: string | null;
+};
+
+export class AppointmentBookingError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const VALID_DURATIONS = ['15min', '30min', '1hour', '2hour'] as const;
+const DURATION_PRICE_COL: Record<string, string> = {
+  '15min': 'price_15min',
+  '30min': 'price_30min',
+  '1hour': 'price_1hour',
+  '2hour': 'price_2hour',
+};
+
+/** Core appointment creation. Same contract as createPujaBookingTx. */
+export async function createAppointmentTx(
+  client: PoolClient,
+  body: AppointmentBookingPayload,
+  userId: string,
+): Promise<any> {
+  const { astrologer_id, duration, scheduled_at, devotee_name, devotee_gotra, idempotency_key } = body;
+
+  if (!astrologer_id || !duration || !scheduled_at) {
+    throw new AppointmentBookingError(400, 'astrologer_id, duration, and scheduled_at are required');
+  }
+  if (!VALID_DURATIONS.includes(duration as any)) {
+    throw new AppointmentBookingError(400, `duration must be one of: ${VALID_DURATIONS.join(', ')}`);
+  }
+
+  // Appointments don't currently store idempotency_key in their own column, but
+  // the materializer needs deterministic replay. Detect duplicates via
+  // (devotee_id, astrologer_id, scheduled_at) tuple — same scheduled slot for
+  // the same devotee with the same astrologer is treated as a replay.
+  if (idempotency_key) {
+    const existing = await client.query(
+      `SELECT * FROM appointments
+        WHERE devotee_id = $1 AND astrologer_id = $2 AND scheduled_at = $3
+          AND status != 'CANCELLED'
+        ORDER BY created_at DESC LIMIT 1`,
+      [userId, astrologer_id, scheduled_at],
+    );
+    if (existing.rows.length > 0) {
+      const row = existing.rows[0];
+      (row as any).idempotent_replay = true;
+      return row;
+    }
+  }
+
+  const astResult = await client.query(
+    `SELECT price_15min, price_30min, price_1hour, price_2hour FROM astrologers WHERE id = $1 AND is_active = true`,
+    [astrologer_id],
+  );
+  if (astResult.rows.length === 0) {
+    throw new AppointmentBookingError(404, 'Astrologer not found or inactive');
+  }
+
+  const cost = Number(astResult.rows[0][DURATION_PRICE_COL[duration]]);
+  if (!Number.isFinite(cost) || cost <= 0) {
+    throw new AppointmentBookingError(400, `Astrologer has no valid price configured for ${duration}. Please contact support.`);
+  }
+
+  const { rows } = await client.query(
+    `INSERT INTO appointments (astrologer_id, devotee_id, duration, scheduled_at, cost, devotee_name, devotee_gotra)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [astrologer_id, userId, duration, scheduled_at, cost, devotee_name ?? null, devotee_gotra ?? null],
+  );
+
+  console.log('[appointments.create]', { id: rows[0].id, astrologer_id, devotee_id: userId, duration, cost });
+  return rows[0];
+}
 
 /** GET / – list appointments. Admin sees all; Devotee sees own. */
 appointmentsRouter.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
@@ -21,6 +104,7 @@ appointmentsRouter.get('/', requireAuth, async (req: Request, res: Response, nex
     if (role === 'DEVOTEE') {
       conditions.push(`a.devotee_id = $${idx++}`);
       params.push(userId);
+      conditions.push(`a.payment_status = 'PAID'`);
     }
 
     if (status) { conditions.push(`a.status = $${idx++}`); params.push(status); }
@@ -99,52 +183,23 @@ appointmentsRouter.get('/:id', requireAuth, async (req: Request, res: Response, 
 
 /** POST / – book appointment */
 appointmentsRouter.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  const client = await pool.connect();
   try {
     const userId = req.headers['x-user-id'] as string;
-    const { astrologer_id, duration, scheduled_at, devotee_name, devotee_gotra } = req.body;
-
-    if (!astrologer_id || !duration || !scheduled_at) {
-      return res.status(400).json({ success: false, message: 'astrologer_id, duration, and scheduled_at are required' });
+    await client.query('BEGIN');
+    const row = await createAppointmentTx(client, req.body, userId);
+    await client.query('COMMIT');
+    const status = (row as any).idempotent_replay ? 200 : 201;
+    res.status(status).json({ success: true, data: row, ...(row as any).idempotent_replay ? { idempotent_replay: true } : {} });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err instanceof AppointmentBookingError) {
+      return res.status(err.status).json({ success: false, message: err.message });
     }
-
-    const validDurations = ['15min', '30min', '1hour', '2hour'];
-    if (!validDurations.includes(duration)) {
-      return res.status(400).json({ success: false, message: `duration must be one of: ${validDurations.join(', ')}` });
-    }
-
-    // Fetch astrologer pricing
-    const astResult = await pool.query(
-      `SELECT price_15min, price_30min, price_1hour, price_2hour FROM astrologers WHERE id = $1 AND is_active = true`,
-      [astrologer_id],
-    );
-    if (astResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Astrologer not found or inactive' });
-    }
-
-    const priceMap: Record<string, string> = {
-      '15min': 'price_15min',
-      '30min': 'price_30min',
-      '1hour': 'price_1hour',
-      '2hour': 'price_2hour',
-    };
-    const cost = Number(astResult.rows[0][priceMap[duration]]);
-    if (!Number.isFinite(cost) || cost <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Astrologer has no valid price configured for ${duration}. Please contact support.`,
-      });
-    }
-
-    const { rows } = await pool.query(
-      `INSERT INTO appointments (astrologer_id, devotee_id, duration, scheduled_at, cost, devotee_name, devotee_gotra)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [astrologer_id, userId, duration, scheduled_at, cost, devotee_name ?? null, devotee_gotra ?? null],
-    );
-
-    console.log('[appointments.create]', { id: rows[0].id, astrologer_id, devotee_id: userId, duration, cost });
-
-    res.status(201).json({ success: true, data: rows[0] });
-  } catch (err) { next(err); }
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 /** PATCH /:id/generate-link – generate meet link (admin) */

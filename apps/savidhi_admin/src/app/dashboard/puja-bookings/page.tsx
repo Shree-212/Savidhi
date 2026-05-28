@@ -308,6 +308,14 @@ function PujaBookingsPageInner() {
     }
   }, [expandedId, fetchBookings]);
 
+  // Bookings eligible for the sankalp video timestamp UI: not cancelled AND
+  // actually paid for. Mirrors the filter used by /reports so the sankalp
+  // modal and the puja-sankalp report list the same devotees. Without this,
+  // cancelled bookings and pre-deferred-flow ghost PENDING bookings (see
+  // migration 025 / payments.ts) leak into the admin timestamp UI.
+  const sankalpEligibleBookings = (((selectedEvent as any)?.bookingsData ?? []) as any[])
+    .filter((b) => b.status !== 'CANCELLED' && (b.payment_status == null || b.payment_status === 'PAID'));
+
   // PDF item 5b — when the Sankalp Video modal opens to REPLACE an existing
   // sankalp video, prefill the per-booking minute/second timestamps from the
   // booking rows (sankalp_video_timestamp is "MM:SS"). Without this the admin
@@ -315,7 +323,7 @@ function PujaBookingsPageInner() {
   useEffect(() => {
     if (!showSankalpModal || !selectedEvent?.bookingsData) return;
     const next: Record<string, { minute: string; second: string }> = {};
-    for (const b of selectedEvent.bookingsData as any[]) {
+    for (const b of sankalpEligibleBookings) {
       const ts = b.sankalp_video_timestamp;
       if (!ts) continue;
       const [m, s] = String(ts).split(':');
@@ -327,6 +335,7 @@ function PujaBookingsPageInner() {
     if ((selectedEvent as any).sankalp_video_url) {
       setSankalpVideoUrl((selectedEvent as any).sankalp_video_url);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSankalpModal, selectedEvent?.id, selectedEvent?.bookingsData]);
 
   // Mirror prefill for the Short Video replace modal.
@@ -1071,7 +1080,7 @@ function PujaBookingsPageInner() {
           </div>
           <h4 className="text-[10px] font-bold uppercase tracking-wider">Devotee Name Timestamp (per booking)</h4>
           <div className="overflow-y-auto pr-1 space-y-3 max-h-[40vh]">
-          {((selectedEvent as any)?.bookingsData ?? []).map((b: any) => (
+          {sankalpEligibleBookings.map((b: any) => (
             <div key={b.id} className="flex items-center gap-3">
               <div className="min-w-[12rem] flex-1">
                 <p className="text-xs text-foreground leading-tight">
