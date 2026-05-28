@@ -24,7 +24,7 @@ export default function RefundPolicyPage() {
       <P>
         Cancellation requests may be submitted through the Savidhi App, by email to{' '}
         <a className="text-primary-600 underline" href="mailto:support@savidhi.com">support@savidhi.com</a>,
-        or by phone/WhatsApp at +91 9455567776 / +91 8234567890.
+        or by phone/WhatsApp at +91 7505559358 / +91 9528811930.
       </P>
 
       <H2>Return &amp; Refund Policy</H2>

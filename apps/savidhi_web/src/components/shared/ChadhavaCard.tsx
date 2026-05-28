@@ -7,6 +7,7 @@ import type { Chadhava } from '@/data/models';
 import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { getRepeatLabel } from '@/lib/repeatLabel';
+import { trackEvent } from '@/lib/analytics';
 
 interface ChadhavaCardProps {
   chadhava: Chadhava;
@@ -16,7 +17,19 @@ export function ChadhavaCard({ chadhava }: ChadhavaCardProps) {
   const t = useT();
   const repeatLabel = getRepeatLabel(t, chadhava);
   return (
-    <Link href={`/chadhava/${chadhava.slug || chadhava.id}`} className="group block">
+    <Link
+      href={`/chadhava/${chadhava.slug || chadhava.id}`}
+      className="group block"
+      onClick={() =>
+        trackEvent('view_content', {
+          content_type: 'chadhava',
+          content_ids: [chadhava.slug || chadhava.id],
+          content_name: chadhava.name,
+          value: chadhava.startingPrice,
+          currency: 'INR',
+        })
+      }
+    >
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image

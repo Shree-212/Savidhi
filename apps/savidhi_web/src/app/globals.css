@@ -77,3 +77,22 @@
 @media (prefers-reduced-motion: reduce) {
   .petal-flow { animation: none; opacity: 0; }
 }
+
+/* Booking sheet entrance — slide up on mobile, slide in from right on desktop.
+ * Keyframes live here rather than in Tailwind config so the animation classes
+ * (sheet-slide-up / sheet-slide-in-right) can be referenced anywhere. */
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes sheet-slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+.sheet-slide-up       { animation: sheet-slide-up 0.28s ease; }
+@media (min-width: 1024px) {
+  .sheet-slide-up     { animation: sheet-slide-in-right 0.28s ease; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-slide-up     { animation: none; }
+}

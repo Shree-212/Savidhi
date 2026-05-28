@@ -19,11 +19,14 @@ function fmtCount(n: number): string {
   return String(n);
 }
 
+// Real human portraits replace the prior dicebear cartoons — the LP needs to
+// feel like real devotees, not avatars. Marketing will swap these for CDN
+// URLs once we have authentic photography rights.
 const FALLBACK_AVATARS = [
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Ram',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Sita',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Lakshmi',
+  'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?auto=compress&w=200&h=200&fit=crop',
+  'https://images.pexels.com/photos/415829/pexels-photo-415829.jpeg?auto=compress&w=200&h=200&fit=crop',
+  'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg?auto=compress&w=200&h=200&fit=crop',
+  'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&w=200&h=200&fit=crop',
 ];
 
 export function DevoteeProof({

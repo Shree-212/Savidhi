@@ -7,6 +7,7 @@ import type { Puja } from '@/data/models';
 import { normaliseMediaUrl, isLocalMediaUrl } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { getRepeatLabel } from '@/lib/repeatLabel';
+import { trackEvent } from '@/lib/analytics';
 
 interface PujaCardProps {
   puja: Puja;
@@ -25,7 +26,21 @@ export function PujaCard({ puja }: PujaCardProps) {
   const t = useT();
   const repeatLabel = getRepeatLabel(t, puja);
   return (
-    <Link href={`/puja/${puja.slug || puja.id}`} className="group block">
+    <Link
+      href={`/puja/${puja.slug || puja.id}`}
+      className="group block"
+      onClick={() =>
+        // Funnel signal — fired the moment the user opts in from a listing.
+        // Lets us measure how many puja-card impressions convert into LPVs.
+        trackEvent('view_content', {
+          content_type: 'puja',
+          content_ids: [puja.slug || puja.id],
+          content_name: puja.name,
+          value: puja.pricePerDevotee,
+          currency: 'INR',
+        })
+      }
+    >
       <div className="card overflow-hidden hover:shadow-md transition-shadow p-0">
         <div className="relative h-44 w-full">
           <Image
