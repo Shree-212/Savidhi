@@ -12,9 +12,16 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=https://api.savidhi.in
 ARG NEXT_PUBLIC_SITE_URL=https://savidhi.in
 ARG NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_Si94Pz0tKzoMFn
+# Meta Pixel + Google Analytics — inlined into the client bundle so the
+# layout.tsx Pixel/gtag script tags get injected and src/lib/analytics.ts
+# can dedup events with the server-side Conversions API.
+ARG NEXT_PUBLIC_META_PIXEL_ID=1312368787019472
+ARG NEXT_PUBLIC_GA4_ID=G-SYZ5R45M1S
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_RAZORPAY_KEY_ID=$NEXT_PUBLIC_RAZORPAY_KEY_ID
+ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
+ENV NEXT_PUBLIC_GA4_ID=$NEXT_PUBLIC_GA4_ID
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

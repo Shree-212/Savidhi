@@ -33,7 +33,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: rollover
-              image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v25
+              image: asia-south1-docker.pkg.dev/savidhi-prod/savidhi/booking-service:v31
               command:
                 - node
                 - -e
