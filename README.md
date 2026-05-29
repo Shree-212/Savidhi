@@ -1,606 +1,206 @@
 # Savidhi — Monorepo
 
-A full-stack monorepo powered by **Turborepo** containing:
+Savidhi is a temple-services platform: devotees discover and book pujas, chadhavas, and astrology consultations; pujaris perform them; admins run the catalog. The monorepo is a Turborepo with four apps (web, admin, mobile) talking to seven Express microservices behind one API gateway.
 
-| App | Type | Port | Description |
-|-----|------|------|-------------|
-| `savidhi_web` | Next.js 15 | 3001 | Public-facing web frontend |
-| `savidhi_admin` | Next.js 15 | 3002 | Admin / control panel |
-| `savidhi_mobile` | React Native 0.83 | 8081 (Metro) | iOS & Android mobile app |
-| `savidhi_backend` | Docker Microservices | 4000–4002 | API gateway + microservices |
+Live URLs (prod):
 
----
+| App | URL |
+|-----|-----|
+| Devotee web | https://savidhi.in |
+| Admin | https://admin.savidhi.in |
+| API gateway | https://api.savidhi.in |
 
-## Quick Start
-
-> Complete [Installation](#installation) and [Environment Variables](#environment-variables) first, then:
-
-**1. Start the backend (Docker):**
-```bash
-cd apps/savidhi_backend
-docker-compose up -d
-```
-
-**2. Start web apps (from repo root):**
-```bash
-npm run dev:web-only
-```
-
-**3. (Optional) Start mobile Metro:**
-```bash
-npm run mobile:metro
-```
-
-**Verify everything is running:**
-```bash
-curl http://localhost:3001            # savidhi_web    → HTTP 200
-curl http://localhost:3002            # savidhi_admin  → HTTP 307
-curl http://localhost:8081            # Metro bundler  → HTTP 200
-curl http://localhost:4000/health     # gateway        → {"status":"ok",...}
-curl http://localhost:4001/health     # auth           → {"status":"ok",...}
-curl http://localhost:4002/health     # user           → {"status":"ok",...}
-```
+Mobile app distribution is via App Store / Play Store (release-managed separately).
 
 ---
 
-## Table of Contents
-
-1. [Project Structure](#project-structure)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-4. [Environment Variables](#environment-variables)
-5. [Running the Apps](#running-the-apps)
-   - [savidhi\_web](#savidhi_web)
-   - [savidhi\_admin](#savidhi_admin)
-   - [savidhi\_mobile](#savidhi_mobile)
-   - [savidhi\_backend](#savidhi_backend)
-6. [Running Everything Together](#running-everything-together)
-7. [Backend Architecture](#backend-architecture)
-8. [Building for Production](#building-for-production)
-9. [Useful Scripts Reference](#useful-scripts-reference)
-10. [Troubleshooting](#troubleshooting)
-
----
-
-## Project Structure
+## Monorepo layout
 
 ```
 Savidhi/
-├── package.json          ← Root workspace (npm workspaces + Turborepo)
-├── turbo.json            ← Turborepo pipeline config
-├── tsconfig.json         ← Base TypeScript config
-└── apps/
-    ├── savidhi_web/      ← Next.js public web (port 3001)
-    │   └── src/
-    │       ├── app/          ← App Router pages & layouts
-    │       ├── components/   ← UI & shared components
-    │       ├── lib/          ← store, utils, types, config, constants
-    │       ├── hooks/        ← custom React hooks
-    │       └── styles/
-    ├── savidhi_admin/    ← Next.js admin panel (port 3002)
-    │   └── src/
-    │       ├── app/          ← login, dashboard pages
-    │       ├── components/   ← ui, layout, auth, dashboard
-    │       ├── contexts/     ← AuthContext
-    │       ├── lib/          ← api.ts, utils.ts, env.ts
-    │       └── types/
-    ├── savidhi_mobile/   ← React Native standalone app
-    │   └── app/
-    │       ├── screens/      ← Screen components
-    │       ├── navigation/   ← AppNavigator
-    │       ├── config/       ← env.ts, api-endpoints.ts
-    │       ├── utils/
-    │       └── types/
-    └── savidhi_backend/  ← Microservices orchestrator
-        ├── docker-compose.yml
-        ├── scripts/          ← setup.sh, start-dev.sh, stop-dev.sh
-        ├── migrations/       ← SQL migration files
-        ├── lib/              ← Shared backend utilities
-        └── services/
-            ├── auth-service/     ← JWT auth (port 4001)
-            ├── gateway-service/  ← API gateway (port 4000)
-            └── user-service/     ← User management (port 4002)
+├── package.json                ← npm workspaces + Turborepo
+├── turbo.json
+├── apps/
+│   ├── savidhi_web/            ← Next.js 15 (port 3001)
+│   ├── savidhi_admin/          ← Next.js 15 (port 3002)
+│   ├── savidhi_mobile/         ← React Native 0.83 (Metro: 8081)
+│   └── savidhi_backend/        ← Docker microservices
+│       ├── services/           ← 7 Express services (4000–4006)
+│       ├── migrations/         ← 001–027 SQL, auto-applied on first boot
+│       ├── docs/               ← Critical-flow docs (see below)
+│       ├── k8s/                ← Prod manifests (GKE)
+│       └── docker-compose.yml
+└── .claude/skills/             ← Deep-dive skill docs (cross-referenced below)
 ```
+
+| Service | Port | Owns |
+|---------|------|------|
+| `gateway-service` | 4000 | Routing, rate-limit, CORS |
+| `auth-service` | 4001 | JWT access+refresh, OTP (Twilio) |
+| `user-service` | 4002 | Devotee profile, addresses, family |
+| `catalog-service` | 4003 | Temples, pujas, chadhavas, deities, translations, panchang |
+| `booking-service` | 4004 | Bookings, Razorpay, Shiprocket, subscriptions, materializer |
+| `media-service` | 4005 | Image/video upload to MinIO (local) or GCS (prod) |
+| `notification-service` | 4006 | FCM push, Twilio SMS/WhatsApp, SMTP email |
 
 ---
 
 ## Prerequisites
 
-### All platforms
-
-| Tool | Minimum version | Install |
-|------|----------------|---------|
-| Node.js | 18.x | https://nodejs.org |
-| npm | 8.x | Bundled with Node.js |
-| Git | Any recent | https://git-scm.com |
-
-### Backend (Docker)
-
-| Tool | Notes |
-|------|-------|
-| Docker Desktop | https://www.docker.com/products/docker-desktop |
-| Docker Compose | Bundled with Docker Desktop |
-
-### iOS development (macOS only)
-
-| Tool | Notes |
-|------|-------|
-| Xcode 15+ | Install from App Store |
-| CocoaPods | `sudo gem install cocoapods` |
-| Xcode CLI tools | `xcode-select --install` |
-
-### Android development
-
-| Tool | Notes |
-|------|-------|
-| Android Studio | https://developer.android.com/studio |
-| Java 17 (JDK) | Bundled with Android Studio |
-| Android SDK (API 34+) | Install via Android Studio SDK Manager |
-
-> **Tip — React Native environment check:** After installing Xcode / Android Studio, run:
-> ```bash
-> npx react-native doctor
-> ```
-> This shows a full checklist and highlights anything missing.
+- **Node.js** 20+ (workspaces use npm 10)
+- **Docker Desktop** ≥ 4.0 — recommend giving it ≥ 6 GB RAM
+- **Xcode 15+** (mobile, iOS only) or **Android Studio + JDK 17** (mobile, Android only)
+- **`gh`** CLI (optional, for PR work)
 
 ---
 
-## Installation
+## Local quick start
 
-### 1 — Clone / enter the repo
-
-```bash
-cd /path/to/your/GitHub
-# project is already at ./Savidhi
-cd Savidhi
-```
-
-### 2 — Install root + web/admin workspace dependencies
-
-Run once from the **repo root**. This installs `savidhi_web` and `savidhi_admin`
-via npm workspaces, plus Turborepo and other root devDependencies.
+From a fresh clone:
 
 ```bash
+# 1. install JS deps for web + admin workspaces
 npm install
-```
 
-### 3 — Install mobile dependencies (standalone)
-
-`savidhi_mobile` is intentionally outside the workspace (React Native requires
-its own isolated `node_modules`).
-
-```bash
-cd apps/savidhi_mobile
-npm install
-cd ../..
-```
-
-### 4 — Install backend service dependencies
-
-Each microservice has its own `package.json`.
-
-```bash
-cd apps/savidhi_backend/services/auth-service    && npm install && cd ../../..
-cd apps/savidhi_backend/services/gateway-service && npm install && cd ../../..
-cd apps/savidhi_backend/services/user-service    && npm install && cd ../../..
-```
-
-Or run them all at once:
-
-```bash
-for svc in auth-service gateway-service user-service; do
-  (cd apps/savidhi_backend/services/$svc && npm install)
-done
-```
-
-### 5 — iOS native setup (first time only)
-
-```bash
-cd apps/savidhi_mobile/ios
-pod install
-cd ../../..
-```
-
-> **Note:** The `ios/` and `android/` native directories are generated the first
-> time you run `npx react-native run-ios` or `npx react-native run-android`.
-> If they don't exist yet, run:
-> ```bash
-> cd apps/savidhi_mobile
-> npx @react-native-community/cli init savidhi_mobile --skip-install
-> # then move the custom app/ files back in, and re-run pod install
-> ```
-
----
-
-## Environment Variables
-
-### `apps/savidhi_web`
-
-Copy the example and edit:
-
-```bash
-cp apps/savidhi_web/.env.local.example apps/savidhi_web/.env.local
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | API gateway base URL |
-
-### `apps/savidhi_admin`
-
-```bash
-cp apps/savidhi_admin/.env.local.example apps/savidhi_admin/.env.local
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | API gateway base URL |
-| `INTERNAL_GATEWAY_URL` | _(optional)_ | Docker-internal gateway URL |
-
-### `apps/savidhi_backend`
-
-```bash
+# 2. seed env files (defaults are safe for local; see notes in each file)
 cp apps/savidhi_backend/.env.example apps/savidhi_backend/.env
-# Edit the file and set strong values for JWT secrets
-```
+cp apps/savidhi_web/.env.local.example apps/savidhi_web/.env.local
+cp apps/savidhi_admin/.env.local.example apps/savidhi_admin/.env.local
 
-| Variable | Description |
-|----------|-------------|
-| `NODE_ENV` | `development` or `production` |
-| `POSTGRES_DB` | PostgreSQL database name |
-| `POSTGRES_USER` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | PostgreSQL password |
-| `JWT_ACCESS_SECRET` | Secret for signing access tokens (min 32 chars) |
-| `JWT_REFRESH_SECRET` | Secret for signing refresh tokens (min 32 chars) |
-| `CORS_ORIGIN` | Comma-separated list of allowed origins |
+# 3. boot the backend (postgres + redis + minio + 7 services)
+cd apps/savidhi_backend && docker-compose up -d && cd ../..
 
-> **Security:** Never commit `.env` or `.env.local` files to version control.
-> They are already in `.gitignore`.
-
----
-
-## Running the Apps
-
-### savidhi\_web
-
-**Development** (hot-reload on port 3001):
-
-```bash
-npm run dev:web
-# or, from the app directory:
-cd apps/savidhi_web && npm run dev
-```
-
-**Open:** http://localhost:3001
-
----
-
-### savidhi\_admin
-
-**Development** (hot-reload on port 3002):
-
-```bash
-npm run dev:admin
-# or, from the app directory:
-cd apps/savidhi_admin && npm run dev
-```
-
-**Open:** http://localhost:3002  
-Default redirect → http://localhost:3002/login → dashboard
-
----
-
-### savidhi\_mobile
-
-#### Start Metro bundler
-
-```bash
-npm run mobile:metro
-# or:
-cd apps/savidhi_mobile && npm start
-```
-
-#### Run on iOS (separate terminal)
-
-```bash
-npm run mobile:ios
-# or:
-cd apps/savidhi_mobile && npm run ios
-```
-
-#### Run on Android (separate terminal)
-
-Make sure an Android emulator is running (open Android Studio → Device Manager → Play),
-then:
-
-```bash
-npm run mobile:android
-# or:
-cd apps/savidhi_mobile && npm run android
-```
-
-#### Useful mobile commands
-
-```bash
-# Reset Metro cache
-cd apps/savidhi_mobile && npm run reset-cache
-
-# Clean build artefacts
-cd apps/savidhi_mobile && npm run clean
-
-# Run React Native environment doctor
-cd apps/savidhi_mobile && npx react-native doctor
-```
-
----
-
-### savidhi\_backend
-
-The backend runs entirely inside **Docker**. Make sure Docker Desktop is running.
-
-#### First-time setup
-
-```bash
-npm run backend:setup
-# copies .env.example → .env if not present, installs service deps
-```
-
-#### Start all services (detached)
-
-```bash
-npm run backend:dev
-# or directly:
-cd apps/savidhi_backend && docker-compose up -d
-```
-
-This spins up:
-
-| Container | Port | Description |
-|-----------|------|-------------|
-| `postgres` | 5432 | PostgreSQL 15 database |
-| `redis` | 6379 | Redis 7 cache |
-| `gateway-service` | 4000 | API gateway (entry point for all clients) |
-| `auth-service` | 4001 | JWT authentication |
-| `user-service` | 4002 | User management |
-
-#### Stop services
-
-```bash
-npm run backend:stop          # stop but keep containers
-npm run backend:stop -- --clean    # remove containers
-npm run backend:stop -- --clean --volumes  # also wipe DB volumes
-```
-
-#### Check service health
-
-```bash
-npm run backend:health
-# or check individually:
-curl http://localhost:4000/health   # gateway
-curl http://localhost:4001/health   # auth
-curl http://localhost:4002/health   # user
-```
-
-#### View logs
-
-```bash
-cd apps/savidhi_backend && docker-compose logs -f
-# Single service:
-docker-compose logs -f auth-service
-```
-
-#### Running a service locally (without Docker)
-
-```bash
-npm run backend:auth    # starts auth-service with tsx watch
-npm run backend:gateway # starts gateway-service
-npm run backend:user    # starts user-service
-```
-
-> **Note:** When running services locally (non-Docker), make sure PostgreSQL and
-> Redis are accessible on `localhost:5432` and `localhost:6379` respectively,
-> and create a `.env` in each service directory with the same variables.
-
----
-
-## Running Everything Together
-
-To run the two Next.js apps + mobile Metro bundler simultaneously:
-
-```bash
-npm run dev
-```
-
-To run only the web apps (no mobile Metro):
-
-```bash
+# 4. boot the web + admin Next.js apps
 npm run dev:web-only
 ```
 
-To run with mobile + iOS simulator:
+Verify (each should return immediately):
 
 ```bash
-npm run dev:ios
+curl -s http://localhost:3001               # web      → 200
+curl -s http://localhost:3002               # admin    → 307 (redirects to /login)
+curl -s http://localhost:4000/health        # gateway  → {"status":"ok",...}
+curl -s http://localhost:4001/health        # auth
+curl -s http://localhost:4003/health        # catalog
 ```
 
-To run with mobile + Android emulator:
+Mobile boot (separate terminal, after backend is up):
 
 ```bash
-npm run dev:android
+npm run mobile:metro                        # Metro bundler on 8081
+npm run mobile:ios                          # or mobile:android
 ```
 
-> **Backend is separate.** The backend must be started independently with
-> `npm run backend:dev`. The web/admin apps proxy all `/api/*` requests to
-> the gateway at `http://localhost:4000`.
+> Mobile uses a hardcoded `localhost:4000` (iOS) / `10.0.2.2:4000` (Android emulator) for dev — see [apps/savidhi_mobile/README.md](apps/savidhi_mobile/README.md) for LAN-IP override when running on a physical device.
+
+### Resetting the local DB
+
+Migrations 001–027 only auto-apply to a **clean** Postgres volume. After pulling new migrations, run:
+
+```bash
+bash apps/savidhi_backend/scripts/reset-db.sh
+```
+
+This destroys local data and replays everything from scratch.
 
 ---
 
-## Backend Architecture
+## Architecture at a glance
 
 ```
-Client (web / admin / mobile)
-         │
-         │  HTTP /api/v1/*
-         ▼
-  ┌─────────────────┐  port 4000
-  │  gateway-service│  ← rate limiting, CORS, routing
-  └────────┬────────┘
-           │
-     ┌─────┴──────┐
-     │            │
-     ▼            ▼
- auth-service   user-service
-  port 4001      port 4002
-     │
-     └─── postgres:5432
-          redis:6379
+  ┌───────────┐   ┌───────────┐   ┌───────────┐
+  │  web :3001│   │admin :3002│   │mobile (RN)│
+  └─────┬─────┘   └─────┬─────┘   └─────┬─────┘
+        └───── HTTPS/JSON ────────────────┘
+                       │
+              ┌────────▼────────┐
+              │ gateway :4000   │   rate limit + CORS + JWT verify
+              └────────┬────────┘
+        ┌───────┬──────┼──────┬───────┬────────┐
+        ▼       ▼      ▼      ▼       ▼        ▼
+     auth    user  catalog booking  media  notification
+     :4001  :4002  :4003   :4004    :4005     :4006
+        │      │      │      │        │         │
+        ├──────┴──────┴──────┴────────┘         │
+        │           Postgres :5432              │
+        │           Redis :6379                 │
+        │           MinIO :9000  (S3 local)     │
+        └──────────────────────────── FCM, Twilio, SMTP (when configured)
 ```
 
-### Adding a new microservice
-
-1. Create `apps/savidhi_backend/services/my-service/` with `package.json`, `tsconfig.json`, `Dockerfile`, and `src/index.ts`.
-2. Add the service to `docker-compose.yml` (copy an existing service block, update port/env).
-3. Add a proxy route in `gateway-service/src/index.ts`.
-4. Add an `npm run my-service:dev` script to `savidhi_backend/package.json`.
+External integrations: **Razorpay** (payments), **Shiprocket** (prasad shipping), **Prokerala** (panchang), **Google Cloud Translation** (en↔hi).
 
 ---
 
-## Building for Production
+## Critical flows
 
-### Next.js apps
+Each doc is short (≤100 lines) and points at the canonical code paths — the code stays the source of truth.
 
-```bash
-npm run build          # builds all workspace apps via Turborepo
-# or individually:
-cd apps/savidhi_web   && npm run build
-cd apps/savidhi_admin && npm run build
-```
-
-### Backend services (Docker)
-
-```bash
-cd apps/savidhi_backend && docker-compose build
-```
-
-For production deployment with a production compose file:
-
-```bash
-cd apps/savidhi_backend && docker-compose -f docker-compose.prod.yml up -d
-```
-
-### Mobile
-
-```bash
-# Android release APK
-cd apps/savidhi_mobile/android
-./gradlew bundleRelease
-
-# iOS archive — use Xcode → Product → Archive
-```
+| Flow | Doc | Touches |
+|------|-----|---------|
+| Deferred booking creation + materializer | [docs/booking-flow.md](apps/savidhi_backend/docs/booking-flow.md) | booking-service, migration 025 |
+| Razorpay order/verify/webhook + idempotency | [docs/razorpay-integration.md](apps/savidhi_backend/docs/razorpay-integration.md) | booking-service, web, mobile |
+| Shiprocket prasad shipping + webhook | [docs/shiprocket-integration.md](apps/savidhi_backend/docs/shiprocket-integration.md) | booking-service, migration 024 |
+| Background translation (en↔hi siblings) | [docs/translations.md](apps/savidhi_backend/docs/translations.md) | catalog-service, migrations 013/026/027 |
+| Subscription bookings + monthly rollover | [docs/subscriptions.md](apps/savidhi_backend/docs/subscriptions.md) | booking-service worker, migration 023 |
+| Auth — JWT access/refresh + OTP stub | [docs/auth.md](apps/savidhi_backend/docs/auth.md) | auth-service, all-service middleware |
+| Admin CRUD conventions | [docs/admin-crud.md](apps/savidhi_backend/docs/admin-crud.md) | savidhi_admin shared components |
+| Chadhava flow (no prasad shipping) | [docs/chadhava-flow.md](apps/savidhi_backend/docs/chadhava-flow.md) | catalog + booking services |
+| Notifications — FCM push + in-app | [docs/notifications.md](apps/savidhi_backend/docs/notifications.md) | notification-service, user-service |
 
 ---
 
-## Useful Scripts Reference
+## Per-app docs
 
-All scripts are run from the **repo root** unless noted.
+- [apps/savidhi_web/README.md](apps/savidhi_web/README.md) — devotee web (Next.js 15)
+- [apps/savidhi_admin/README.md](apps/savidhi_admin/README.md) — admin panel (Next.js 15)
+- [apps/savidhi_mobile/README.md](apps/savidhi_mobile/README.md) — devotee app (React Native 0.83)
+- [apps/savidhi_backend/README.md](apps/savidhi_backend/README.md) — 7 microservices, migrations, workers
 
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Web apps + mobile Metro (all together) |
-| `npm run dev:web-only` | savidhi_web + savidhi_admin only |
-| `npm run dev:web` | savidhi_web only |
-| `npm run dev:admin` | savidhi_admin only |
-| `npm run dev:ios` | Web + Metro + iOS simulator |
-| `npm run dev:android` | Web + Metro + Android emulator |
-| `npm run mobile:metro` | Start Metro bundler only |
-| `npm run mobile:ios` | Run app on iOS |
-| `npm run mobile:android` | Run app on Android |
-| `npm run backend:setup` | First-time backend setup |
-| `npm run backend:dev` | Start all backend Docker services |
-| `npm run backend:stop` | Stop backend Docker services |
-| `npm run backend:health` | Health check all services |
-| `npm run build` | Production build (all apps via Turbo) |
-| `npm run lint` | Lint all apps via Turbo |
-| `npm run test` | Test all apps via Turbo |
+For deep dives on architecture and conventions, see the skill files under `.claude/skills/` (e.g. `savidhi-db.md`, `savidhi-backend.md`, `savidhi-admin-flow.md`). They're maintained alongside this code and stay authoritative when this README is being terse.
+
+---
+
+## Production
+
+Production runs on GKE in `asia-south1` with Cloud SQL Postgres, Cloud NAT, and Cloud Storage. **Don't deploy from this README** — follow the runbook in the `/savidhi-gcp-deploy` skill (it has the pre-deploy gap list, the kubectl apply order, the secrets inventory, and the post-deploy verification). The k8s manifests themselves live in [apps/savidhi_backend/k8s/](apps/savidhi_backend/k8s/) with their own short [README](apps/savidhi_backend/k8s/README.md).
+
+Memory files used by automated runs:
+
+- `project_razorpay_creds.md` — Razorpay test keys
+- `project_shiprocket_creds.md` — Shiprocket panel + webhook secret
+- `project_gcp_account.md` — gcloud login, project, region
+- `savidhi_prod_migrations.md` — how to apply DB migrations against the private Cloud SQL instance
+
+---
+
+## Useful scripts
+
+| Script | What |
+|--------|------|
+| `npm install` | Install web + admin workspace deps |
+| `npm run dev:web-only` | Run web + admin (skip mobile) |
+| `npm run dev:ios` / `npm run dev:android` | Web + admin + mobile |
+| `npm run mobile:metro` | Metro bundler only |
+| `npm run mobile:ios` / `npm run mobile:android` | Build + boot native |
+| `npm run backend:dev` | Boot backend via docker-compose |
+| `npm run backend:stop` | Stop backend |
+| `npm run backend:health` | Curl /health on every service |
+| `bash apps/savidhi_backend/scripts/reset-db.sh` | Wipe local DB + replay all migrations |
+| `docker-compose logs -f gateway-service` | Tail one service |
 
 ---
 
 ## Troubleshooting
 
-### `next: command not found` in web/admin
+**Port already in use.** `lsof -i :4000` to find it, `kill -9 <pid>`, or change the port in `apps/savidhi_backend/docker-compose.yml`.
 
-Run `npm install` from the repo root. `next` is hoisted to the root
-`node_modules` by npm workspaces.
+**`docker-compose up` looks fine but new migration didn't apply.** Postgres only runs `/docker-entrypoint-initdb.d` on a clean volume. Run `bash apps/savidhi_backend/scripts/reset-db.sh`.
 
-### Metro bundler port conflict
+**`npm install` errors after `git pull`.** Delete `node_modules` at the root and in each workspace, then `npm install` again.
 
-If port 8081 is in use:
+**Docker out of memory.** Give Docker Desktop ≥ 6 GB RAM (Settings → Resources). The seven services + Postgres + Redis + MinIO use ~3 GB warm.
 
-```bash
-cd apps/savidhi_mobile && npm start -- --port 8082
-```
+**Mobile can't reach backend from physical device.** The `__DEV__` branch in `apps/savidhi_mobile/app/config/env.ts` points at `localhost`. On a real phone you need your laptop's LAN IP — see the mobile README.
 
-### `Unable to connect to Metro` on device/simulator
-
-Make sure Metro is running (`npm run mobile:metro`) and the device is on the
-same network. For Android emulator, check `adb reverse tcp:8081 tcp:8081`.
-
-### Backend services not starting
-
-1. Make sure Docker Desktop is running.
-2. Check `.env` exists: `ls apps/savidhi_backend/.env`
-3. View logs: `cd apps/savidhi_backend && docker-compose logs`
-
-### Backend containers crash immediately (`Cannot find module` or `tsx: not found`)
-
-The anonymous `node_modules` volume may be stale from an older image. Wipe all
-volumes and restart:
-
-```bash
-cd apps/savidhi_backend
-docker-compose down -v   # removes containers AND volumes
-docker-compose up -d     # fresh start — volumes seeded from new image
-```
-
-> The `-v` flag is safe for development; it only removes the postgres data
-> volume (which has no production data locally).
-
-### PostgreSQL port 5432 already in use
-
-Another local Postgres instance is running. Stop it or change the host port in
-`docker-compose.yml`:
-
-```yaml
-ports:
-  - "5433:5432"   # map to 5433 on host instead
-```
-
-Then update `DB_PORT=5433` in your services' env.
-
-### iOS build fails — `pod install` errors
-
-```bash
-cd apps/savidhi_mobile/ios
-pod deintegrate && pod install
-```
-
-If CocoaPods itself is not found: `sudo gem install cocoapods`
-
-### Android build fails — SDK not found
-
-In Android Studio → SDK Manager, make sure **Android SDK Platform 34** and
-**Android SDK Build-Tools 34** are installed. Set `ANDROID_HOME` in your
-shell profile:
-
-```bash
-# Add to ~/.zshrc
-export ANDROID_HOME=$HOME/Library/Android/sdk
-export PATH=$PATH:$ANDROID_HOME/emulator
-export PATH=$PATH:$ANDROID_HOME/platform-tools
-```
-
-Then reload: `source ~/.zshrc`
-
----
-
-> Built with Turborepo · Next.js · React Native · Express · PostgreSQL · Redis · Docker
+**`/auth/me` returns 401 on cold load.** Expected — the web app calls it before the refresh-token cookie is established. It's harmless console noise.
