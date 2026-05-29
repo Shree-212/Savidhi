@@ -100,9 +100,15 @@ astrologersRouter.post('/', requireAuth, requireAdmin('ADMIN'), async (req: Requ
         bank_name || null, ifsc || null, account_number || null,
         rating != null ? Number(rating) : 0],
     );
-    try { await translateAndUpdateAstrologer(pool, result.rows[0].id, req.body); } catch (e) { console.warn('[astrologers.post] translate failed', (e as Error).message); }
     const fresh = await pool.query(`SELECT * FROM astrologers WHERE id = $1`, [result.rows[0].id]);
     res.status(201).json({ success: true, data: fresh.rows[0], message: 'Astrologer created' });
+    // Translate off the request path (2026-05-29 admin-save-hang incident).
+    const createdId = result.rows[0].id;
+    setImmediate(() => {
+      translateAndUpdateAstrologer(pool, createdId, req.body).catch((e) =>
+        console.error('[astrologers.post] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) { next(err); }
 });
 
@@ -140,9 +146,13 @@ astrologersRouter.patch('/:id', requireAuth, requireAdmin('ADMIN'), async (req: 
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Astrologer not found' }); return; }
-    try { await translateAndUpdateAstrologer(pool, id, req.body); } catch (e) { console.warn('[astrologers.patch] translate failed', (e as Error).message); }
     const fresh = await pool.query(`SELECT * FROM astrologers WHERE id = $1`, [id]);
     res.json({ success: true, data: fresh.rows[0], message: 'Astrologer updated' });
+    setImmediate(() => {
+      translateAndUpdateAstrologer(pool, id, req.body).catch((e) =>
+        console.error('[astrologers.patch] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) { next(err); }
 });
 

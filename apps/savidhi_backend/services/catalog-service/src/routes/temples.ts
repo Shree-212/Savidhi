@@ -105,12 +105,15 @@ templesRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), a
       [name, slug || null, address, pincode, google_map_link, about, history_and_significance, sample_video_url, slider_images || []]
     );
     const created = result.rows[0];
-    await translateAndUpdateTemple(client, created.id, req.body).catch((e) =>
-      console.error('[temples] translate-on-create failed:', e),
-    );
     await client.query('COMMIT');
     const fresh = await pool.query('SELECT * FROM temples WHERE id = $1', [created.id]);
     res.status(201).json({ success: true, data: fresh.rows[0], message: 'Temple created' });
+    // Translate off the request path (2026-05-29 admin-save-hang incident).
+    setImmediate(() => {
+      translateAndUpdateTemple(pool, created.id, req.body).catch((e) =>
+        console.error('[temples.post] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     next(err);
@@ -169,15 +172,15 @@ templesRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
       }
     }
 
-    // Re-translate any English fields touched in this PATCH.
-    await translateAndUpdateTemple(client, id, req.body).catch((e) =>
-      console.error('[temples] translate-on-update failed:', e),
-    );
-
     const finalResult = await client.query(`SELECT * FROM temples WHERE id = $1`, [id]);
     await client.query('COMMIT');
 
     res.json({ success: true, data: finalResult.rows[0], message: 'Temple updated' });
+    setImmediate(() => {
+      translateAndUpdateTemple(pool, id, req.body).catch((e) =>
+        console.error('[temples.patch] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);

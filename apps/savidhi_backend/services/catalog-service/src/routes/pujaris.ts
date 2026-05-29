@@ -98,10 +98,15 @@ pujarisRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), a
         bank_name || null, ifsc || null, account_number || null,
         rating != null ? Number(rating) : 0],
     );
-    // Best-effort Hindi sibling write — see translateAndUpdatePujari for rationale.
-    try { await translateAndUpdatePujari(pool, result.rows[0].id, req.body); } catch (e) { console.warn('[pujaris.post] translate failed', (e as Error).message); }
     const fresh = await pool.query(`SELECT * FROM pujaris WHERE id = $1`, [result.rows[0].id]);
     res.status(201).json({ success: true, data: fresh.rows[0], message: 'Pujari created' });
+    // Translate off the request path (2026-05-29 admin-save-hang incident).
+    const createdId = result.rows[0].id;
+    setImmediate(() => {
+      translateAndUpdatePujari(pool, createdId, req.body).catch((e) =>
+        console.error('[pujaris.post] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) { next(err); }
 });
 
@@ -137,9 +142,13 @@ pujarisRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'
     );
 
     if (result.rows.length === 0) { res.status(404).json({ success: false, message: 'Pujari not found' }); return; }
-    try { await translateAndUpdatePujari(pool, id, req.body); } catch (e) { console.warn('[pujaris.patch] translate failed', (e as Error).message); }
     const fresh = await pool.query(`SELECT * FROM pujaris WHERE id = $1`, [id]);
     res.json({ success: true, data: fresh.rows[0], message: 'Pujari updated' });
+    setImmediate(() => {
+      translateAndUpdatePujari(pool, id, req.body).catch((e) =>
+        console.error('[pujaris.patch] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) { next(err); }
 });
 

@@ -228,16 +228,21 @@ pujasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'), asy
     );
     const created = result.rows[0];
 
-    // Translate-on-write — best-effort, doesn't block the create.
-    await translateAndUpdatePuja(client, created.id, req.body).catch((e) =>
-      console.error('[pujas] translate-on-create failed:', e),
-    );
-
     await client.query('COMMIT');
 
-    // Re-read so the response includes any auto-translated _hi columns.
+    // Re-read so the response includes the canonical row. `_hi` siblings will
+    // populate within a few seconds via the background translate below; in
+    // the meantime `applyLocale` falls back to the canonical column.
     const fresh = await pool.query('SELECT * FROM pujas WHERE id = $1', [created.id]);
     res.status(201).json({ success: true, data: fresh.rows[0], message: 'Puja created' });
+
+    // Best-effort translate-on-write, off the request path. See pujas.patch
+    // for the full rationale on why the await was removed.
+    setImmediate(() => {
+      translateAndUpdatePuja(null, created.id, req.body).catch((e) =>
+        console.error('[pujas.post] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     next(err);
@@ -284,15 +289,26 @@ pujasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
       return;
     }
 
-    // Re-translate any English fields that were touched in this PATCH.
-    await translateAndUpdatePuja(client, id, req.body).catch((e) =>
-      console.error('[pujas] translate-on-update failed:', e),
-    );
-
     await client.query('COMMIT');
 
     const fresh = await pool.query('SELECT * FROM pujas WHERE id = $1', [id]);
     res.json({ success: true, data: fresh.rows[0], message: 'Puja updated' });
+
+    // Translate `_en`/`_hi` siblings off the request path. The canonical column
+    // is already committed; this background pass refreshes the localized
+    // variants. Decoupling protects the admin save from any Translation API or
+    // GKE metadata-server flakiness — see the 2026-05-29 admin-save-hang
+    // incident, where the metadata server churn caused PATCH to hang for
+    // GKE-LB-timeout (60s) → 502, while also leaking the pooled DB client
+    // because `finally` never ran. With the await removed the client always
+    // releases on time and the response is sent immediately. The siblings
+    // refresh within a few seconds; `applyLocale` falls back to the canonical
+    // in the meantime so devotees never see blanks.
+    setImmediate(() => {
+      translateAndUpdatePuja(null, id, req.body).catch((e) =>
+        console.error('[pujas.patch] background translate failed:', (e as Error).message),
+      );
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     next(err);

@@ -292,19 +292,11 @@ chadhavasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
       await insertOfferings(client, created.id, offerings);
     }
 
-    // Translate-on-write — best-effort.
-    await translateAndUpdateChadhava(client, created.id, req.body).catch((e) =>
-      console.error('[chadhavas] translate-on-create failed:', e),
-    );
-    if (offerings.length > 0) {
-      await translateAllOfferingsForChadhava(client, created.id).catch((e) =>
-        console.error('[chadhavas] offerings translate failed:', e),
-      );
-    }
-
     await client.query('COMMIT');
 
-    // Re-fetch with offerings for the response
+    // Re-fetch with offerings for the response. `_hi` siblings populate via
+    // the background translate below — `applyLocale` falls back to canonical
+    // in the meantime, so devotees never see blanks.
     const fresh = await pool.query('SELECT * FROM chadhavas WHERE id = $1', [created.id]);
     const offeringsRows = await pool.query(
       'SELECT * FROM chadhava_offerings WHERE chadhava_id = $1 ORDER BY sort_order',
@@ -314,6 +306,23 @@ chadhavasRouter.post('/', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGER'),
       success: true,
       data: { ...fresh.rows[0], offerings: offeringsRows.rows },
       message: 'Chadhava created',
+    });
+
+    // Translate off the request path — see pujas.patch for the rationale on
+    // why the previous `await` was removed (2026-05-29 admin-save-hang
+    // incident: Translation API hang held the DB client + tripped the
+    // GKE-LB 60s timeout → 502).
+    const createdId = created.id;
+    const hasOfferings = offerings.length > 0;
+    setImmediate(() => {
+      translateAndUpdateChadhava(null, createdId, req.body).catch((e) =>
+        console.error('[chadhavas.post] background translate failed:', (e as Error).message),
+      );
+      if (hasOfferings) {
+        translateAllOfferingsForChadhava(pool, createdId).catch((e) =>
+          console.error('[chadhavas.post] background offerings translate failed:', (e as Error).message),
+        );
+      }
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
@@ -431,16 +440,6 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
       }
     }
 
-    // Translate any updated English fields + (re)translate offerings if they changed.
-    await translateAndUpdateChadhava(client, id, req.body).catch((e) =>
-      console.error('[chadhavas] translate-on-update failed:', e),
-    );
-    if (Array.isArray(req.body.offerings)) {
-      await translateAllOfferingsForChadhava(client, id).catch((e) =>
-        console.error('[chadhavas] offerings translate failed:', e),
-      );
-    }
-
     await client.query('COMMIT');
 
     const fresh = await pool.query('SELECT * FROM chadhavas WHERE id = $1', [id]);
@@ -452,6 +451,20 @@ chadhavasRouter.patch('/:id', requireAuth, requireAdmin('ADMIN', 'BOOKING_MANAGE
       success: true,
       data: { ...fresh.rows[0], offerings: offeringsRows.rows },
       message: 'Chadhava updated',
+    });
+
+    // Translate off the request path — see pujas.patch for the rationale.
+    // (2026-05-29 admin-save-hang incident.)
+    const reTranslateOfferings = Array.isArray(req.body.offerings);
+    setImmediate(() => {
+      translateAndUpdateChadhava(null, id, req.body).catch((e) =>
+        console.error('[chadhavas.patch] background translate failed:', (e as Error).message),
+      );
+      if (reTranslateOfferings) {
+        translateAllOfferingsForChadhava(pool, id).catch((e) =>
+          console.error('[chadhavas.patch] background offerings translate failed:', (e as Error).message),
+        );
+      }
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
