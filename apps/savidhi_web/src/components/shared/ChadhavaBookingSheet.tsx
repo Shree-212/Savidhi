@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { chadhavaEventService, paymentService } from '@/lib/services';
 import { getAccessToken } from '@/lib/auth';
 import { loadRazorpay, openCheckout } from '@/lib/razorpay';
-import { trackEvent } from '@/lib/analytics';
+import { trackEvent, generateEventId } from '@/lib/analytics';
 import { AuthSheet } from '@/components/shared/AuthSheet';
 
 interface ChadhavaEvent {
@@ -139,6 +139,10 @@ export function ChadhavaBookingSheet({
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }, [open]);
 
+  // Meta Pixel + CAPI dedup id for the Purchase event (shared between the
+  // browser Pixel fire and the server-side CAPI Purchase).
+  const purchaseEventId = useMemo(() => (open ? generateEventId() : ''), [open]);
+
   const offerings: Offering[] = (chadhavaRaw.offerings ?? []).map((o) => ({
     id: o.id,
     name: o.item_name ?? o.name ?? '',
@@ -207,6 +211,7 @@ export function ChadhavaBookingSheet({
         booking_type: 'CHADHAVA',
         booking_payload: bookingPayload,
         booking_idempotency_key: idempotencyKey,
+        meta_event_ids: { purchase: purchaseEventId },
       });
       const pay = orderRes.data?.data;
       if (!pay?.gateway_order_id) throw new Error('Could not start payment');
@@ -229,7 +234,7 @@ export function ChadhavaBookingSheet({
           value: totalPrice,
           currency: 'INR',
           transaction_id: verifiedBooking.id,
-        });
+        }, { eventId: purchaseEventId, pixelOnly: true });
         advance();
         return;
       }
@@ -261,7 +266,7 @@ export function ChadhavaBookingSheet({
               value: totalPrice,
               currency: 'INR',
               transaction_id: verifiedBooking.id,
-            });
+            }, { eventId: purchaseEventId, pixelOnly: true });
             advance();
           } catch (verifyErr) {
             const e = verifyErr as { response?: { data?: { message?: string } } };

@@ -84,6 +84,7 @@ Migrations 001–027 are plain SQL files in [`migrations/`](migrations/). On a *
 - `024_shiprocket_shipments.sql` — Shipment tracking columns + tables.
 - `025_defer_booking_creation.sql` — Booking row materialized only after payment verified.
 - `026_translations_extended.sql`, `027_translations_en_siblings.sql` — Bidirectional `_en`/`_hi` sibling columns on every catalog table.
+- `028_meta_event_ids.sql` — `payments.meta_event_ids JSONB` for Meta Pixel ↔ CAPI Purchase dedup.
 
 **Note: there is no `007_*.sql`.** Sequence jumps 006 → 008. Originally an abandoned change; intentional gap.
 
@@ -134,6 +135,7 @@ Short reference docs that lead with intent and link straight to the code. Read t
 | [admin-crud.md](docs/admin-crud.md) | Soft-delete, audit toast, apiClient rule |
 | [chadhava-flow.md](docs/chadhava-flow.md) | Chadhavas vs pujas; why no shipping |
 | [notifications.md](docs/notifications.md) | FCM push, in-app, broadcast |
+| [meta-tracking.md](docs/meta-tracking.md) | Meta Pixel + Conversions API with event_id dedup |
 
 For wider architecture + DB conventions, see `.claude/skills/savidhi-backend.md` and `savidhi-db.md`.
 

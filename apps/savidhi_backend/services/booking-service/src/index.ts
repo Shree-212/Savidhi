@@ -13,6 +13,7 @@ import { paymentsRouter } from './routes/payments';
 import { dashboardRouter } from './routes/dashboard';
 import { reportsRouter } from './routes/reports';
 import { shiprocketWebhookRouter } from './routes/shiprocketWebhook';
+import { trackingRouter } from './routes/tracking';
 import { startAppointmentAutoCompleteWorker } from './workers/appointmentAutoComplete';
 import { startExpirePendingPaymentsWorker } from './workers/expirePendingPayments';
 
@@ -55,6 +56,9 @@ app.use('/api/v1/bookings/appointments', appointmentsRouter);
 app.use('/api/v1/bookings/payments', paymentsRouter);
 app.use('/api/v1/bookings/dashboard', dashboardRouter);
 app.use('/api/v1/bookings/reports', reportsRouter);
+// Meta CAPI proxy for client-fired events (ViewContent / AddToCart /
+// InitiateCheckout). Purchase is fired inside the payment lifecycle above.
+app.use('/api/v1/bookings/tracking', trackingRouter);
 
 // Shiprocket pushes status updates here. Mounted as `/courier` (NOT
 // `/shiprocket`) because the Shiprocket panel rejects webhook URLs that

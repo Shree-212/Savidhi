@@ -176,6 +176,11 @@ services:
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      # Meta Conversions API (server-side sibling for the browser Pixel).
+      # Silent no-op when token unset, so local boot works without creds.
+      META_PIXEL_ID: ${META_PIXEL_ID:-}
+      META_CAPI_ACCESS_TOKEN: ${META_CAPI_ACCESS_TOKEN:-}
+      META_TEST_EVENT_CODE: ${META_TEST_EVENT_CODE:-TEST58456}
       NOTIFICATION_SERVICE_URL: http://notification-service:4006
     depends_on:
       - postgres

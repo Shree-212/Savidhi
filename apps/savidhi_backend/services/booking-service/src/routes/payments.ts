@@ -13,6 +13,7 @@ import {
   bookingErrorStatus,
   previewBookingAmount,
 } from '../lib/materializeBooking';
+import { sendCapiEventAsync } from '../lib/metaCapi';
 
 export const paymentsRouter = Router();
 
@@ -34,6 +35,58 @@ function paymentsForceStub(): boolean {
 
 const VALID_BOOKING_TYPES = ['PUJA', 'CHADHAVA', 'APPOINTMENT'] as const;
 type BookingType = typeof VALID_BOOKING_TYPES[number];
+
+/**
+ * Fire CAPI Purchase after a payment is verified. Best-effort, fire-and-
+ * forget: never blocks the response, never throws. Uses the stored
+ * meta_event_ids.purchase as the dedup key against the browser Pixel.
+ */
+async function fireCapiPurchase(payment: any, bookingId: string): Promise<void> {
+  try {
+    const eventId =
+      (payment?.meta_event_ids?.purchase as string | undefined)
+      ?? (payment?.gateway_order_id as string | undefined)
+      ?? `purchase_${payment.id}`;
+
+    // Look up devotee identifiers for advanced matching. Best-effort.
+    let dev: { email?: string | null; phone?: string | null; name?: string | null } = {};
+    try {
+      dev = (await pool.query(
+        `SELECT email, phone, name FROM devotees WHERE id = $1`,
+        [payment.devotee_id],
+      )).rows[0] ?? {};
+    } catch (err: any) {
+      console.warn('[payments.fireCapiPurchase] devotee lookup failed',
+        { devotee_id: payment.devotee_id, message: err?.message });
+    }
+
+    const nameParts = String(dev.name ?? '').trim().split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] ?? null;
+    const lastName = nameParts.slice(1).join(' ') || null;
+
+    sendCapiEventAsync({
+      event_name: 'Purchase',
+      event_id: eventId,
+      action_source: 'website',
+      user: {
+        externalId: payment.devotee_id,
+        email: dev.email ?? null,
+        phone: dev.phone ?? null,
+        firstName,
+        lastName,
+      },
+      custom: {
+        value: Number(payment.amount ?? 0),
+        currency: 'INR',
+        content_type: payment.booking_type === 'APPOINTMENT' ? 'product' : 'product',
+        content_ids: [bookingId],
+        order_id: payment.gateway_order_id ?? payment.id,
+      },
+    });
+  } catch (err: any) {
+    console.warn('[payments.fireCapiPurchase] unexpected error', { message: err?.message });
+  }
+}
 
 /**
  * POST /create-order
@@ -58,6 +111,11 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       booking_type,
       booking_payload,
       booking_idempotency_key,
+      // Optional: Meta Pixel/CAPI event_ids the client used for ViewContent /
+      // AddToCart / InitiateCheckout / Purchase. Stashed on the payments row
+      // so the server-side CAPI Purchase fire (in /verify and the webhook)
+      // can re-use the same event_id the browser used and Meta dedups.
+      meta_event_ids,
       // Legacy shape — used by the mobile app (which still creates the booking
       // row before calling create-order). Once mobile is migrated to the
       // deferred flow these can be removed.
@@ -67,6 +125,7 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
       booking_type?: string;
       booking_payload?: Record<string, unknown>;
       booking_idempotency_key?: string;
+      meta_event_ids?: Record<string, string>;
       booking_id?: string;
       amount?: number;
     };
@@ -245,9 +304,9 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
     const { rows } = await pool.query(
       `INSERT INTO payments (
          booking_type, booking_id, devotee_id, amount, gateway_order_id, gateway,
-         idempotency_key, booking_payload, booking_idempotency_key
+         idempotency_key, booking_payload, booking_idempotency_key, meta_event_ids
        )
-       VALUES ($1, $2, $3, $4, $5, 'RAZORPAY', $6, $7, $8) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, 'RAZORPAY', $6, $7, $8, $9) RETURNING *`,
       [
         booking_type,
         isDeferredFlow ? null : legacyBookingId,
@@ -257,6 +316,9 @@ paymentsRouter.post('/create-order', requireAuth, async (req: Request, res: Resp
         idempotencyKey,
         isDeferredFlow ? JSON.stringify(booking_payload) : null,
         isDeferredFlow ? booking_idempotency_key : null,
+        meta_event_ids && typeof meta_event_ids === 'object'
+          ? JSON.stringify(meta_event_ids)
+          : null,
       ],
     );
 
@@ -444,6 +506,11 @@ paymentsRouter.post('/verify', requireAuth, async (req: Request, res: Response, 
     await client.query('COMMIT');
 
     console.log('[payments.verify] CAPTURED', { payment_id, booking_type: payment.booking_type, booking_id: booking.id });
+
+    // Fire Meta CAPI Purchase. Best-effort, runs on next tick (setImmediate
+    // inside sendCapiEventAsync) so the response goes out first.
+    void fireCapiPurchase(paymentRows[0], booking.id);
+
     res.json({ success: true, data: { payment: paymentRows[0], booking } });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -590,6 +657,17 @@ paymentsRouter.post('/razorpay/webhook', async (req: Request, res: Response) => 
 
         await client.query('COMMIT');
         console.log('[razorpay webhook] CAPTURED via webhook', { payment_id: pay.id, booking_type: pay.booking_type, booking_id: booking.id });
+
+        // Re-fetch the payment row so meta_event_ids is fresh, then fire CAPI
+        // Purchase. /verify and the webhook race — whichever wins runs this;
+        // the other returns early at the 'already CAPTURED' check above.
+        try {
+          const finalPay = (await pool.query(
+            `SELECT * FROM payments WHERE id = $1`,
+            [pay.id],
+          )).rows[0];
+          if (finalPay) void fireCapiPurchase(finalPay, booking.id);
+        } catch { /* ignore */ }
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;

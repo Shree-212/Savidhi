@@ -126,6 +126,19 @@ export const paymentService = {
     booking_type: 'PUJA' | 'CHADHAVA' | 'APPOINTMENT';
     booking_payload: Record<string, unknown>;
     booking_idempotency_key: string;
+    /**
+     * Meta Pixel + CAPI event_ids the client used. Stashed on the payments
+     * row so the server-side CAPI Purchase (fired in /verify and webhook)
+     * uses the same id as the browser Pixel — Meta dedups on event_id.
+     * Only `purchase` is read by the server; the others are stored for
+     * audit / future use.
+     */
+    meta_event_ids?: {
+      view_content?: string;
+      add_to_cart?: string;
+      initiate_checkout?: string;
+      purchase: string;
+    };
   }) => api.post('/bookings/payments/create-order', data),
   verify: (data: {
     payment_id: string;

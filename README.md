@@ -147,6 +147,7 @@ Each doc is short (≤100 lines) and points at the canonical code paths — the 
 | Admin CRUD conventions | [docs/admin-crud.md](apps/savidhi_backend/docs/admin-crud.md) | savidhi_admin shared components |
 | Chadhava flow (no prasad shipping) | [docs/chadhava-flow.md](apps/savidhi_backend/docs/chadhava-flow.md) | catalog + booking services |
 | Notifications — FCM push + in-app | [docs/notifications.md](apps/savidhi_backend/docs/notifications.md) | notification-service, user-service |
+| Meta Pixel + Conversions API tracking | [docs/meta-tracking.md](apps/savidhi_backend/docs/meta-tracking.md) | booking-service, web (Pixel + CAPI dedup) |
 
 ---
 

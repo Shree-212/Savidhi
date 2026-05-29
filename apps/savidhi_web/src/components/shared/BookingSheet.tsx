@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { paymentService, pujaEventService } from '@/lib/services';
 import { getAccessToken } from '@/lib/auth';
 import { loadRazorpay, openCheckout } from '@/lib/razorpay';
-import { trackEvent } from '@/lib/analytics';
+import { trackEvent, generateEventId } from '@/lib/analytics';
 import { AuthSheet } from '@/components/shared/AuthSheet';
 
 interface PujaEvent {
@@ -172,6 +172,12 @@ export function BookingSheet({
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }, [open]);
 
+  // Meta Pixel + CAPI dedup id for the Purchase event. Generated once per
+  // sheet open and shared between the browser Pixel fire (after Razorpay
+  // success) and the server-side CAPI Purchase (fired from /verify and
+  // the webhook against payments.meta_event_ids.purchase).
+  const purchaseEventId = useMemo(() => (open ? generateEventId() : ''), [open]);
+
   const priceField = DEVOTEE_TIER_OPTIONS.find((o) => o.count === devoteeCount)?.priceField ?? 'price_for_1';
   const unitPrice = Number(pujaRaw[priceField] ?? pujaRaw.price_for_1 ?? 0);
   const totalPrice = unitPrice;
@@ -240,6 +246,7 @@ export function BookingSheet({
         booking_type: 'PUJA',
         booking_payload: bookingPayload,
         booking_idempotency_key: idempotencyKey,
+        meta_event_ids: { purchase: purchaseEventId },
       });
       const pay = orderRes.data?.data;
       if (!pay?.gateway_order_id) throw new Error('Could not start payment');
@@ -262,7 +269,7 @@ export function BookingSheet({
           value: totalPrice,
           currency: 'INR',
           transaction_id: verifiedBooking.id,
-        });
+        }, { eventId: purchaseEventId, pixelOnly: true });
         advance();
         return;
       }
@@ -294,7 +301,7 @@ export function BookingSheet({
               value: totalPrice,
               currency: 'INR',
               transaction_id: verifiedBooking.id,
-            });
+            }, { eventId: purchaseEventId, pixelOnly: true });
             advance();
           } catch (verifyErr) {
             const e = verifyErr as { response?: { data?: { message?: string } } };

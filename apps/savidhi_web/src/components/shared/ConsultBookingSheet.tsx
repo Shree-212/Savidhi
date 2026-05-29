@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { paymentService } from '@/lib/services';
 import { getAccessToken } from '@/lib/auth';
 import { loadRazorpay, openCheckout } from '@/lib/razorpay';
-import { trackEvent } from '@/lib/analytics';
+import { trackEvent, generateEventId } from '@/lib/analytics';
 import { AuthSheet } from '@/components/shared/AuthSheet';
 import type { AppointmentDuration, DurationOption } from '@/data/models';
 
@@ -98,6 +98,10 @@ export function ConsultBookingSheet({
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }, [open]);
 
+  // Meta Pixel + CAPI dedup id for the Purchase event (shared between the
+  // browser Pixel fire and the server-side CAPI Purchase).
+  const purchaseEventId = useMemo(() => (open ? generateEventId() : ''), [open]);
+
   const price = durations.find((d) => d.key === selected)?.price ?? 0;
   const selectedLabel = durations.find((d) => d.key === selected)?.label ?? '';
 
@@ -137,6 +141,7 @@ export function ConsultBookingSheet({
         booking_type: 'APPOINTMENT',
         booking_payload: bookingPayload,
         booking_idempotency_key: idempotencyKey,
+        meta_event_ids: { purchase: purchaseEventId },
       });
       const pay = orderRes.data?.data;
       if (!pay?.gateway_order_id) throw new Error('Could not start payment');
@@ -159,7 +164,7 @@ export function ConsultBookingSheet({
           value: price,
           currency: 'INR',
           transaction_id: verifiedAppt.id,
-        });
+        }, { eventId: purchaseEventId, pixelOnly: true });
         advance();
         return;
       }
@@ -189,7 +194,7 @@ export function ConsultBookingSheet({
               value: price,
               currency: 'INR',
               transaction_id: verifiedAppt.id,
-            });
+            }, { eventId: purchaseEventId, pixelOnly: true });
             advance();
           } catch (verifyErr) {
             const e = verifyErr as { response?: { data?: { message?: string } } };
