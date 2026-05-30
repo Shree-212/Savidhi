@@ -33,7 +33,8 @@ export function PujaCard({ puja }: PujaCardProps) {
         // Funnel signal — fired the moment the user opts in from a listing.
         // Lets us measure how many puja-card impressions convert into LPVs.
         trackEvent('view_content', {
-          content_type: 'puja',
+          content_type: 'product',
+          content_category: 'puja',
           content_ids: [puja.slug || puja.id],
           content_name: puja.name,
           value: puja.pricePerDevotee,

@@ -107,7 +107,8 @@ export function BookingSheet({
     setConfirmedId(null);
     setDevoteeCount(initialDevoteeCount);
     trackEvent('add_to_cart', {
-      content_type: 'puja',
+      content_type: 'product',
+      content_category: 'puja',
       content_ids: [pujaRaw.slug || pujaId],
       content_name: pujaName,
       devotee_count: initialDevoteeCount,
@@ -209,7 +210,8 @@ export function BookingSheet({
       setError('');
 
       trackEvent('initiate_checkout', {
-        content_type: 'puja',
+        content_type: 'product',
+        content_category: 'puja',
         content_ids: [pujaRaw.slug || pujaId],
         content_name: pujaName,
         devotee_count: devoteeCount,
@@ -263,7 +265,8 @@ export function BookingSheet({
         if (!verifiedBooking?.id) throw new Error('Booking materialization failed');
         setConfirmedId(verifiedBooking.id);
         trackEvent('purchase', {
-          content_type: 'puja',
+          content_type: 'product',
+          content_category: 'puja',
           content_ids: [pujaRaw.slug || pujaId],
           content_name: pujaName,
           value: totalPrice,
@@ -295,7 +298,8 @@ export function BookingSheet({
             if (!verifiedBooking?.id) throw new Error('Booking confirmation failed');
             setConfirmedId(verifiedBooking.id);
             trackEvent('purchase', {
-              content_type: 'puja',
+              content_type: 'product',
+              content_category: 'puja',
               content_ids: [pujaRaw.slug || pujaId],
               content_name: pujaName,
               value: totalPrice,

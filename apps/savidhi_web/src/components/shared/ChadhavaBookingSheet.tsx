@@ -93,7 +93,8 @@ export function ChadhavaBookingSheet({
     setConfirmedId(null);
     setOfferingsQty(initialOfferings ?? {});
     trackEvent('add_to_cart', {
-      content_type: 'chadhava',
+      content_type: 'product',
+      content_category: 'chadhava',
       content_ids: [chadhavaRaw.slug || chadhavaId],
       content_name: chadhavaName,
       offerings: initialOfferings ? Object.entries(initialOfferings).map(([id, q]) => ({ id, q })) : [],
@@ -188,7 +189,8 @@ export function ChadhavaBookingSheet({
       setError('');
 
       trackEvent('initiate_checkout', {
-        content_type: 'chadhava',
+        content_type: 'product',
+        content_category: 'chadhava',
         content_ids: [chadhavaRaw.slug || chadhavaId],
         content_name: chadhavaName,
         value: totalPrice,
@@ -228,7 +230,8 @@ export function ChadhavaBookingSheet({
         if (!verifiedBooking?.id) throw new Error('Booking materialization failed');
         setConfirmedId(verifiedBooking.id);
         trackEvent('purchase', {
-          content_type: 'chadhava',
+          content_type: 'product',
+          content_category: 'chadhava',
           content_ids: [chadhavaRaw.slug || chadhavaId],
           content_name: chadhavaName,
           value: totalPrice,
@@ -260,7 +263,8 @@ export function ChadhavaBookingSheet({
             if (!verifiedBooking?.id) throw new Error('Booking confirmation failed');
             setConfirmedId(verifiedBooking.id);
             trackEvent('purchase', {
-              content_type: 'chadhava',
+              content_type: 'product',
+              content_category: 'chadhava',
               content_ids: [chadhavaRaw.slug || chadhavaId],
               content_name: chadhavaName,
               value: totalPrice,

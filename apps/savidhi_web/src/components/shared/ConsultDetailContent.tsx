@@ -77,7 +77,8 @@ export function ConsultDetailContent({ id }: { id: string }) {
           })),
         );
         trackEvent('view_content', {
-          content_type: 'consult',
+          content_type: 'product',
+          content_category: 'consult',
           content_ids: [raw.slug || raw.id || id],
           content_name: raw.name,
           currency: 'INR',

@@ -93,7 +93,8 @@ export default function PujaDetailPage({ params }: { params: Promise<{ id: strin
           setPuja(mapPuja(raw));
           setPujaRaw(raw);
           trackEvent('view_content', {
-            content_type: 'puja',
+            content_type: 'product',
+            content_category: 'puja',
             content_ids: [raw.slug || raw.id || id],
             content_name: raw.name,
             value: Number(raw.price_for_1 ?? 0) || undefined,

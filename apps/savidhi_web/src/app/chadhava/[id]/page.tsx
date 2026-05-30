@@ -64,7 +64,8 @@ export default function ChadhavaDetailPage({ params }: { params: Promise<{ id: s
           setChadhavaRaw(raw);
           setIsSingleEvent(raw.event_repeats === false);
           trackEvent('view_content', {
-            content_type: 'chadhava',
+            content_type: 'product',
+            content_category: 'chadhava',
             content_ids: [raw.slug || raw.id || id],
             content_name: raw.name,
             currency: 'INR',

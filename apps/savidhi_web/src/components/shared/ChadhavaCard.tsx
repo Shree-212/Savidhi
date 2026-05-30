@@ -22,7 +22,8 @@ export function ChadhavaCard({ chadhava }: ChadhavaCardProps) {
       className="group block"
       onClick={() =>
         trackEvent('view_content', {
-          content_type: 'chadhava',
+          content_type: 'product',
+          content_category: 'chadhava',
           content_ids: [chadhava.slug || chadhava.id],
           content_name: chadhava.name,
           value: chadhava.startingPrice,

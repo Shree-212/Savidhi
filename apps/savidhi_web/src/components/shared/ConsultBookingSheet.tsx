@@ -77,7 +77,8 @@ export function ConsultBookingSheet({
     setDate(tomorrow.toISOString().slice(0, 10));
     setTime('10:00');
     trackEvent('add_to_cart', {
-      content_type: 'consult',
+      content_type: 'product',
+      content_category: 'consult',
       content_ids: [astrologerSlug],
       content_name: astrologerName,
       duration: initialDuration,
@@ -122,7 +123,8 @@ export function ConsultBookingSheet({
       const scheduledAt = new Date(`${date}T${time}:00`).toISOString();
 
       trackEvent('initiate_checkout', {
-        content_type: 'consult',
+        content_type: 'product',
+        content_category: 'consult',
         content_ids: [astrologerSlug],
         content_name: astrologerName,
         value: price,
@@ -158,7 +160,8 @@ export function ConsultBookingSheet({
         if (!verifiedAppt?.id) throw new Error('Appointment materialization failed');
         setConfirmedId(verifiedAppt.id);
         trackEvent('purchase', {
-          content_type: 'consult',
+          content_type: 'product',
+          content_category: 'consult',
           content_ids: [astrologerSlug],
           content_name: astrologerName,
           value: price,
@@ -188,7 +191,8 @@ export function ConsultBookingSheet({
             if (!verifiedAppt?.id) throw new Error('Appointment confirmation failed');
             setConfirmedId(verifiedAppt.id);
             trackEvent('purchase', {
-              content_type: 'consult',
+              content_type: 'product',
+              content_category: 'consult',
               content_ids: [astrologerSlug],
               content_name: astrologerName,
               value: price,
