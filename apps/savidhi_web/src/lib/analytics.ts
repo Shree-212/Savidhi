@@ -22,25 +22,51 @@ interface FbqWindow {
   gtag?: (...args: unknown[]) => void;
 }
 
-export function trackEvent(name: EventName, payload?: Record<string, unknown>) {
+interface TrackOptions {
+  // Shared with the server-side Conversions API call so Meta dedupes the
+  // browser pixel hit against the webhook-triggered server event.
+  eventId?: string;
+  // When the server emits the canonical event (e.g. Purchase via CAPI), skip
+  // GA4 here to avoid double-counting in analytics dashboards.
+  pixelOnly?: boolean;
+}
+
+export function generateEventId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `evt_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
+
+export function trackEvent(
+  name: EventName,
+  payload?: Record<string, unknown>,
+  options?: TrackOptions,
+) {
   if (typeof window === 'undefined') return;
   const w = window as unknown as FbqWindow;
+  const data = payload ?? {};
+  const eventId = options?.eventId;
 
   try {
     if (typeof w.fbq === 'function') {
-      w.fbq('track', META_EVENT[name], payload ?? {});
+      if (eventId) {
+        w.fbq('track', META_EVENT[name], data, { eventID: eventId });
+      } else {
+        w.fbq('track', META_EVENT[name], data);
+      }
     }
   } catch { /* never let analytics throw into the app */ }
 
   try {
-    if (typeof w.gtag === 'function') {
-      w.gtag('event', name, payload ?? {});
+    if (typeof w.gtag === 'function' && !options?.pixelOnly) {
+      w.gtag('event', name, data);
     }
   } catch { /* same */ }
 
   if (process.env.NODE_ENV !== 'production') {
     // Dev visibility so we can confirm the funnel without opening the Pixel Helper.
     // eslint-disable-next-line no-console
-    console.log('[track]', name, payload ?? {});
+    console.log('[track]', name, data, options ?? {});
   }
 }
